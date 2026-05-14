@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from linprogx.sparse import SparseLPProblem, SparseSolver, from_scipy_sparse
+
 EXPECTED_DFL001_OBJECTIVE = 11_266_396.047
 DATA_PATH = Path("benchmark_data/netlib_dfl001/lp_dfl001.mat")
 
@@ -67,7 +69,7 @@ def run_benchmark(path: Path) -> LargeBenchResult:
     return LargeBenchResult(
         problem=problem,
         rows=[
-            _linprogx_skip(problem),
+            _run_linprogx_sparse(problem_data),
             _run_scipy(problem_data),
             _run_clarabel(problem_data),
         ],
@@ -84,7 +86,8 @@ def load_dfl001(path: Path) -> dict[str, Any]:
     raw = loadmat(path)["Problem"][0, 0]
     aux = raw["aux"][0, 0]
     return {
-        "A": raw["A"].tocsc(),
+        "A": from_scipy_sparse(raw["A"]),
+        "A_scipy": raw["A"].tocsc(),
         "b": raw["b"].ravel().astype(float),
         "c": aux["c"].ravel().astype(float),
         "lo": aux["lo"].ravel().astype(float),
@@ -117,7 +120,8 @@ def write_plot(result: LargeBenchResult, path: Path) -> None:
 
     solved = [row for row in result.rows if row.seconds is not None]
     fig, ax = pyplot.subplots(figsize=(9, 4.8))
-    colors = ["#c44536" if row.solver == "SciPy/HiGHS" else "#f3a712" for row in solved]
+    color_map = {"linprogx-sparse": "#28536b", "SciPy/HiGHS": "#c44536", "Clarabel": "#f3a712"}
+    colors = [color_map.get(row.solver, "#6c757d") for row in solved]
     seconds = [float(row.seconds) for row in solved if row.seconds is not None]
     ax.bar([row.solver for row in solved], seconds, color=colors)
     ax.set_ylabel("seconds")
@@ -131,24 +135,37 @@ def write_plot(result: LargeBenchResult, path: Path) -> None:
     pyplot.close(fig)
 
 
+def _run_linprogx_sparse(problem_data: dict[str, Any]) -> LargeBenchRow:
+    result = SparseSolver(max_iterations=1).solve(
+        SparseLPProblem(
+            c=problem_data["c"].tolist(),
+            A_eq=problem_data["A"],
+            b_eq=problem_data["b"].tolist(),
+            objective="min",
+            bounds=_bounds(problem_data),
+            name="dfl001",
+        )
+    )
+    objective = result.solution.objective_value
+    return LargeBenchRow(
+        solver="linprogx-sparse",
+        status=result.solution.status.value,
+        objective=objective,
+        objective_delta=None if objective is None else abs(objective - EXPECTED_DFL001_OBJECTIVE),
+        seconds=result.seconds,
+        notes=f"C CSR matrix with {result.backend}; one phase-I iteration budget",
+    )
+
+
 def _run_scipy(problem_data: dict[str, Any]) -> LargeBenchRow:
     from scipy.optimize import linprog
 
-    lo = problem_data["lo"]
-    hi = problem_data["hi"]
-    bounds = [
-        (
-            None if lower == float("-inf") else float(lower),
-            None if upper == float("inf") else float(upper),
-        )
-        for lower, upper in zip(lo, hi, strict=True)
-    ]
     start = time.perf_counter()
     result = linprog(
         problem_data["c"],
-        A_eq=problem_data["A"],
+        A_eq=problem_data["A_scipy"],
         b_eq=problem_data["b"],
-        bounds=bounds,
+        bounds=_bounds(problem_data),
         method="highs",
     )
     seconds = time.perf_counter() - start
@@ -174,11 +191,11 @@ def _run_clarabel(problem_data: dict[str, Any]) -> LargeBenchRow:
     finite_hi = np.isfinite(hi)
     finite_lo = np.isfinite(lo)
     eye = sparse.eye(len(c), format="csc")
-    rows = [problem_data["A"], eye[finite_hi], -eye[finite_lo]]
+    rows = [problem_data["A_scipy"], eye[finite_hi], -eye[finite_lo]]
     rhs = [problem_data["b"], hi[finite_hi], -lo[finite_lo]]
     clarabel_api = vars(clarabel)
     cones = [
-        clarabel_api["ZeroConeT"](problem_data["A"].shape[0]),
+        clarabel_api["ZeroConeT"](problem_data["A_scipy"].shape[0]),
         clarabel_api["NonnegativeConeT"](int(finite_hi.sum() + finite_lo.sum())),
     ]
     A = sparse.vstack(rows, format="csc")
@@ -216,6 +233,18 @@ def _linprogx_skip(problem: LargeProblem) -> LargeBenchRow:
             f"{estimated_dense_entries:,} coefficients before slacks/artificials."
         ),
     )
+
+
+def _bounds(problem_data: dict[str, Any]) -> list[tuple[float | None, float | None]]:
+    lo = problem_data["lo"]
+    hi = problem_data["hi"]
+    return [
+        (
+            None if lower == float("-inf") else float(lower),
+            None if upper == float("inf") else float(upper),
+        )
+        for lower, upper in zip(lo, hi, strict=True)
+    ]
 
 
 def _clarabel_status(status: str) -> str:

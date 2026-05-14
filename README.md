@@ -70,6 +70,35 @@ print(result.x)
 
 `solve_canonical()` treats variables as free by default because the statement `min c^T x` subject to `Ax=b`, `Gx<=h` does not include `x >= 0`. Encode nonnegativity as rows in `G` or pass explicit `bounds`.
 
+Sparse matrices use a C-backed compressed sparse row type:
+
+```python
+from linprogx import SparseLPProblem, csr_matrix, solve_sparse
+
+A_eq = csr_matrix(
+    1,
+    2,
+    indptr=[0, 2],
+    indices=[0, 1],
+    data=[1.0, 1.0],
+)
+
+result = solve_sparse(
+    SparseLPProblem(
+        c=[1.0, 2.0],
+        A_eq=A_eq,
+        b_eq=[3.0],
+        objective="min",
+        bounds=[(0.0, None), (0.0, None)],
+    )
+)
+
+print(result.solution.status)
+print(result.solution.objective_value)
+```
+
+The sparse API is dependency-free: it uses `linprogx`'s C CSR representation and a native sparse two-phase simplex implementation. The current sparse pivot strategy is early-stage and intended for small-to-medium sparse LPs; mature sparse solvers remain much stronger on large Netlib-scale models.
+
 ## Modeling API
 
 ```python
@@ -183,7 +212,7 @@ On these tiny dense examples, `linprogx` is usually faster than SciPy/HiGHS beca
 There are two larger benchmark paths:
 
 - A dense generated LP that `linprogx`, SciPy/HiGHS, and Clarabel all solve.
-- Netlib `DFL001`, a much larger sparse online LP that documents the current boundary of this project.
+- Netlib `DFL001`, a much larger sparse online LP that now runs through `linprogx`'s dependency-free C CSR sparse frontend and native sparse simplex attempt.
 
 ### Dense 160x320 Benchmark
 
@@ -207,7 +236,7 @@ Current local result:
 
 The result is the expected shape: `linprogx` is correct and usable on a larger dense case, but mature compiled solvers are substantially faster. This is the benchmark to watch as the tableau implementation improves.
 
-### Sparse Netlib DFL001 Boundary Case
+### Sparse Netlib DFL001
 
 The repo also includes Netlib `DFL001`, loaded from the SuiteSparse Matrix Collection. It is a real-world airline schedule planning / fleet assignment model with 6,071 equality rows, 12,230 variables, and 35,632 sparse matrix nonzeros.
 
@@ -224,15 +253,15 @@ Run the large benchmark:
 just large-bench
 ```
 
-This is not a fair `linprogx` runtime comparison yet because `linprogx` does not support sparse matrices. Materializing DFL001 as a dense Python tableau would start with 74,248,330 raw coefficients before adding slacks, artificial variables, and objective rows. Sparse support is the right future work before attempting this model in `linprogx`.
+This path uses a C-backed compressed sparse row matrix type in `linprogx._csparse` and a dependency-free sparse two-phase simplex implementation in `linprogx.sparse`. The native sparse simplex is intentionally early-stage: it works on small sparse LPs in the test suite, but DFL001 is still beyond the current pivot strategy and hits the configured phase-I iteration budget. SciPy/HiGHS remains in the table only as an external comparison baseline.
 
 Current local result:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx | skipped | n/a | n/a | n/a | Dense Python tableau skipped; raw A alone would materialize 74,248,330 coefficients before slacks/artificials. |
-| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.266s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | reported_dual_infeasible | n/a | n/a | 0.366s | Clarabel status: DualInfeasible |
+| linprogx-sparse | iteration_limit | n/a | n/a | 4.114s | C CSR matrix with native-sparse-simplex; one phase-I iteration budget |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.338s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | reported_dual_infeasible | n/a | n/a | 0.343s | Clarabel status: DualInfeasible |
 
 ![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
 
@@ -304,6 +333,8 @@ User: find a large dense problem that can be solved by linprogx too, so sparse s
 Assistant: added a deterministic dense 160x320 benchmark that all three solvers solve and embedded the results in the README.
 User: set up a background process to poll the repository for comments or issues. Automatically respond or put up pull requests for anything that is identified. tag the issue opener
 Assistant: added a scheduled GitHub Actions workflow that polls issues/comments, tags the author, comments back, and opens tracking PRs with generated triage notes.
+User: create a PR that adds sparse support, with dependency-free sparse support as the most important requirement.
+Assistant: added a C CSR matrix type and native dependency-free sparse simplex path, then updated DFL001 to run the native sparse attempt and compare against external baselines.
 ```
 
 Recorded creation time: 3 minutes 10 seconds from the initial solver commit (`15192d8`, 2026-05-14 16:37:05 CDT) to the standardized benchmark commit (`96a5a65`, 2026-05-14 16:40:15 CDT). That is measured from git history, so it excludes the uncommitted pre-history before the first commit.
@@ -338,15 +369,18 @@ The bot is intentionally conservative: it opens a reviewable PR artifact rather 
 src/linprogx/
   __init__.py      Public exports
   solver.py        Problem normalization and two-phase simplex
+  sparse.py        Dependency-free sparse simplex using the C CSR matrix type
   builder.py       Small modeling interface
   cli.py           JSON command-line interface
   samples.py       Deterministic sample LP library
   compare.py       SciPy/HiGHS and Clarabel correctness/timing comparison
   _fast.py         C-extension dispatch and Python fallback
   _cfast.c         In-place pivot and dot-product C helpers
+  _csparse.c       C-backed compressed sparse row matrix type
 tests/
   test_solver.py            Solver, bounds, CLI, and validation coverage
   test_samples_compare.py   Sample problem checks against SciPy/HiGHS
+  test_sparse.py            Sparse matrix and sparse LP coverage
 benchmark_data/
   netlib_dfl001/            Large public LP benchmark data and metadata
 scripts/

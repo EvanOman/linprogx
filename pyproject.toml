@@ -48,6 +48,10 @@ where = ["src"]
 name = "linprogx._cfast"
 sources = ["src/linprogx/_cfast.c"]
 
+[[tool.setuptools.ext-modules]]
+name = "linprogx._csparse"
+sources = ["src/linprogx/_csparse.c"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
