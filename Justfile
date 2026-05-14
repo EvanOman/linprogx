@@ -30,6 +30,9 @@ plots:
 large-bench:
     uv run python bench_large.py
 
+dense-bench:
+    uv run python bench_dense.py
+
 fc: fmt lint-fix lint type test
 
 ci: lint format-check type test

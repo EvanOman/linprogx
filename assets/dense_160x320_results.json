@@ -1,0 +1,33 @@
+{
+  "name": "dense_box_160x320",
+  "variables": 160,
+  "constraints": 320,
+  "dense_coefficients": 51200,
+  "expected_objective": 237.0536631591502,
+  "rows": [
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 237.05366315914998,
+      "objective_delta": 2.2737367544323206e-13,
+      "seconds": 0.5957598101813346,
+      "notes": "168 simplex iterations"
+    },
+    {
+      "solver": "SciPy/HiGHS",
+      "status": "optimal",
+      "objective": 237.05366315915026,
+      "objective_delta": 2.8421709430404007e-13,
+      "seconds": 0.030127236153930426,
+      "notes": "Open-source sparse/dense LP baseline"
+    },
+    {
+      "solver": "Clarabel",
+      "status": "optimal",
+      "objective": 237.05366315895483,
+      "objective_delta": 1.9514345694915392e-10,
+      "seconds": 0.10056899301707745,
+      "notes": "Open-source conic interior-point baseline"
+    }
+  ]
+}

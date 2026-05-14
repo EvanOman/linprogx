@@ -180,7 +180,36 @@ On these tiny dense examples, `linprogx` is usually faster than SciPy/HiGHS beca
 
 ## Large Online Benchmark
 
-The repo also includes one much larger public LP benchmark: Netlib `DFL001`, loaded from the SuiteSparse Matrix Collection. It is a real-world airline schedule planning / fleet assignment model with 6,071 equality rows, 12,230 variables, and 35,632 matrix nonzeros.
+There are two larger benchmark paths:
+
+- A dense generated LP that `linprogx`, SciPy/HiGHS, and Clarabel all solve.
+- Netlib `DFL001`, a much larger sparse online LP that documents the current boundary of this project.
+
+### Dense 160x320 Benchmark
+
+This is the fair large comparison for the current solver. The benchmark uses a deterministic dense LP with 160 variables, 320 dense inequality rows, 51,200 dense coefficients, variable bounds `0 <= x <= 1`, and a known optimum at the all-ones point.
+
+Run it:
+
+```bash
+just dense-bench
+```
+
+Current local result:
+
+| Solver | Status | Objective | Delta vs linprogx/expected | Runtime | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| linprogx | optimal | 237.053663 | 2.274e-13 | 0.596s | 168 simplex iterations |
+| SciPy/HiGHS | optimal | 237.053663 | 2.842e-13 | 0.030s | Open-source sparse/dense LP baseline |
+| Clarabel | optimal | 237.053663 | 1.951e-10 | 0.101s | Open-source conic interior-point baseline |
+
+![Dense 160x320 runtime](assets/dense_160x320_runtime.png)
+
+The result is the expected shape: `linprogx` is correct and usable on a larger dense case, but mature compiled solvers are substantially faster. This is the benchmark to watch as the tableau implementation improves.
+
+### Sparse Netlib DFL001 Boundary Case
+
+The repo also includes Netlib `DFL001`, loaded from the SuiteSparse Matrix Collection. It is a real-world airline schedule planning / fleet assignment model with 6,071 equality rows, 12,230 variables, and 35,632 sparse matrix nonzeros.
 
 Source files:
 
@@ -194,6 +223,8 @@ Run the large benchmark:
 ```bash
 just large-bench
 ```
+
+This is not a fair `linprogx` runtime comparison yet because `linprogx` does not support sparse matrices. Materializing DFL001 as a dense Python tableau would start with 74,248,330 raw coefficients before adding slacks, artificial variables, and objective rows. Sparse support is the right future work before attempting this model in `linprogx`.
 
 Current local result:
 
@@ -269,6 +300,8 @@ User: include summary of runtime perf comparison -- make lots of nice looking pl
 Assistant: added benchmark plot generation, committed PNG assets, and embedded the plots in the README.
 User: Add a very, very large problem from an online source... update all of our benchmarks and comparisons with the results of that.
 Assistant: added Netlib DFL001 from SuiteSparse, benchmarked SciPy/HiGHS and Clarabel, skipped linprogx by default for dense-tableau memory reasons, and recorded the result.
+User: find a large dense problem that can be solved by linprogx too, so sparse support does not hold up the comparison.
+Assistant: added a deterministic dense 160x320 benchmark that all three solvers solve and embedded the results in the README.
 User: set up a background process to poll the repository for comments or issues. Automatically respond or put up pull requests for anything that is identified. tag the issue opener
 Assistant: added a scheduled GitHub Actions workflow that polls issues/comments, tags the author, comments back, and opens tracking PRs with generated triage notes.
 ```
@@ -282,6 +315,7 @@ just install
 just test
 just test-cov
 just plots
+just dense-bench
 just large-bench
 just fc
 ```
