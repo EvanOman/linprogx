@@ -172,14 +172,17 @@ def assert_matches_scipy(problem: LPProblem, *, objective_tol: float = 1e-7) -> 
         assert comparison.objective_delta <= objective_tol
 
 
-def assert_matches_clarabel(problem: LPProblem, *, objective_tol: float = 1e-5) -> None:
+def assert_matches_clarabel(
+    problem: LPProblem, *, objective_tol: float = 1e-5, relative_tol: float = 1e-9
+) -> None:
     comparison = compare_with_clarabel(problem)
     if comparison.solver_status == Status.ITERATION_LIMIT.value:
         return
     assert comparison.linprogx_status == comparison.solver_status
     if comparison.solver_status == Status.OPTIMAL.value:
         assert comparison.objective_delta is not None
-        assert comparison.objective_delta <= objective_tol
+        scale = max(1.0, abs(comparison.linprogx_objective or 0.0))
+        assert comparison.objective_delta <= max(objective_tol, relative_tol * scale)
 
 
 def _clarabel_rows(problem: LPProblem) -> tuple[list[list[float]], list[float], int, int]:

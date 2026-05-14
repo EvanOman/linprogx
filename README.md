@@ -101,12 +101,25 @@ The repository includes a deterministic sample suite in `src/linprogx/samples.py
 - `infeasible_window`
 - `unbounded_ray`
 
-`tests/test_samples_compare.py` solves every sample with `linprogx`, solves the same model with SciPy/HiGHS and Clarabel, and asserts matching statuses and objective values. Clarabel is an interior-point conic solver, so its objective comparison uses a slightly wider tolerance than SciPy/HiGHS.
+It also includes a standardized stress suite based on Klee-Minty cubes in dimensions 3 through 10. Klee-Minty is the classic LP construction used to show exponential worst-case behavior for Dantzig-style simplex pivoting. Netlib's LP collection is the canonical real-world benchmark set, but its compressed MPS problems are mostly large sparse models; this project keeps the in-repo standardized suite dense and small enough for the educational tableau solver.
+
+References:
+
+- Netlib LP collection: https://www.netlib.org/lp/data/
+- Klee-Minty cube background: https://en.wikipedia.org/wiki/Klee%E2%80%93Minty_cube
+
+`tests/test_samples_compare.py` solves every sample and standardized stress case with `linprogx`, solves the same model with SciPy/HiGHS and Clarabel, and asserts matching statuses and objective values. Clarabel is an interior-point conic solver, so its objective comparison uses absolute and relative tolerances.
 
 Run the benchmark:
 
 ```bash
 uv run python bench.py
+```
+
+Run only the standardized Klee-Minty suite:
+
+```bash
+LINPROGX_BENCH_SUITE=standard uv run python bench.py
 ```
 
 Example local run on the included samples:
@@ -126,7 +139,30 @@ unbounded_ray            scipy-highs  unbounded           n/a        0.004      
 unbounded_ray            clarabel     unbounded           n/a        0.004      0.032
 ```
 
-The benchmark prints all 16 samples; the excerpt above keeps the README short. These timings are for tiny dense models where Python call overhead dominates. SciPy/HiGHS and Clarabel are the right baselines for larger models.
+Standardized Klee-Minty summary, dimensions 3 through 10:
+
+```text
+sample                   solver       status        obj delta  linprogx ms  solver ms
+--------------------------------------------------------------------------------------------
+klee_minty_3d            scipy-highs  optimal        0.00e+00        0.074      1.333
+klee_minty_3d            clarabel     optimal        2.23e-09        0.049      0.063
+klee_minty_4d            scipy-highs  optimal        0.00e+00        0.076      1.342
+klee_minty_4d            clarabel     optimal        2.25e-07        0.073      0.063
+klee_minty_5d            scipy-highs  optimal        0.00e+00        0.098      1.338
+klee_minty_5d            clarabel     optimal        7.77e-08        0.088      0.078
+klee_minty_6d            scipy-highs  optimal        0.00e+00        0.115      1.358
+klee_minty_6d            clarabel     optimal        3.86e-06        0.120      0.084
+klee_minty_7d            scipy-highs  optimal        0.00e+00        0.148      1.376
+klee_minty_7d            clarabel     optimal        7.49e-05        0.152      0.106
+klee_minty_8d            scipy-highs  optimal        0.00e+00        0.175      1.368
+klee_minty_8d            clarabel     optimal        1.06e-04        0.187      0.117
+klee_minty_9d            scipy-highs  optimal        0.00e+00        0.218      1.349
+klee_minty_9d            clarabel     optimal        1.18e-03        0.230      0.118
+klee_minty_10d           scipy-highs  optimal        0.00e+00        0.273      1.466
+klee_minty_10d           clarabel     optimal        3.67e-03        0.288      0.157
+```
+
+The default benchmark prints all 24 included cases. These timings are for tiny dense models where Python call overhead dominates. SciPy/HiGHS and Clarabel are the right baselines for larger models.
 
 ## Development
 

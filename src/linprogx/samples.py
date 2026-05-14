@@ -228,8 +228,31 @@ SAMPLES: tuple[SampleProblem, ...] = (
 )
 
 
+def klee_minty(dimension: int) -> SampleProblem:
+    if dimension < 2:
+        msg = "Klee-Minty dimension must be at least 2"
+        raise ValueError(msg)
+    objective = [float(2 ** (dimension - index - 1)) for index in range(dimension)]
+    constraints = []
+    for row_index in range(dimension):
+        row = [0.0] * dimension
+        for col_index in range(row_index + 1):
+            row[col_index] = float(2 ** (row_index - col_index))
+        constraints.append(Constraint(row, "<=", float(5 ** (row_index + 1))))
+    expected = float(5**dimension)
+    return SampleProblem(
+        f"klee_minty_{dimension}d",
+        LPProblem(objective, constraints, "max", name=f"klee_minty_{dimension}d"),
+        "optimal",
+        expected,
+    )
+
+
+STANDARD_BENCHMARKS: tuple[SampleProblem, ...] = tuple(klee_minty(size) for size in range(3, 11))
+
+
 def get_sample(name: str) -> SampleProblem:
-    for sample in SAMPLES:
+    for sample in (*SAMPLES, *STANDARD_BENCHMARKS):
         if sample.name == name:
             return sample
     msg = f"unknown sample problem: {name}"

@@ -4,7 +4,7 @@ import pytest
 
 from linprogx import Solver
 from linprogx.compare import assert_matches_clarabel, assert_matches_scipy
-from linprogx.samples import SAMPLES
+from linprogx.samples import SAMPLES, STANDARD_BENCHMARKS
 
 scipy = pytest.importorskip("scipy")
 del scipy
@@ -12,7 +12,10 @@ clarabel = pytest.importorskip("clarabel")
 del clarabel
 
 
-@pytest.mark.parametrize("sample", SAMPLES, ids=[sample.name for sample in SAMPLES])
+ALL_SAMPLES = (*SAMPLES, *STANDARD_BENCHMARKS)
+
+
+@pytest.mark.parametrize("sample", ALL_SAMPLES, ids=[sample.name for sample in ALL_SAMPLES])
 def test_sample_matches_expected_and_scipy(sample) -> None:  # type: ignore[no-untyped-def]
     result = Solver().solve(sample.problem)
 
