@@ -9,6 +9,12 @@ It solves continuous linear programs with maximization or minimization objective
 
 Reference link saved with the project: https://www.linkedin.com/posts/antonvorobets_if-you-think-ai-can-write-advanced-analytics-share-7460672846042710016-z_ya?utm_source=share&utm_medium=member_desktop&rcm=ACoAAAk_CVIBr27sXDGNG8kKqOPnWZAdJrVOA7Q
 
+## TL;DR
+
+This repo is a compact LP solver built as a benchmarkable artifact: a from-scratch two-phase simplex implementation, a small C accelerator, Python and CLI interfaces, 16 hand-authored LP examples, 8 standardized Klee-Minty stress cases, and test-time correctness checks against SciPy/HiGHS and Clarabel.
+
+The point is not to beat mature solvers on real sparse production models. It is to make the mechanics visible, keep the dependency-free runtime small, and show reproducible comparisons against serious open-source baselines.
+
 ## What It Does
 
 - Solves dense small-to-medium LPs without NumPy or SciPy.
@@ -163,6 +169,26 @@ klee_minty_10d           clarabel     optimal        3.67e-03        0.288      
 ```
 
 The default benchmark prints all 24 included cases. These timings are for tiny dense models where Python call overhead dominates. SciPy/HiGHS and Clarabel are the right baselines for larger models.
+
+## Build Provenance
+
+Minimal recreation of the transcript that produced this repository:
+
+```text
+User: write a linear programming solver from scratch in python w/ all the bells and whistles. make a nice interface and write c extensions for the performance sensitve parts. include many test cases. make public github repo w/ nice readme. reference this linked in post: <LinkedIn URL>
+Assistant: noted that the first Tailscale link required login.
+User: supplied the direct LinkedIn URL.
+User: don't read post, just write code and save link
+Assistant: built and pushed the initial public repo.
+User: add many sample problems, compare w/ open source solver for correctness and runtime perf
+Assistant: added sample LPs, SciPy/HiGHS and Clarabel comparisons, benchmarks, tests, and README summary.
+User: find a standardized set of difficlt LP problems, apply to all solvers and put summary in README
+Assistant: added Klee-Minty standardized stress cases, applied all solvers, and documented the results.
+User: add a better summary / tldr to README, Add a minimal recreation of our transcript here, along with the total time to create all this.
+Assistant: added this TL;DR and provenance section.
+```
+
+Recorded creation time: 3 minutes 10 seconds from the initial solver commit (`15192d8`, 2026-05-14 16:37:05 CDT) to the standardized benchmark commit (`96a5a65`, 2026-05-14 16:40:15 CDT). That is measured from git history, so it excludes the uncommitted pre-history before the first commit.
 
 ## Development
 
