@@ -24,6 +24,9 @@ test:
 test-cov:
     uv run pytest --cov=src --cov-report=term-missing
 
+plots:
+    uv run python bench_plots.py --repeats 50
+
 fc: fmt lint-fix lint type test
 
 ci: lint format-check type test

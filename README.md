@@ -148,6 +148,36 @@ Run only the standardized Klee-Minty suite:
 LINPROGX_BENCH_SUITE=standard uv run python bench.py
 ```
 
+Regenerate the README plots:
+
+```bash
+just plots
+```
+
+## Runtime Performance Summary
+
+The benchmark compares `linprogx` against SciPy/HiGHS and Clarabel on 24 dense LPs: 16 hand-authored examples plus 8 Klee-Minty stress cases. The current plots were generated with 50 repeats per solver/problem.
+
+| Metric | Value |
+| --- | ---: |
+| Cases compared | 24 |
+| SciPy/HiGHS max objective delta | 0.00e+00 |
+| Clarabel max objective delta | 3.67e-03 |
+| Median SciPy/HiGHS runtime ratio vs linprogx | 25.64x |
+| Median Clarabel runtime ratio vs linprogx | 1.06x |
+| Fastest measured row | lower_bound_shift / scipy-highs |
+| Slowest measured row | assignment_relaxation / scipy-highs |
+
+On these tiny dense examples, `linprogx` is usually faster than SciPy/HiGHS because the benchmark is dominated by setup overhead rather than numerical linear algebra. Clarabel is much closer on runtime. Objective agreement is exact against SciPy/HiGHS in this run; Clarabel's small deltas are expected from an interior-point conic solve.
+
+![Runtime on sample LPs](assets/perf_runtime_samples.png)
+
+![Runtime on Klee-Minty LPs](assets/perf_runtime_klee_minty.png)
+
+![Runtime ratio against linprogx](assets/perf_speed_ratios.png)
+
+![Objective deltas against linprogx](assets/perf_objective_delta.png)
+
 Example local run on the included samples:
 
 ```text
@@ -208,6 +238,8 @@ User: add a better summary / tldr to README, Add a minimal recreation of our tra
 Assistant: added this TL;DR and provenance section.
 User: make sure this is handled, commit and push Prompt AI to find an algorithm for min c^T x subject to Ax=b, Gx<=h
 Assistant: added a direct canonical-form API, tests, and documentation for that LP statement.
+User: include summary of runtime perf comparison -- make lots of nice looking plots and put those plots in readme
+Assistant: added benchmark plot generation, committed PNG assets, and embedded the plots in the README.
 ```
 
 Recorded creation time: 3 minutes 10 seconds from the initial solver commit (`15192d8`, 2026-05-14 16:37:05 CDT) to the standardized benchmark commit (`96a5a65`, 2026-05-14 16:40:15 CDT). That is measured from git history, so it excludes the uncommitted pre-history before the first commit.
@@ -218,6 +250,7 @@ Recorded creation time: 3 minutes 10 seconds from the initial solver commit (`15
 just install
 just test
 just test-cov
+just plots
 just fc
 ```
 
