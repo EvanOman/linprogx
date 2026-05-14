@@ -1,0 +1,32 @@
+set shell := ["bash", "-cu"]
+
+default:
+    @just --list
+
+fmt:
+    uv run ruff format .
+
+format-check:
+    uv run ruff format --check .
+
+lint:
+    uv run ruff check .
+
+lint-fix:
+    uv run ruff check . --fix
+
+type:
+    uv run ty check .
+
+test:
+    uv run pytest
+
+test-cov:
+    uv run pytest --cov=src --cov-report=term-missing
+
+fc: fmt lint-fix lint type test
+
+ci: lint format-check type test
+
+install:
+    uv sync --extra dev
