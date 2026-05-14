@@ -36,7 +36,7 @@ uv sync --extra dev
 ## Python API
 
 ```python
-from linprogx import solve
+from linprogx import solve, solve_canonical
 
 result = solve(
     c=[3, 2],
@@ -49,6 +49,26 @@ print(result.status)
 print(result.objective_value)
 print(result.x)
 ```
+
+Canonical minimization form is available directly:
+
+```python
+# min c^T x
+# subject to Ax = b and Gx <= h
+result = solve_canonical(
+    c=[1, 2],
+    A=[[1, 1]],
+    b=[3],
+    G=[[-1, 0], [0, -1], [1, 0]],
+    h=[0, 0, 2],
+)
+
+print(result.status)
+print(result.objective_value)
+print(result.x)
+```
+
+`solve_canonical()` treats variables as free by default because the statement `min c^T x` subject to `Ax=b`, `Gx<=h` does not include `x >= 0`. Encode nonnegativity as rows in `G` or pass explicit `bounds`.
 
 ## Modeling API
 
@@ -186,6 +206,8 @@ User: find a standardized set of difficlt LP problems, apply to all solvers and 
 Assistant: added Klee-Minty standardized stress cases, applied all solvers, and documented the results.
 User: add a better summary / tldr to README, Add a minimal recreation of our transcript here, along with the total time to create all this.
 Assistant: added this TL;DR and provenance section.
+User: make sure this is handled, commit and push Prompt AI to find an algorithm for min c^T x subject to Ax=b, Gx<=h
+Assistant: added a direct canonical-form API, tests, and documentation for that LP statement.
 ```
 
 Recorded creation time: 3 minutes 10 seconds from the initial solver commit (`15192d8`, 2026-05-14 16:37:05 CDT) to the standardized benchmark commit (`96a5a65`, 2026-05-14 16:40:15 CDT). That is measured from git history, so it excludes the uncommitted pre-history before the first commit.

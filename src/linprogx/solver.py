@@ -358,3 +358,36 @@ def solve(
         Constraint(A[index], resolved_senses[index], b[index]) for index in range(len(b))
     ]
     return Solver().solve(LPProblem(c, constraints, objective, bounds))
+
+
+def solve_canonical(
+    c: list[float],
+    A: list[list[float]],
+    b: list[float],
+    G: list[list[float]],
+    h: list[float],
+    *,
+    bounds: list[tuple[float | None, float | None]] | None = None,
+) -> Solution:
+    """Solve min c^T x subject to Ax = b and Gx <= h.
+
+    Variables are free by default because the canonical statement does not
+    include x >= 0. Pass bounds explicitly to add variable bounds.
+    """
+
+    if len(A) != len(b):
+        msg = "A and b must describe the same number of equality constraints"
+        raise ValueError(msg)
+    if len(G) != len(h):
+        msg = "G and h must describe the same number of inequality constraints"
+        raise ValueError(msg)
+    width = len(c)
+    if any(len(row) != width for row in (*A, *G)):
+        msg = "all constraint rows must match the objective width"
+        raise ValueError(msg)
+    variable_bounds = bounds or [(None, None) for _ in c]
+    constraints = [
+        *[Constraint(row, "=", rhs) for row, rhs in zip(A, b, strict=True)],
+        *[Constraint(row, "<=", rhs) for row, rhs in zip(G, h, strict=True)],
+    ]
+    return Solver().solve(LPProblem(c, constraints, "min", variable_bounds))

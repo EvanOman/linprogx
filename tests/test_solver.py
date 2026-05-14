@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from linprogx import Constraint, LPProblem, Model, Solver, Status, solve
+from linprogx import Constraint, LPProblem, Model, Solver, Status, solve, solve_canonical
 from linprogx._fast import dot
 from linprogx.cli import main
 
@@ -53,6 +53,39 @@ def test_equality_constraint() -> None:
     assert result.status == Status.OPTIMAL
     assert result.objective_value == pytest.approx(13)
     assert_close_list(result.x, [2, 3])
+
+
+def test_solve_canonical_minimization_form() -> None:
+    result = solve_canonical(
+        c=[1, 2],
+        A=[[1, 1]],
+        b=[3],
+        G=[[-1, 0], [0, -1], [1, 0]],
+        h=[0, 0, 2],
+    )
+
+    assert result.status == Status.OPTIMAL
+    assert result.objective_value == pytest.approx(4)
+    assert_close_list(result.x, [2, 1])
+
+
+def test_solve_canonical_defaults_to_free_variables() -> None:
+    result = solve_canonical(
+        c=[1, 0],
+        A=[[1, -1]],
+        b=[-2],
+        G=[[0, 1], [0, -1]],
+        h=[1, -1],
+    )
+
+    assert result.status == Status.OPTIMAL
+    assert result.objective_value == pytest.approx(-1)
+    assert_close_list(result.x, [-1, 1])
+
+
+def test_solve_canonical_validates_dimensions() -> None:
+    with pytest.raises(ValueError, match="G and h"):
+        solve_canonical([1], [], [], [[1]], [])
 
 
 def test_bounds_are_respected() -> None:
