@@ -178,6 +178,33 @@ On these tiny dense examples, `linprogx` is usually faster than SciPy/HiGHS beca
 
 ![Objective deltas against linprogx](assets/perf_objective_delta.png)
 
+## Large Online Benchmark
+
+The repo also includes one much larger public LP benchmark: Netlib `DFL001`, loaded from the SuiteSparse Matrix Collection. It is a real-world airline schedule planning / fleet assignment model with 6,071 equality rows, 12,230 variables, and 35,632 matrix nonzeros.
+
+Source files:
+
+- Data: `benchmark_data/netlib_dfl001/lp_dfl001.mat`
+- Metadata: `benchmark_data/netlib_dfl001/README.md`
+- Source URL: https://sparse.tamu.edu/mat/LPnetlib/lp_dfl001.mat
+- Reference page: https://www.cise.ufl.edu/research/sparse/matrices/LPnetlib/lp_dfl001.html
+
+Run the large benchmark:
+
+```bash
+just large-bench
+```
+
+Current local result:
+
+| Solver | Status | Objective | Delta vs published | Runtime | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| linprogx | skipped | n/a | n/a | n/a | Dense Python tableau skipped; raw A alone would materialize 74,248,330 coefficients before slacks/artificials. |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.266s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | reported_dual_infeasible | n/a | n/a | 0.366s | Clarabel status: DualInfeasible |
+
+![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
+
 Example local run on the included samples:
 
 ```text
@@ -240,6 +267,10 @@ User: make sure this is handled, commit and push Prompt AI to find an algorithm 
 Assistant: added a direct canonical-form API, tests, and documentation for that LP statement.
 User: include summary of runtime perf comparison -- make lots of nice looking plots and put those plots in readme
 Assistant: added benchmark plot generation, committed PNG assets, and embedded the plots in the README.
+User: Add a very, very large problem from an online source... update all of our benchmarks and comparisons with the results of that.
+Assistant: added Netlib DFL001 from SuiteSparse, benchmarked SciPy/HiGHS and Clarabel, skipped linprogx by default for dense-tableau memory reasons, and recorded the result.
+User: set up a background process to poll the repository for comments or issues. Automatically respond or put up pull requests for anything that is identified. tag the issue opener
+Assistant: added a scheduled GitHub Actions workflow that polls issues/comments, tags the author, comments back, and opens tracking PRs with generated triage notes.
 ```
 
 Recorded creation time: 3 minutes 10 seconds from the initial solver commit (`15192d8`, 2026-05-14 16:37:05 CDT) to the standardized benchmark commit (`96a5a65`, 2026-05-14 16:40:15 CDT). That is measured from git history, so it excludes the uncommitted pre-history before the first commit.
@@ -251,8 +282,21 @@ just install
 just test
 just test-cov
 just plots
+just large-bench
 just fc
 ```
+
+## Repository Poll Bot
+
+`.github/workflows/issue-poll-bot.yml` runs every 30 minutes and can also be started manually from GitHub Actions. It scans open issues and issue comments, ignores bot-authored comments, and uses hidden markers to avoid duplicate responses.
+
+For each new issue or comment it detects, the workflow:
+
+- Tags the opener/comment author in an issue comment.
+- Applies `linprogx-bot-seen` and `automated-triage` labels.
+- Creates a branch and pull request containing a generated triage note under `triage/`.
+
+The bot is intentionally conservative: it opens a reviewable PR artifact rather than pushing arbitrary code changes directly.
 
 ## Architecture
 
@@ -269,6 +313,10 @@ src/linprogx/
 tests/
   test_solver.py            Solver, bounds, CLI, and validation coverage
   test_samples_compare.py   Sample problem checks against SciPy/HiGHS
+benchmark_data/
+  netlib_dfl001/            Large public LP benchmark data and metadata
+scripts/
+  issue_poll_bot.py         Scheduled GitHub issue/comment polling bot
 ```
 
 ## License

@@ -27,6 +27,9 @@ test-cov:
 plots:
     uv run python bench_plots.py --repeats 50
 
+large-bench:
+    uv run python bench_large.py
+
 fc: fmt lint-fix lint type test
 
 ci: lint format-check type test

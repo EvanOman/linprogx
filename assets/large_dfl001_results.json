@@ -1,0 +1,36 @@
+{
+  "problem": {
+    "name": "Netlib DFL001",
+    "rows": 6071,
+    "cols": 12230,
+    "nonzeros": 35632,
+    "expected_objective": 11266396.047,
+    "source_url": "https://sparse.tamu.edu/mat/LPnetlib/lp_dfl001.mat"
+  },
+  "rows": [
+    {
+      "solver": "linprogx",
+      "status": "skipped",
+      "objective": null,
+      "objective_delta": null,
+      "seconds": null,
+      "notes": "Dense Python tableau skipped; raw A alone would materialize 74,248,330 coefficients before slacks/artificials."
+    },
+    {
+      "solver": "SciPy/HiGHS",
+      "status": "optimal",
+      "objective": 11266396.04667138,
+      "objective_delta": 0.00032862089574337006,
+      "seconds": 6.265720986062661,
+      "notes": "Optimization terminated successfully. (HiGHS Status 7: Optimal)"
+    },
+    {
+      "solver": "Clarabel",
+      "status": "reported_dual_infeasible",
+      "objective": null,
+      "objective_delta": null,
+      "seconds": 0.36623295000754297,
+      "notes": "Clarabel status: DualInfeasible"
+    }
+  ]
+}
