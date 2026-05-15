@@ -1,5 +1,6 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
 
@@ -64,6 +65,92 @@ static int fill_double_array(PyObject *source, Py_ssize_t expected, double *targ
     }
     Py_DECREF(seq);
     return 0;
+}
+
+static double max_abs(double a, double b) {
+    return fabs(a) > fabs(b) ? fabs(a) : fabs(b);
+}
+
+static void csr_scaled_matvec(CSRMatrixObject *self, const double *x, const double *row_scale, double *out) {
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        double total = 0.0;
+        for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
+            total += self->data[offset] * x[self->indices[offset]];
+        }
+        out[row] = total * row_scale[row];
+    }
+}
+
+static void csr_scaled_transpose_matvec(CSRMatrixObject *self, const double *y, const double *row_scale, double *out) {
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        out[col] = 0.0;
+    }
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        double scaled_y = y[row] * row_scale[row];
+        for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
+            out[self->indices[offset]] += self->data[offset] * scaled_y;
+        }
+    }
+}
+
+static double l2_norm(const double *values, Py_ssize_t count) {
+    double total = 0.0;
+    for (Py_ssize_t i = 0; i < count; i++) {
+        total += values[i] * values[i];
+    }
+    return sqrt(total);
+}
+
+static double estimate_scaled_operator_norm(CSRMatrixObject *self, const double *row_scale) {
+    double *x = calloc((size_t)self->cols, sizeof(double));
+    double *y = calloc((size_t)self->rows, sizeof(double));
+    double *z = calloc((size_t)self->cols, sizeof(double));
+    if (x == NULL || y == NULL || z == NULL) {
+        free(x);
+        free(y);
+        free(z);
+        return -1.0;
+    }
+    double initial = self->cols > 0 ? 1.0 / sqrt((double)self->cols) : 0.0;
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        x[col] = initial;
+    }
+    double norm = 1.0;
+    for (int iter = 0; iter < 30; iter++) {
+        csr_scaled_matvec(self, x, row_scale, y);
+        double ynorm = l2_norm(y, self->rows);
+        if (ynorm <= 0.0) {
+            break;
+        }
+        for (Py_ssize_t row = 0; row < self->rows; row++) {
+            y[row] /= ynorm;
+        }
+        csr_scaled_transpose_matvec(self, y, row_scale, z);
+        double znorm = l2_norm(z, self->cols);
+        if (znorm <= 0.0) {
+            break;
+        }
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            x[col] = z[col] / znorm;
+        }
+        norm = ynorm;
+    }
+    csr_scaled_matvec(self, x, row_scale, y);
+    norm = l2_norm(y, self->rows);
+    free(x);
+    free(y);
+    free(z);
+    return norm > 0.0 ? norm : 1.0;
+}
+
+static double projected_value(double value, double lower, double upper) {
+    if (isfinite(lower) && value < lower) {
+        return lower;
+    }
+    if (isfinite(upper) && value > upper) {
+        return upper;
+    }
+    return value;
 }
 
 static PyObject *CSRMatrix_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
@@ -304,6 +391,278 @@ static PyObject *CSRMatrix_to_dense(CSRMatrixObject *self, PyObject *Py_UNUSED(i
     return rows;
 }
 
+static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *args, PyObject *kwds) {
+    PyObject *c_obj;
+    PyObject *b_obj;
+    PyObject *lo_obj;
+    PyObject *hi_obj;
+    Py_ssize_t max_iter = 20000;
+    Py_ssize_t check_interval = 500;
+    double tol = 1e-6;
+    double objective_scale = 0.0;
+    static char *kwlist[] = {
+        "c", "b", "lo", "hi", "max_iter", "tol", "check_interval", "objective_scale", NULL
+    };
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args,
+            kwds,
+            "OOOO|ndnd",
+            kwlist,
+            &c_obj,
+            &b_obj,
+            &lo_obj,
+            &hi_obj,
+            &max_iter,
+            &tol,
+            &check_interval,
+            &objective_scale)) {
+        return NULL;
+    }
+    if (max_iter < 0 || check_interval <= 0) {
+        PyErr_SetString(PyExc_ValueError, "max_iter must be nonnegative and check_interval positive");
+        return NULL;
+    }
+
+    double *c = calloc((size_t)self->cols, sizeof(double));
+    double *b = calloc((size_t)self->rows, sizeof(double));
+    double *lo = calloc((size_t)self->cols, sizeof(double));
+    double *hi = calloc((size_t)self->cols, sizeof(double));
+    double *row_scale = calloc((size_t)self->rows, sizeof(double));
+    double *scaled_b = calloc((size_t)self->rows, sizeof(double));
+    double *x = calloc((size_t)self->cols, sizeof(double));
+    double *x_next = calloc((size_t)self->cols, sizeof(double));
+    double *xbar = calloc((size_t)self->cols, sizeof(double));
+    double *y = calloc((size_t)self->rows, sizeof(double));
+    double *ax = calloc((size_t)self->rows, sizeof(double));
+    double *aty = calloc((size_t)self->cols, sizeof(double));
+    if (c == NULL || b == NULL || lo == NULL || hi == NULL || row_scale == NULL || scaled_b == NULL ||
+        x == NULL || x_next == NULL || xbar == NULL || y == NULL || ax == NULL || aty == NULL) {
+        free(c);
+        free(b);
+        free(lo);
+        free(hi);
+        free(row_scale);
+        free(scaled_b);
+        free(x);
+        free(x_next);
+        free(xbar);
+        free(y);
+        free(ax);
+        free(aty);
+        PyErr_NoMemory();
+        return NULL;
+    }
+    if (fill_double_array(c_obj, self->cols, c, "c") != 0 ||
+        fill_double_array(b_obj, self->rows, b, "b") != 0 ||
+        fill_double_array(lo_obj, self->cols, lo, "lo") != 0 ||
+        fill_double_array(hi_obj, self->cols, hi, "hi") != 0) {
+        free(c);
+        free(b);
+        free(lo);
+        free(hi);
+        free(row_scale);
+        free(scaled_b);
+        free(x);
+        free(x_next);
+        free(xbar);
+        free(y);
+        free(ax);
+        free(aty);
+        return NULL;
+    }
+
+    double c_scale = objective_scale > 0.0 ? objective_scale : 1.0;
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        if (objective_scale <= 0.0) {
+            c_scale = max_abs(c_scale, c[col]);
+        }
+        if (isfinite(lo[col]) && isfinite(hi[col]) && hi[col] < lo[col]) {
+            free(c);
+            free(b);
+            free(lo);
+            free(hi);
+            free(row_scale);
+            free(scaled_b);
+            free(x);
+            free(x_next);
+            free(xbar);
+            free(y);
+            free(ax);
+            free(aty);
+            PyErr_SetString(PyExc_ValueError, "upper bound is lower than lower bound");
+            return NULL;
+        }
+    }
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        double row_norm_sq = 0.0;
+        for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
+            row_norm_sq += self->data[offset] * self->data[offset];
+        }
+        double row_norm = sqrt(row_norm_sq);
+        row_scale[row] = row_norm > 0.0 ? 1.0 / row_norm : 1.0;
+        scaled_b[row] = row_scale[row] * b[row];
+    }
+
+    double norm = estimate_scaled_operator_norm(self, row_scale);
+    if (norm < 0.0) {
+        free(c);
+        free(b);
+        free(lo);
+        free(hi);
+        free(row_scale);
+        free(scaled_b);
+        free(x);
+        free(x_next);
+        free(xbar);
+        free(y);
+        free(ax);
+        free(aty);
+        PyErr_NoMemory();
+        return NULL;
+    }
+    double tau = 0.99 / norm;
+    double sigma = 0.99 / norm;
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        double start = 0.0;
+        if (isfinite(lo[col]) && start < lo[col]) {
+            start = lo[col];
+        }
+        if (isfinite(hi[col]) && start > hi[col]) {
+            start = hi[col];
+        }
+        if (isfinite(lo[col]) && isfinite(hi[col]) && lo[col] <= hi[col]) {
+            start = 0.5 * (lo[col] + hi[col]);
+        }
+        x[col] = start;
+        xbar[col] = start;
+    }
+
+    double objective = 0.0;
+    double max_residual = INFINITY;
+    double l2_residual = INFINITY;
+    Py_ssize_t iterations = 0;
+    const char *status = "iteration_limit";
+
+    Py_BEGIN_ALLOW_THREADS
+    for (Py_ssize_t iter = 1; iter <= max_iter; iter++) {
+        csr_scaled_matvec(self, xbar, row_scale, ax);
+        for (Py_ssize_t row = 0; row < self->rows; row++) {
+            y[row] += sigma * (ax[row] - scaled_b[row]);
+        }
+        csr_scaled_transpose_matvec(self, y, row_scale, aty);
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            double updated = x[col] - tau * (aty[col] + c[col] / c_scale);
+            x_next[col] = projected_value(updated, lo[col], hi[col]);
+        }
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            xbar[col] = 2.0 * x_next[col] - x[col];
+            x[col] = x_next[col];
+        }
+        iterations = iter;
+        if (iter % check_interval == 0 || iter == max_iter) {
+            objective = 0.0;
+            for (Py_ssize_t col = 0; col < self->cols; col++) {
+                objective += c[col] * x[col];
+            }
+            max_residual = 0.0;
+            l2_residual = 0.0;
+            for (Py_ssize_t row = 0; row < self->rows; row++) {
+                double total = 0.0;
+                for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
+                    total += self->data[offset] * x[self->indices[offset]];
+                }
+                double residual = fabs(total - b[row]);
+                max_residual = residual > max_residual ? residual : max_residual;
+                l2_residual += residual * residual;
+            }
+            l2_residual = sqrt(l2_residual);
+            if (max_residual <= tol) {
+                status = "optimal";
+                break;
+            }
+        }
+    }
+    Py_END_ALLOW_THREADS
+
+    if (max_iter == 0) {
+        objective = 0.0;
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            objective += c[col] * x[col];
+        }
+    }
+
+    PyObject *x_list = PyList_New(self->cols);
+    if (x_list == NULL) {
+        free(c);
+        free(b);
+        free(lo);
+        free(hi);
+        free(row_scale);
+        free(scaled_b);
+        free(x);
+        free(x_next);
+        free(xbar);
+        free(y);
+        free(ax);
+        free(aty);
+        return NULL;
+    }
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        PyObject *boxed = PyFloat_FromDouble(x[col]);
+        if (boxed == NULL) {
+            Py_DECREF(x_list);
+            free(c);
+            free(b);
+            free(lo);
+            free(hi);
+            free(row_scale);
+            free(scaled_b);
+            free(x);
+            free(x_next);
+            free(xbar);
+            free(y);
+            free(ax);
+            free(aty);
+            return NULL;
+        }
+        PyList_SET_ITEM(x_list, col, boxed);
+    }
+
+    PyObject *result = Py_BuildValue(
+        "{s:s,s:d,s:d,s:d,s:n,s:d,s:d,s:N}",
+        "status",
+        status,
+        "objective",
+        objective,
+        "max_primal_residual",
+        max_residual,
+        "l2_primal_residual",
+        l2_residual,
+        "iterations",
+        iterations,
+        "operator_norm",
+        norm,
+        "step_size",
+        tau,
+        "x",
+        x_list);
+
+    free(c);
+    free(b);
+    free(lo);
+    free(hi);
+    free(row_scale);
+    free(scaled_b);
+    free(x);
+    free(x_next);
+    free(xbar);
+    free(y);
+    free(ax);
+    free(aty);
+    return result;
+}
+
 static PyGetSetDef CSRMatrix_getset[] = {
     {"shape", (getter)CSRMatrix_shape, NULL, "matrix shape", NULL},
     {"nnz", (getter)CSRMatrix_nnz, NULL, "number of stored nonzeros", NULL},
@@ -316,6 +675,7 @@ static PyMethodDef CSRMatrix_methods[] = {
     {"density", (PyCFunction)CSRMatrix_density, METH_NOARGS, "Return nnz / (rows * cols)."},
     {"to_components", (PyCFunction)CSRMatrix_to_components, METH_NOARGS, "Return indptr, indices, data."},
     {"to_dense", (PyCFunction)CSRMatrix_to_dense, METH_NOARGS, "Materialize as nested Python lists."},
+    {"solve_eq_box_pdhg", (PyCFunction)CSRMatrix_solve_eq_box_pdhg, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with native PDHG."},
     {NULL}
 };
 

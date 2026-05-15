@@ -212,7 +212,7 @@ On these tiny dense examples, `linprogx` is usually faster than SciPy/HiGHS beca
 There are two larger benchmark paths:
 
 - A dense generated LP that `linprogx`, SciPy/HiGHS, and Clarabel all solve.
-- Netlib `DFL001`, a much larger sparse online LP that now runs through `linprogx`'s dependency-free C CSR sparse frontend and native sparse simplex attempt.
+- Netlib `DFL001`, a much larger sparse online LP that now runs through `linprogx`'s dependency-free C CSR sparse frontend and native sparse PDHG solver.
 
 ### Dense 160x320 Benchmark
 
@@ -253,15 +253,17 @@ Run the large benchmark:
 just large-bench
 ```
 
-This path uses a C-backed compressed sparse row matrix type in `linprogx._csparse` and a dependency-free sparse two-phase simplex implementation in `linprogx.sparse`. The native sparse simplex is intentionally early-stage: it works on small sparse LPs in the test suite, but DFL001 is still beyond the current pivot strategy and hits the configured phase-I iteration budget. SciPy/HiGHS remains in the table only as an external comparison baseline.
+This path uses a C-backed compressed sparse row matrix type in `linprogx._csparse` and a dependency-free sparse primal-dual hybrid gradient path for equality-plus-bounds LPs. The older sparse simplex path remains available for small exact sparse LPs; DFL001 uses the C-native PDHG path because the Python sparse tableau pivot loop is not competitive at Netlib scale. SciPy/HiGHS remains in the table only as an external comparison baseline.
 
 Current local result:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx-sparse | iteration_limit | n/a | n/a | 4.114s | C CSR matrix with native-sparse-simplex; one phase-I iteration budget |
-| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.338s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | reported_dual_infeasible | n/a | n/a | 0.343s | Clarabel status: DualInfeasible |
+| linprogx-sparse | optimal | 11266396.413545 | 3.665e-01 | 34.359s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG, objective_scale=5e4; native sparse PDHG converged; max equality residual 1.911e-05 |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.419s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | reported_dual_infeasible | n/a | n/a | 0.340s | Clarabel status: DualInfeasible |
+
+On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `3.3e-8` relative error with a max equality residual below the configured `2e-5` tolerance. HiGHS is still about 5x faster and more accurate, which is the right expectation for a mature production LP solver.
 
 ![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
 
