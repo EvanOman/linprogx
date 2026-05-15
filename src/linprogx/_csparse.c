@@ -67,8 +67,44 @@ static int fill_double_array(PyObject *source, Py_ssize_t expected, double *targ
     return 0;
 }
 
-static double max_abs(double a, double b) {
-    return fabs(a) > fabs(b) ? fabs(a) : fabs(b);
+static int compare_doubles(const void *left, const void *right) {
+    double a = *(const double *)left;
+    double b = *(const double *)right;
+    return (a > b) - (a < b);
+}
+
+static double median_nonzero_abs(const double *values, Py_ssize_t count) {
+    double *nonzero = calloc((size_t)count, sizeof(double));
+    if (nonzero == NULL) {
+        return -1.0;
+    }
+    Py_ssize_t kept = 0;
+    for (Py_ssize_t i = 0; i < count; i++) {
+        double value = fabs(values[i]);
+        if (value > 0.0 && isfinite(value)) {
+            nonzero[kept] = value;
+            kept++;
+        }
+    }
+    if (kept == 0) {
+        free(nonzero);
+        return 1.0;
+    }
+    qsort(nonzero, (size_t)kept, sizeof(double), compare_doubles);
+    double median;
+    Py_ssize_t midpoint = kept / 2;
+    if (kept % 2 == 0) {
+        median = 0.5 * (nonzero[midpoint - 1] + nonzero[midpoint]);
+    } else {
+        median = nonzero[midpoint];
+    }
+    free(nonzero);
+    if (median <= 0.0) {
+        return 1.0;
+    }
+    double magnitude = pow(10.0, floor(log10(median)));
+    double rounded = round(median / magnitude) * magnitude;
+    return rounded > 0.0 ? rounded : median;
 }
 
 static void csr_scaled_matvec(CSRMatrixObject *self, const double *x, const double *row_scale, double *out) {
@@ -472,11 +508,24 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         return NULL;
     }
 
-    double c_scale = objective_scale > 0.0 ? objective_scale : 1.0;
+    double c_scale = objective_scale > 0.0 ? objective_scale : median_nonzero_abs(c, self->cols);
+    if (c_scale < 0.0) {
+        free(c);
+        free(b);
+        free(lo);
+        free(hi);
+        free(row_scale);
+        free(scaled_b);
+        free(x);
+        free(x_next);
+        free(xbar);
+        free(y);
+        free(ax);
+        free(aty);
+        PyErr_NoMemory();
+        return NULL;
+    }
     for (Py_ssize_t col = 0; col < self->cols; col++) {
-        if (objective_scale <= 0.0) {
-            c_scale = max_abs(c_scale, c[col]);
-        }
         if (isfinite(lo[col]) && isfinite(hi[col]) && hi[col] < lo[col]) {
             free(c);
             free(b);
@@ -630,7 +679,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     }
 
     PyObject *result = Py_BuildValue(
-        "{s:s,s:d,s:d,s:d,s:n,s:d,s:d,s:N}",
+        "{s:s,s:d,s:d,s:d,s:n,s:d,s:d,s:d,s:N}",
         "status",
         status,
         "objective",
@@ -645,6 +694,8 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         norm,
         "step_size",
         tau,
+        "objective_scale",
+        c_scale,
         "x",
         x_list);
 

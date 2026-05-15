@@ -133,11 +133,16 @@ class SparseSolver:
         )
         status = Status.OPTIMAL if result["status"] == "optimal" else Status.ITERATION_LIMIT
         residual = float(result["max_primal_residual"])
+        objective_scale = float(result["objective_scale"])
         message = (
-            f"native sparse PDHG converged; max equality residual {residual:.3e}"
+            (
+                "native sparse PDHG converged; "
+                f"max equality residual {residual:.3e}; objective scale {objective_scale:.3g}"
+            )
             if status == Status.OPTIMAL
             else (
-                f"native sparse PDHG hit the iteration limit; max equality residual {residual:.3e}"
+                "native sparse PDHG hit the iteration limit; "
+                f"max equality residual {residual:.3e}; objective scale {objective_scale:.3g}"
             )
         )
         return Solution(
