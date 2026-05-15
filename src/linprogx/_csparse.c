@@ -472,8 +472,10 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     double *y = calloc((size_t)self->rows, sizeof(double));
     double *ax = calloc((size_t)self->rows, sizeof(double));
     double *aty = calloc((size_t)self->cols, sizeof(double));
+    double *scaled_c = calloc((size_t)self->cols, sizeof(double));
     if (c == NULL || b == NULL || lo == NULL || hi == NULL || row_scale == NULL || scaled_b == NULL ||
-        x == NULL || x_next == NULL || xbar == NULL || y == NULL || ax == NULL || aty == NULL) {
+        x == NULL || x_next == NULL || xbar == NULL || y == NULL || ax == NULL || aty == NULL ||
+        scaled_c == NULL) {
         free(c);
         free(b);
         free(lo);
@@ -486,6 +488,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         free(y);
         free(ax);
         free(aty);
+        free(scaled_c);
         PyErr_NoMemory();
         return NULL;
     }
@@ -505,6 +508,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         free(y);
         free(ax);
         free(aty);
+        free(scaled_c);
         return NULL;
     }
 
@@ -522,10 +526,12 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         free(y);
         free(ax);
         free(aty);
+        free(scaled_c);
         PyErr_NoMemory();
         return NULL;
     }
     for (Py_ssize_t col = 0; col < self->cols; col++) {
+        scaled_c[col] = c[col] / c_scale;
         if (isfinite(lo[col]) && isfinite(hi[col]) && hi[col] < lo[col]) {
             free(c);
             free(b);
@@ -539,6 +545,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             free(y);
             free(ax);
             free(aty);
+            free(scaled_c);
             PyErr_SetString(PyExc_ValueError, "upper bound is lower than lower bound");
             return NULL;
         }
@@ -567,6 +574,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         free(y);
         free(ax);
         free(aty);
+        free(scaled_c);
         PyErr_NoMemory();
         return NULL;
     }
@@ -601,7 +609,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         }
         csr_scaled_transpose_matvec(self, y, row_scale, aty);
         for (Py_ssize_t col = 0; col < self->cols; col++) {
-            double updated = x[col] - tau * (aty[col] + c[col] / c_scale);
+            double updated = x[col] - tau * (aty[col] + scaled_c[col]);
             x_next[col] = projected_value(updated, lo[col], hi[col]);
         }
         for (Py_ssize_t col = 0; col < self->cols; col++) {
@@ -610,10 +618,6 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         }
         iterations = iter;
         if (iter % check_interval == 0 || iter == max_iter) {
-            objective = 0.0;
-            for (Py_ssize_t col = 0; col < self->cols; col++) {
-                objective += c[col] * x[col];
-            }
             max_residual = 0.0;
             l2_residual = 0.0;
             for (Py_ssize_t row = 0; row < self->rows; row++) {
@@ -634,11 +638,9 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     }
     Py_END_ALLOW_THREADS
 
-    if (max_iter == 0) {
-        objective = 0.0;
-        for (Py_ssize_t col = 0; col < self->cols; col++) {
-            objective += c[col] * x[col];
-        }
+    objective = 0.0;
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        objective += c[col] * x[col];
     }
 
     PyObject *x_list = PyList_New(self->cols);
@@ -655,6 +657,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         free(y);
         free(ax);
         free(aty);
+        free(scaled_c);
         return NULL;
     }
     for (Py_ssize_t col = 0; col < self->cols; col++) {
@@ -673,6 +676,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             free(y);
             free(ax);
             free(aty);
+            free(scaled_c);
             return NULL;
         }
         PyList_SET_ITEM(x_list, col, boxed);
@@ -711,6 +715,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     free(y);
     free(ax);
     free(aty);
+    free(scaled_c);
     return result;
 }
 

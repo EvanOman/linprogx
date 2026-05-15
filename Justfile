@@ -33,6 +33,9 @@ large-bench:
 dense-bench:
     uv run python bench_dense.py
 
+sparse-fast-bench:
+    uv run python bench_sparse_fast.py
+
 fc: fmt lint-fix lint type test
 
 ci: lint format-check type test

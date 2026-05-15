@@ -128,7 +128,7 @@ class SparseSolver:
             hi,
             max_iter=self.max_iterations,
             tol=self.eps,
-            check_interval=self.check_interval or 500,
+            check_interval=self.check_interval or 250,
             objective_scale=0.0 if self.objective_scale is None else self.objective_scale,
         )
         status = Status.OPTIMAL if result["status"] == "optimal" else Status.ITERATION_LIMIT
