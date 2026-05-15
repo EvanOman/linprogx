@@ -302,8 +302,6 @@ User: Add a very, very large problem from an online source... update all of our 
 Assistant: added Netlib DFL001 from SuiteSparse, benchmarked SciPy/HiGHS and Clarabel, skipped linprogx by default for dense-tableau memory reasons, and recorded the result.
 User: find a large dense problem that can be solved by linprogx too, so sparse support does not hold up the comparison.
 Assistant: added a deterministic dense 160x320 benchmark that all three solvers solve and embedded the results in the README.
-User: set up a background process to poll the repository for comments or issues. Automatically respond or put up pull requests for anything that is identified. tag the issue opener
-Assistant: added a scheduled GitHub Actions workflow that polls issues/comments, tags the author, comments back, and opens tracking PRs with generated triage notes.
 ```
 
 Recorded creation time: 3 minutes 10 seconds from the initial solver commit (`15192d8`, 2026-05-14 16:37:05 CDT) to the standardized benchmark commit (`96a5a65`, 2026-05-14 16:40:15 CDT). That is measured from git history, so it excludes the uncommitted pre-history before the first commit.
@@ -319,18 +317,6 @@ just dense-bench
 just large-bench
 just fc
 ```
-
-## Repository Poll Bot
-
-`.github/workflows/issue-poll-bot.yml` runs every 30 minutes and can also be started manually from GitHub Actions. It scans open issues and issue comments, ignores bot-authored comments, and uses hidden markers to avoid duplicate responses.
-
-For each new issue or comment it detects, the workflow:
-
-- Tags the opener/comment author in an issue comment.
-- Applies `linprogx-bot-seen` and `automated-triage` labels.
-- Creates a branch and pull request containing a generated triage note under `triage/`.
-
-The bot is intentionally conservative: it opens a reviewable PR artifact rather than pushing arbitrary code changes directly.
 
 ## Architecture
 
@@ -349,8 +335,6 @@ tests/
   test_samples_compare.py   Sample problem checks against SciPy/HiGHS
 benchmark_data/
   netlib_dfl001/            Large public LP benchmark data and metadata
-scripts/
-  issue_poll_bot.py         Scheduled GitHub issue/comment polling bot
 ```
 
 ## License
