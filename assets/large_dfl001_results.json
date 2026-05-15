@@ -13,7 +13,7 @@
       "status": "optimal",
       "objective": 11266396.413545087,
       "objective_delta": 0.3665450867265463,
-      "seconds": 34.3588369039353,
+      "seconds": 33.61862688884139,
       "notes": "C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG, objective_scale=5e4; native sparse PDHG converged; max equality residual 1.911e-05"
     },
     {
@@ -21,16 +21,16 @@
       "status": "optimal",
       "objective": 11266396.04667138,
       "objective_delta": 0.00032862089574337006,
-      "seconds": 6.418967158999294,
+      "seconds": 6.197992756962776,
       "notes": "Optimization terminated successfully. (HiGHS Status 7: Optimal)"
     },
     {
       "solver": "Clarabel",
-      "status": "reported_dual_infeasible",
-      "objective": null,
-      "objective_delta": null,
-      "seconds": 0.3402399648912251,
-      "notes": "Clarabel status: DualInfeasible"
+      "status": "optimal",
+      "objective": 11266396.078089535,
+      "objective_delta": 0.031089534983038902,
+      "seconds": 7.365742323920131,
+      "notes": "Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11"
     }
   ]
 }

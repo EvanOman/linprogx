@@ -210,22 +210,34 @@ def _run_clarabel(problem_data: dict[str, Any]) -> LargeBenchRow:
     A = sparse.vstack(rows, format="csc")
     b = np.concatenate(rhs)
     P = sparse.csc_matrix((len(c), len(c)))
+    objective_scale = 100.0
     settings: Any = clarabel_api["DefaultSettings"]()
     settings.verbose = False
-    settings.max_iter = 1000
+    settings.max_iter = 2000
+    settings.tol_gap_abs = 1e-10
+    settings.tol_gap_rel = 1e-10
+    settings.tol_feas = 1e-10
 
     start = time.perf_counter()
-    result: Any = clarabel_api["DefaultSolver"](P, c, A, b, cones, settings).solve()
+    result: Any = clarabel_api["DefaultSolver"](
+        P, c / objective_scale, A, b, cones, settings
+    ).solve()
     seconds = time.perf_counter() - start
     status = str(result.status)
-    objective = float(result.obj_val) if status in {"Solved", "AlmostSolved"} else None
+    objective = None
+    notes = f"Clarabel status: {status}; objective_scale={objective_scale:g}"
+    if status in {"Solved", "AlmostSolved"}:
+        x = np.array(result.x, dtype=float)
+        objective = float(c @ x)
+        max_eq_residual = float(np.max(np.abs(problem_data["A_scipy"] @ x - problem_data["b"])))
+        notes = f"{notes}; max equality residual {max_eq_residual:.3e}"
     return LargeBenchRow(
         solver="Clarabel",
         status=_clarabel_status(status),
         objective=objective,
         objective_delta=None if objective is None else abs(objective - EXPECTED_DFL001_OBJECTIVE),
         seconds=seconds,
-        notes=f"Clarabel status: {status}",
+        notes=notes,
     )
 
 

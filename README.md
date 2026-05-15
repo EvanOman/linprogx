@@ -253,17 +253,17 @@ Run the large benchmark:
 just large-bench
 ```
 
-This path uses a C-backed compressed sparse row matrix type in `linprogx._csparse` and a dependency-free sparse primal-dual hybrid gradient path for equality-plus-bounds LPs. The older sparse simplex path remains available for small exact sparse LPs; DFL001 uses the C-native PDHG path because the Python sparse tableau pivot loop is not competitive at Netlib scale. SciPy/HiGHS remains in the table only as an external comparison baseline.
+This path uses a C-backed compressed sparse row matrix type in `linprogx._csparse` and a dependency-free sparse primal-dual hybrid gradient path for equality-plus-bounds LPs. The older sparse simplex path remains available for small exact sparse LPs; DFL001 uses the C-native PDHG path because the Python sparse tableau pivot loop is not competitive at Netlib scale. SciPy/HiGHS and Clarabel remain in the table as external comparison baselines.
 
 Current local result:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx-sparse | optimal | 11266396.413545 | 3.665e-01 | 34.359s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG, objective_scale=5e4; native sparse PDHG converged; max equality residual 1.911e-05 |
-| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.419s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | reported_dual_infeasible | n/a | n/a | 0.340s | Clarabel status: DualInfeasible |
+| linprogx-sparse | optimal | 11266396.413545 | 3.665e-01 | 33.619s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG, objective_scale=5e4; native sparse PDHG converged; max equality residual 1.911e-05 |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.198s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 7.366s | Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11 |
 
-On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `3.3e-8` relative error with a max equality residual below the configured `2e-5` tolerance. HiGHS is still about 5x faster and more accurate, which is the right expectation for a mature production LP solver.
+On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `3.3e-8` relative error with a max equality residual below the configured `2e-5` tolerance. HiGHS and Clarabel both solve the same feasible model more accurately; HiGHS is also about 5x faster than `linprogx-sparse`, which is the right expectation for a mature production LP solver.
 
 ![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
 
@@ -333,8 +333,6 @@ User: Add a very, very large problem from an online source... update all of our 
 Assistant: added Netlib DFL001 from SuiteSparse, benchmarked SciPy/HiGHS and Clarabel, skipped linprogx by default for dense-tableau memory reasons, and recorded the result.
 User: find a large dense problem that can be solved by linprogx too, so sparse support does not hold up the comparison.
 Assistant: added a deterministic dense 160x320 benchmark that all three solvers solve and embedded the results in the README.
-User: set up a background process to poll the repository for comments or issues. Automatically respond or put up pull requests for anything that is identified. tag the issue opener
-Assistant: added a scheduled GitHub Actions workflow that polls issues/comments, tags the author, comments back, and opens tracking PRs with generated triage notes.
 User: create a PR that adds sparse support, with dependency-free sparse support as the most important requirement.
 Assistant: added a C CSR matrix type and native dependency-free sparse simplex path, then updated DFL001 to run the native sparse attempt and compare against external baselines.
 ```
@@ -352,18 +350,6 @@ just dense-bench
 just large-bench
 just fc
 ```
-
-## Repository Poll Bot
-
-`.github/workflows/issue-poll-bot.yml` runs every 30 minutes and can also be started manually from GitHub Actions. It scans open issues and issue comments, ignores bot-authored comments, and uses hidden markers to avoid duplicate responses.
-
-For each new issue or comment it detects, the workflow:
-
-- Tags the opener/comment author in an issue comment.
-- Applies `linprogx-bot-seen` and `automated-triage` labels.
-- Creates a branch and pull request containing a generated triage note under `triage/`.
-
-The bot is intentionally conservative: it opens a reviewable PR artifact rather than pushing arbitrary code changes directly.
 
 ## Architecture
 
@@ -385,8 +371,6 @@ tests/
   test_sparse.py            Sparse matrix and sparse LP coverage
 benchmark_data/
   netlib_dfl001/            Large public LP benchmark data and metadata
-scripts/
-  issue_poll_bot.py         Scheduled GitHub issue/comment polling bot
 ```
 
 ## License
