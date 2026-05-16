@@ -11,17 +11,17 @@
     {
       "solver": "linprogx-sparse",
       "status": "optimal",
-      "objective": 11266396.050737783,
-      "objective_delta": 0.003737783059477806,
-      "seconds": 53.70114445593208,
-      "notes": "C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG converged; max equality residual 1.131e-05; objective scale 5e+03"
+      "objective": 11266396.071554461,
+      "objective_delta": 0.024554461240768433,
+      "seconds": 24.041704052127898,
+      "notes": "C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG converged; max equality residual 1.577e-05; objective scale 1.5e+04"
     },
     {
       "solver": "SciPy/HiGHS",
       "status": "optimal",
       "objective": 11266396.04667138,
       "objective_delta": 0.00032862089574337006,
-      "seconds": 6.753365162061527,
+      "seconds": 6.453246262855828,
       "notes": "Optimization terminated successfully. (HiGHS Status 7: Optimal)"
     },
     {
@@ -29,7 +29,7 @@
       "status": "optimal",
       "objective": 11266396.078089535,
       "objective_delta": 0.031089534983038902,
-      "seconds": 10.180419674841687,
+      "seconds": 8.362640790874138,
       "notes": "Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11"
     }
   ]

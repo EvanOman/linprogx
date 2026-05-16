@@ -259,11 +259,11 @@ Current local result:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx-sparse | optimal | 11266396.050738 | 3.738e-03 | 53.701s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG converged; max equality residual 1.131e-05; objective scale 5e+03 |
-| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.753s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 10.180s | Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11 |
+| linprogx-sparse | optimal | 11266396.071554 | 2.455e-02 | 24.042s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG converged; max equality residual 1.577e-05; objective scale 1.5e+04 |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.453s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 8.363s | Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11 |
 
-On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `3.3e-10` relative error with a max equality residual below the configured `2e-5` tolerance. The auto objective scaling improves objective error by roughly 98x compared with the earlier `5e4` scale, at the cost of a longer 300k-iteration run. HiGHS remains faster and tighter overall, which is the right expectation for a mature production LP solver.
+On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `2.2e-09` relative error with a max equality residual below the configured `2e-5` tolerance. The tuned DFL001 run uses a larger objective scale and checks convergence every 10k iterations, cutting native sparse runtime by more than half compared with the earlier 300k-iteration run. HiGHS remains faster and tighter overall, which is the right expectation for a mature production LP solver.
 
 ![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
 
