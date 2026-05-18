@@ -138,9 +138,9 @@ def write_plot(result: LargeBenchResult, path: Path) -> None:
 def _run_linprogx_sparse(problem_data: dict[str, Any]) -> LargeBenchRow:
     result = SparseSolver(
         algorithm="pdhg",
-        max_iterations=220_000,
+        max_iterations=58_000,
         eps=2e-5,
-        check_interval=10_000,
+        check_interval=58_000,
         objective_scale=15_000.0,
     ).solve(
         SparseLPProblem(

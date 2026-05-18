@@ -260,11 +260,11 @@ Current local result:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx-sparse | optimal | 11266396.071554 | 2.455e-02 | 24.042s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG converged; max equality residual 1.577e-05; objective scale 1.5e+04 |
-| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.453s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 8.363s | Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11 |
+| linprogx-sparse | optimal | 11266398.367904 | 2.321e+00 | 9.467s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG converged; max equality residual 1.867e-05; objective scale 1.5e+04 |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 5.939s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 6.879s | Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11 |
 
-On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `2.2e-09` relative error with a max equality residual below the configured `2e-5` tolerance. The tuned DFL001 run uses a larger objective scale and checks convergence every 10k iterations, cutting native sparse runtime by more than half compared with the earlier 300k-iteration run. HiGHS remains faster and tighter overall, which is the right expectation for a mature production LP solver.
+On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `2.1e-07` relative error with a max equality residual below the configured `2e-5` tolerance. The tuned DFL001 run uses an active-set CGLS feasibility cleanup after PDHG and a lower 58k-iteration budget, cutting native sparse runtime by more than half compared with the previous 220k-iteration run. HiGHS and Clarabel remain faster and tighter overall, which is the right expectation for mature production LP solvers.
 
 ![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
 
@@ -289,9 +289,9 @@ Current local result:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx-sparse | iteration_limit | -4.574252 | 6.521e-01 | 2.205s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG hit the iteration limit; max equality residual 5.484e+00; objective scale 0.06 |
-| SciPy/HiGHS | optimal | -5.226393 | 5.898e-12 | 0.185s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | optimal | -5.226393 | 8.174e-10 | 0.345s | Clarabel status: Solved; max equality residual 7.276e-12 |
+| linprogx-sparse | iteration_limit | -4.574261 | 6.521e-01 | 3.592s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG hit the iteration limit; max equality residual 5.469e+00; objective scale 0.06 |
+| SciPy/HiGHS | optimal | -5.226393 | 5.898e-12 | 0.309s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | -5.226393 | 8.174e-10 | 0.361s | Clarabel status: Solved; max equality residual 7.276e-12 |
 
 This result is intentionally not flattering: it shows the current sparse PDHG tuning is still DFL001-specific enough to fail on a different Netlib LP shape. Future sparse optimization work should improve DFL001 without regressing this guardrail.
 

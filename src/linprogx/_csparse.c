@@ -142,6 +142,198 @@ static double l2_norm(const double *values, Py_ssize_t count) {
     return sqrt(total);
 }
 
+static double dot_product(const double *left, const double *right, Py_ssize_t count) {
+    double total = 0.0;
+    for (Py_ssize_t i = 0; i < count; i++) {
+        total += left[i] * right[i];
+    }
+    return total;
+}
+
+static void csr_residual(CSRMatrixObject *self, const double *x, const double *b, double *residual, double *max_residual, double *l2_residual) {
+    double max_value = 0.0;
+    double l2_value = 0.0;
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        double total = 0.0;
+        for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
+            total += self->data[offset] * x[self->indices[offset]];
+        }
+        double value = b[row] - total;
+        double abs_value = fabs(value);
+        residual[row] = value;
+        max_value = abs_value > max_value ? abs_value : max_value;
+        l2_value += value * value;
+    }
+    *max_residual = max_value;
+    *l2_residual = sqrt(l2_value);
+}
+
+static void csr_restricted_matvec(CSRMatrixObject *self, const double *x, const unsigned char *free_col, double *out) {
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        double total = 0.0;
+        for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
+            Py_ssize_t col = self->indices[offset];
+            if (free_col[col]) {
+                total += self->data[offset] * x[col];
+            }
+        }
+        out[row] = total;
+    }
+}
+
+static void csr_restricted_transpose_matvec(CSRMatrixObject *self, const double *y, const unsigned char *free_col, double *out) {
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        if (!free_col[col]) {
+            out[col] = 0.0;
+            continue;
+        }
+        double total = 0.0;
+        for (Py_ssize_t offset = self->csc_indptr[col]; offset < self->csc_indptr[col + 1]; offset++) {
+            total += self->csc_data[offset] * y[self->csc_rows[offset]];
+        }
+        out[col] = total;
+    }
+}
+
+static void active_set_cgls_cleanup(
+    CSRMatrixObject *self,
+    double *x,
+    const double *b,
+    const double *lo,
+    const double *hi,
+    const unsigned char *bound_kind,
+    double tol,
+    double *max_residual,
+    double *l2_residual) {
+    const double margin = 1e-3;
+    const int max_passes = 1;
+    const int max_iter = 1000;
+    double *residual = calloc((size_t)self->rows, sizeof(double));
+    double *q = calloc((size_t)self->rows, sizeof(double));
+    double *s = calloc((size_t)self->cols, sizeof(double));
+    double *p = calloc((size_t)self->cols, sizeof(double));
+    double *correction = calloc((size_t)self->cols, sizeof(double));
+    unsigned char *free_col = calloc((size_t)self->cols, sizeof(unsigned char));
+    if (residual == NULL || q == NULL || s == NULL || p == NULL || correction == NULL || free_col == NULL) {
+        free(residual);
+        free(q);
+        free(s);
+        free(p);
+        free(correction);
+        free(free_col);
+        return;
+    }
+
+    for (int pass = 0; pass < max_passes; pass++) {
+        csr_residual(self, x, b, residual, max_residual, l2_residual);
+        if (*max_residual <= tol) {
+            break;
+        }
+
+        Py_ssize_t free_count = 0;
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            int is_free = 1;
+            if ((bound_kind[col] & 1) && x[col] <= lo[col] + margin) {
+                is_free = 0;
+            }
+            if ((bound_kind[col] & 2) && x[col] >= hi[col] - margin) {
+                is_free = 0;
+            }
+            free_col[col] = (unsigned char)is_free;
+            free_count += is_free;
+            correction[col] = 0.0;
+        }
+        if (free_count == 0) {
+            break;
+        }
+
+        csr_restricted_transpose_matvec(self, residual, free_col, s);
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            p[col] = s[col];
+        }
+        double gamma = dot_product(s, s, self->cols);
+        if (gamma <= 1e-30) {
+            break;
+        }
+
+        for (int iter = 0; iter < max_iter; iter++) {
+            csr_restricted_matvec(self, p, free_col, q);
+            double denom = dot_product(q, q, self->rows);
+            if (denom <= 1e-30) {
+                break;
+            }
+            double alpha = gamma / denom;
+            for (Py_ssize_t col = 0; col < self->cols; col++) {
+                if (free_col[col]) {
+                    correction[col] += alpha * p[col];
+                }
+            }
+            for (Py_ssize_t row = 0; row < self->rows; row++) {
+                residual[row] -= alpha * q[row];
+            }
+            csr_restricted_transpose_matvec(self, residual, free_col, s);
+            double next_gamma = dot_product(s, s, self->cols);
+            if (sqrt(next_gamma) <= tol) {
+                break;
+            }
+            double beta = next_gamma / gamma;
+            for (Py_ssize_t col = 0; col < self->cols; col++) {
+                if (free_col[col]) {
+                    p[col] = s[col] + beta * p[col];
+                }
+            }
+            gamma = next_gamma;
+        }
+
+        double step = 1.0;
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            if (!free_col[col]) {
+                continue;
+            }
+            double change = correction[col];
+            if ((bound_kind[col] & 1) && change < 0.0) {
+                double candidate = (lo[col] - x[col]) / change;
+                if (candidate < step) {
+                    step = candidate;
+                }
+            }
+            if ((bound_kind[col] & 2) && change > 0.0) {
+                double candidate = (hi[col] - x[col]) / change;
+                if (candidate < step) {
+                    step = candidate;
+                }
+            }
+        }
+        if (step < 1.0) {
+            step *= 0.99;
+        }
+        if (step <= 0.0 || !isfinite(step)) {
+            break;
+        }
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            if (!free_col[col]) {
+                continue;
+            }
+            double updated = x[col] + step * correction[col];
+            if ((bound_kind[col] & 1) && updated < lo[col]) {
+                updated = lo[col];
+            }
+            if ((bound_kind[col] & 2) && updated > hi[col]) {
+                updated = hi[col];
+            }
+            x[col] = updated;
+        }
+    }
+
+    csr_residual(self, x, b, residual, max_residual, l2_residual);
+    free(residual);
+    free(q);
+    free(s);
+    free(p);
+    free(correction);
+    free(free_col);
+}
+
 static double estimate_scaled_operator_norm(CSRMatrixObject *self, const double *row_scale) {
     double *x = calloc((size_t)self->cols, sizeof(double));
     double *y = calloc((size_t)self->rows, sizeof(double));
@@ -679,6 +871,15 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         }
     }
     Py_END_ALLOW_THREADS
+
+    if (max_residual > tol) {
+        Py_BEGIN_ALLOW_THREADS
+        active_set_cgls_cleanup(self, x, b, lo, hi, bound_kind, tol, &max_residual, &l2_residual);
+        Py_END_ALLOW_THREADS
+        if (max_residual <= tol) {
+            status = "optimal";
+        }
+    }
 
     objective = 0.0;
     for (Py_ssize_t col = 0; col < self->cols; col++) {
