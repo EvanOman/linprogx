@@ -213,6 +213,7 @@ There are two larger benchmark paths:
 
 - A dense generated LP that `linprogx`, SciPy/HiGHS, and Clarabel all solve.
 - Netlib `DFL001`, a much larger sparse online LP that now runs through `linprogx`'s dependency-free C CSR sparse frontend and native sparse PDHG solver.
+- Netlib `CYCLE`, a smaller but denser sparse LP that deliberately checks a different sparse shape than DFL001.
 
 ### Dense 160x320 Benchmark
 
@@ -266,6 +267,33 @@ Current local result:
 On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `2.2e-09` relative error with a max equality residual below the configured `2e-5` tolerance. The tuned DFL001 run uses a larger objective scale and checks convergence every 10k iterations, cutting native sparse runtime by more than half compared with the earlier 300k-iteration run. HiGHS remains faster and tighter overall, which is the right expectation for a mature production LP solver.
 
 ![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
+
+### Sparse Netlib CYCLE Guardrail
+
+The repo also includes Netlib `CYCLE`, loaded from the SuiteSparse Matrix Collection. It has 1,903 equality rows, 3,371 variables, and 21,234 sparse matrix nonzeros. It is smaller than DFL001 but much denser, numerically rank deficient, uses upper/free-variable bounds, has a negative optimum, and the source notes report about 47% degenerate MINOS steps.
+
+Source files:
+
+- Data: `benchmark_data/netlib_cycle/lp_cycle.mat`
+- Metadata: `benchmark_data/netlib_cycle/README.md`
+- Source URL: https://sparse.tamu.edu/mat/LPnetlib/lp_cycle.mat
+- Reference page: https://sparse.tamu.edu/LPnetlib/lp_cycle
+
+Run the guardrail benchmark:
+
+```bash
+just cycle-bench
+```
+
+Current local result:
+
+| Solver | Status | Objective | Delta vs published | Runtime | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| linprogx-sparse | iteration_limit | -4.574252 | 6.521e-01 | 2.205s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG hit the iteration limit; max equality residual 5.484e+00; objective scale 0.06 |
+| SciPy/HiGHS | optimal | -5.226393 | 5.898e-12 | 0.185s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | -5.226393 | 8.174e-10 | 0.345s | Clarabel status: Solved; max equality residual 7.276e-12 |
+
+This result is intentionally not flattering: it shows the current sparse PDHG tuning is still DFL001-specific enough to fail on a different Netlib LP shape. Future sparse optimization work should improve DFL001 without regressing this guardrail.
 
 Example local run on the included samples:
 

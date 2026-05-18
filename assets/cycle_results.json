@@ -1,0 +1,36 @@
+{
+  "problem": {
+    "name": "Netlib CYCLE",
+    "rows": 1903,
+    "cols": 3371,
+    "nonzeros": 21234,
+    "expected_objective": -5.2263930249,
+    "source_url": "https://sparse.tamu.edu/mat/LPnetlib/lp_cycle.mat"
+  },
+  "rows": [
+    {
+      "solver": "linprogx-sparse",
+      "status": "iteration_limit",
+      "objective": -4.574251806224198,
+      "objective_delta": 0.6521412186758022,
+      "seconds": 2.2054350620601326,
+      "notes": "C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG hit the iteration limit; max equality residual 5.484e+00; objective scale 0.06"
+    },
+    {
+      "solver": "SciPy/HiGHS",
+      "status": "optimal",
+      "objective": -5.226393024894102,
+      "objective_delta": 5.898392885228532e-12,
+      "seconds": 0.1849388729315251,
+      "notes": "Optimization terminated successfully. (HiGHS Status 7: Optimal)"
+    },
+    {
+      "solver": "Clarabel",
+      "status": "optimal",
+      "objective": -5.226393024082572,
+      "objective_delta": 8.174279031436527e-10,
+      "seconds": 0.3448173529468477,
+      "notes": "Clarabel status: Solved; max equality residual 7.276e-12"
+    }
+  ]
+}
