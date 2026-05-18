@@ -15,3 +15,5 @@ build/
 *.db
 *.sqlite
 .DS_Store
+rust/target/
+rust/Cargo.lock

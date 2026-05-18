@@ -4,6 +4,7 @@ from linprogx.sparse import (
     SparseLPProblem,
     SparseSolver,
     csr_matrix,
+    csr_matrix_rust,
     solve_sparse,
     solve_sparse_canonical,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "Solver",
     "Status",
     "csr_matrix",
+    "csr_matrix_rust",
     "solve",
     "solve_canonical",
     "solve_sparse",

@@ -10,6 +10,11 @@ try:
 except ImportError:  # pragma: no cover - source tree before extension build
     CSRMatrix = None  # type: ignore[assignment]
 
+try:
+    CSRMatrixRust = importlib.import_module("linprogx._rsparse").CSRMatrix
+except ImportError:  # pragma: no cover - source tree before extension build
+    CSRMatrixRust = None  # type: ignore[assignment]
+
 from linprogx.types import ObjectiveSense, Solution, Status
 
 SparseSense = Literal["<=", ">=", "="]
@@ -409,15 +414,30 @@ def csr_matrix(
     return CSRMatrix(rows, cols, indptr, indices, data)
 
 
-def from_scipy_sparse(matrix: Any) -> Any:
+def csr_matrix_rust(
+    rows: int,
+    cols: int,
+    indptr: list[int],
+    indices: list[int],
+    data: list[float],
+) -> Any:
+    """Experimental Rust-backed CSR matrix with the same API as :func:`csr_matrix`."""
+    if CSRMatrixRust is None:
+        msg = "linprogx._rsparse extension is not available"
+        raise RuntimeError(msg)
+    return CSRMatrixRust(rows, cols, indptr, indices, data)
+
+
+def from_scipy_sparse(matrix: Any, *, backend: Literal["c", "rust"] = "c") -> Any:
     csr = matrix.tocsr()
-    return csr_matrix(
-        int(csr.shape[0]),
-        int(csr.shape[1]),
-        [int(value) for value in csr.indptr.tolist()],
-        [int(value) for value in csr.indices.tolist()],
-        [float(value) for value in csr.data.tolist()],
-    )
+    indptr = [int(value) for value in csr.indptr.tolist()]
+    indices = [int(value) for value in csr.indices.tolist()]
+    data = [float(value) for value in csr.data.tolist()]
+    rows = int(csr.shape[0])
+    cols = int(csr.shape[1])
+    if backend == "rust":
+        return csr_matrix_rust(rows, cols, indptr, indices, data)
+    return csr_matrix(rows, cols, indptr, indices, data)
 
 
 def solve_sparse(problem: SparseLPProblem) -> SparseSolveResult:
