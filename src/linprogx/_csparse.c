@@ -3,7 +3,9 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct {
     PyObject_HEAD
@@ -737,15 +739,21 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     double tol = 1e-6;
     double objective_scale = 0.0;
     int adaptive_weight = 1;
+    int debug = 0;
+    double restart_sufficient = PDHG_RESTART_SUFFICIENT;
+    double restart_necessary = PDHG_RESTART_NECESSARY;
+    double restart_artificial = PDHG_RESTART_ARTIFICIAL;
+    Py_ssize_t eval_interval_override = 0;
     static char *kwlist[] = {
         "c", "b", "lo", "hi", "max_iter", "tol", "check_interval", "objective_scale",
-        "adaptive_weight", NULL
+        "adaptive_weight", "debug", "restart_sufficient", "restart_necessary",
+        "restart_artificial", "eval_interval_override", NULL
     };
 
     if (!PyArg_ParseTupleAndKeywords(
             args,
             kwds,
-            "OOOO|ndndi",
+            "OOOO|ndndiidddn",
             kwlist,
             &c_obj,
             &b_obj,
@@ -755,7 +763,12 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             &tol,
             &check_interval,
             &objective_scale,
-            &adaptive_weight)) {
+            &adaptive_weight,
+            &debug,
+            &restart_sufficient,
+            &restart_necessary,
+            &restart_artificial,
+            &eval_interval_override)) {
         return NULL;
     }
     if (max_iter < 0 || check_interval <= 0) {
@@ -1025,7 +1038,10 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     if (kkt_terminated(&final_ev, tol, c_inf)) {
         status = "optimal";
     } else if (max_iter > 0) {
-        Py_ssize_t eval_interval = check_interval < 64 ? check_interval : 64;
+        Py_ssize_t eval_interval = check_interval < 40 ? check_interval : 40;
+        if (eval_interval_override > 0) {
+            eval_interval = eval_interval_override;
+        }
         Py_BEGIN_ALLOW_THREADS
         double mu_start = final_ev.kkt;
         double mu_last = final_ev.kkt;
@@ -1173,12 +1189,16 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             }
 
             int do_restart = 0;
-            if (ev_best.kkt <= PDHG_RESTART_SUFFICIENT * mu_start) {
+            int restart_type = 0;  /* 1=sufficient, 2=necessary, 3=artificial */
+            if (ev_best.kkt <= restart_sufficient * mu_start) {
                 do_restart = 1;
-            } else if (ev_best.kkt <= PDHG_RESTART_NECESSARY * mu_start && ev_best.kkt > mu_last) {
+                restart_type = 1;
+            } else if (ev_best.kkt <= restart_necessary * mu_start && ev_best.kkt > mu_last) {
                 do_restart = 1;
-            } else if ((double)navg >= PDHG_RESTART_ARTIFICIAL * (double)iter) {
+                restart_type = 2;
+            } else if ((double)navg >= restart_artificial * (double)iter) {
                 do_restart = 1;
+                restart_type = 3;
             }
             mu_last = ev_best.kkt;
             if (do_restart) {
@@ -1246,6 +1266,26 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                     }
                     tau = eta / omega;
                     sigma = eta * omega;
+                }
+                if (debug) {
+                    double rp = ev_best.primal_res_l2 / (1.0 + b_l2);
+                    double rd = ev_best.dual_res_l2 / (1.0 + c_l2);
+                    double rg = ev_best.gap / (1.0 + fabs(ev_best.primal_obj) + fabs(ev_best.dual_obj));
+                    double rp_cur = ev_current.primal_res_l2 / (1.0 + b_l2);
+                    double rd_cur = ev_current.dual_res_l2 / (1.0 + c_l2);
+                    double rg_cur = ev_current.gap / (1.0 + fabs(ev_current.primal_obj) + fabs(ev_current.dual_obj));
+                    double rp_avg = ev_average.primal_res_l2 / (1.0 + b_l2);
+                    double rd_avg = ev_average.dual_res_l2 / (1.0 + c_l2);
+                    double rg_avg = ev_average.gap / (1.0 + fabs(ev_average.primal_obj) + fabs(ev_average.dual_obj));
+                    fprintf(stderr,
+                        "RST %3zd iter=%5zd type=%d avg?=%d navg=%5zd omega=%.3e eta=%.3e kkt=%.3e "
+                        "rp=%.3e rd=%.3e rg=%.3e | cur kkt=%.3e rp=%.3e rd=%.3e rg=%.3e | avg kkt=%.3e rp=%.3e rd=%.3e rg=%.3e "
+                        "gap_abs=%.3e pobj=%.3e dobj=%.3e pmax=%.3e dinf=%.3e\n",
+                        restarts+1, iter, restart_type, best_is_average, navg, omega, eta, ev_best.kkt,
+                        rp, rd, rg, ev_current.kkt, rp_cur, rd_cur, rg_cur,
+                        ev_average.kkt, rp_avg, rd_avg, rg_avg,
+                        ev_best.gap, ev_best.primal_obj, ev_best.dual_obj,
+                        ev_best.primal_res_max, ev_best.dual_res_inf);
                 }
                 if (best_is_average) {
                     /* Adopt the average iterate and reuse the products that
