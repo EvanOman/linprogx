@@ -1,9 +1,43 @@
 # Sparse PDHG Performance Handoff
 
-**Date:** Tuesday, June 9, 2026
+**Date:** Wednesday, June 10, 2026 (parallel-experiment update)
 **Primary worktree:** `/home/evan/dev/linprogx`
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
+
+## June 10 Update: Parallel CYCLE-gap Experiments
+
+Three experiments ran in parallel worktrees and were integrated:
+
+1. **Doubleton-row presolve (WIN, integrated as `src/linprogx/presolve.py`).**
+   Dependency-free presolve: empty rows, cascading singleton rows, and
+   doubleton-row substitution `x_p = (b_i - d*x_q)/a` with bound mapping and
+   postsolve replay. Fill limit `max_fill=5` is critical (fill 2 and 10 both
+   fail to help; conditioning, not size, is what matters). Wired into
+   `SparseSolver` behind `presolve=True` (default). CYCLE: removes 388 rows /
+   360 cols and converges via FULL KKT at 36k iterations, delta 2.8e-6.
+   DFL001: removes 15/15, 27.9k iterations, delta 0.16.
+2. **Plateau early-exit (integrated, dormant insurance).** Ring buffer of
+   best-seen relative KKT per eval; if <2% improvement over the last 80 evals
+   and the best iterate is within 50x tol primal residual, adopt the best
+   iterate and exit. `plateau_window`/`plateau_threshold` kwargs; result dict
+   reports `plateau_exit`. With presolve active it never fires on the
+   benchmarks; it exists for degenerate shapes presolve cannot fix.
+3. **eval_interval 64 -> 40 (reverted; interaction lesson).** A clear win on
+   the UNPRESOLVED CYCLE (full KKT at 39.9k iters) but a loss on both
+   presolved problems (CYCLE plateau-exits prematurely at delta 1.1e-3,
+   DFL001 regresses to 35k iters). The restart trajectory is chaotic in
+   these parameters; tune them only jointly with presolve. The
+   `eval_interval_override`, `restart_*` and `debug` kwargs from this
+   experiment were kept as tooling. The diagnosis stands: long restart
+   epochs let omega drift fatally (e.g. 0.027 -> 0.004) when the sufficient
+   criterion is unreachable and the artificial restart is ~17k iters away.
+
+**Current committed results:** DFL001 5.34s delta 1.6e-1 (HiGHS 6.38s,
+Clarabel 8.06s — linprogx fastest); CYCLE 1.39s delta 2.8e-6 via full KKT
+(HiGHS 0.18s, Clarabel 0.22s — still ~7x slower, expected simplex territory).
+Remaining CYCLE ideas: plateau-aware budget trimming, joint retuning of
+restart constants on the presolved problems, or accepting the gap.
 
 ## High-Level Status
 

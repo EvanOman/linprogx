@@ -1074,7 +1074,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     if (kkt_terminated(&final_ev, tol, c_inf)) {
         status = "optimal";
     } else if (max_iter > 0) {
-        Py_ssize_t eval_interval = check_interval < 40 ? check_interval : 40;
+        Py_ssize_t eval_interval = check_interval < 64 ? check_interval : 64;
         if (eval_interval_override > 0) {
             eval_interval = eval_interval_override;
         }

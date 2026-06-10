@@ -10,6 +10,7 @@ try:
 except ImportError:  # pragma: no cover - source tree before extension build
     CSRMatrix = None  # type: ignore[assignment]
 
+from linprogx.presolve import postsolve_x, presolve_eq_box
 from linprogx.types import ObjectiveSense, Solution, Status
 
 SparseSense = Literal["<=", ">=", "="]
@@ -88,12 +89,14 @@ class SparseSolver:
         algorithm: Literal["simplex", "pdhg"] = "simplex",
         objective_scale: float | None = None,
         check_interval: int | None = None,
+        presolve: bool = True,
     ) -> None:
         self.eps = eps
         self.max_iterations = max_iterations
         self.algorithm = algorithm
         self.objective_scale = objective_scale
         self.check_interval = check_interval
+        self.presolve = presolve
 
     def solve(self, problem: SparseLPProblem) -> SparseSolveResult:
         start = time.perf_counter()
@@ -121,34 +124,69 @@ class SparseSolver:
         bounds = problem.bounds or [(0.0, None) for _ in problem.c]
         lo = [float("-inf") if lower is None else float(lower) for lower, _ in bounds]
         hi = [float("inf") if upper is None else float(upper) for _, upper in bounds]
-        result = problem.A_eq.solve_eq_box_pdhg(
-            [float(value) for value in problem.c],
-            [float(value) for value in problem.b_eq],
-            lo,
-            hi,
+        c = [float(value) for value in problem.c]
+        b = [float(value) for value in problem.b_eq]
+
+        matrix = problem.A_eq
+        reduction = None
+        if self.presolve:
+            rows, cols = matrix.shape
+            indptr, indices, data = matrix.to_components()
+            reduction = presolve_eq_box(rows, cols, indptr, indices, data, b, c, lo, hi)
+        if reduction is not None:
+            matrix = csr_matrix(
+                reduction.rows,
+                reduction.cols,
+                reduction.indptr,
+                reduction.indices,
+                reduction.data,
+            )
+            solve_c, solve_b = reduction.c, reduction.b
+            solve_lo, solve_hi = reduction.lo, reduction.hi
+        else:
+            solve_c, solve_b, solve_lo, solve_hi = c, b, lo, hi
+
+        result = matrix.solve_eq_box_pdhg(
+            solve_c,
+            solve_b,
+            solve_lo,
+            solve_hi,
             max_iter=self.max_iterations,
             tol=self.eps,
             check_interval=self.check_interval or 250,
             objective_scale=0.0 if self.objective_scale is None else self.objective_scale,
         )
+        x = [float(value) for value in result["x"]]
+        objective = float(result["objective"])
+        if reduction is not None:
+            x = postsolve_x(x, reduction)
+            objective = sum(value * coef for value, coef in zip(x, problem.c, strict=True))
+
         status = Status.OPTIMAL if result["status"] == "optimal" else Status.ITERATION_LIMIT
         residual = float(result["max_primal_residual"])
         objective_scale = float(result["objective_scale"])
+        presolve_note = (
+            f"; presolve removed {reduction.removed_rows} rows and {reduction.removed_cols} cols"
+            if reduction is not None
+            else ""
+        )
         message = (
             (
                 "native sparse PDHG converged; "
                 f"max equality residual {residual:.3e}; objective scale {objective_scale:.3g}"
+                f"{presolve_note}"
             )
             if status == Status.OPTIMAL
             else (
                 "native sparse PDHG hit the iteration limit; "
                 f"max equality residual {residual:.3e}; objective scale {objective_scale:.3g}"
+                f"{presolve_note}"
             )
         )
         return Solution(
             status,
-            float(result["objective"]),
-            [float(value) for value in result["x"]],
+            objective,
+            x,
             message=message,
             iterations=int(result["iterations"]),
         )
