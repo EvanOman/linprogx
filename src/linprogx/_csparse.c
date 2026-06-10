@@ -2,6 +2,7 @@
 #include <Python.h>
 #include <math.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 typedef struct {
@@ -73,29 +74,42 @@ static int fill_double_array(PyObject *source, Py_ssize_t expected, double *targ
     return 0;
 }
 
-static void csr_scaled_matvec(
-    CSRMatrixObject *self,
-    const double *x,
-    const double *operator_data,
-    double *out) {
-    for (Py_ssize_t row = 0; row < self->rows; row++) {
+/* Scaled operator with 32-bit inner indices: the PDHG hot loops are memory
+ * bound, so halving index traffic measurably speeds up every matvec. */
+typedef struct {
+    Py_ssize_t rows;
+    Py_ssize_t cols;
+    const Py_ssize_t *row_start;
+    const int32_t *col_index;
+    const double *data;
+    const Py_ssize_t *col_start;
+    const int32_t *row_index;
+    const double *csc_data;
+} ScaledOp;
+
+static void scaled_op_matvec(const ScaledOp *op, const double *restrict x, double *restrict out) {
+    const Py_ssize_t *restrict row_start = op->row_start;
+    const int32_t *restrict col_index = op->col_index;
+    const double *restrict data = op->data;
+    for (Py_ssize_t row = 0; row < op->rows; row++) {
         double total = 0.0;
-        for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
-            total += operator_data[offset] * x[self->indices[offset]];
+        Py_ssize_t end = row_start[row + 1];
+        for (Py_ssize_t offset = row_start[row]; offset < end; offset++) {
+            total += data[offset] * x[col_index[offset]];
         }
         out[row] = total;
     }
 }
 
-static void csr_scaled_transpose_matvec(
-    CSRMatrixObject *self,
-    const double *y,
-    const double *operator_csc_data,
-    double *out) {
-    for (Py_ssize_t col = 0; col < self->cols; col++) {
+static void scaled_op_transpose_matvec(const ScaledOp *op, const double *restrict y, double *restrict out) {
+    const Py_ssize_t *restrict col_start = op->col_start;
+    const int32_t *restrict row_index = op->row_index;
+    const double *restrict csc_data = op->csc_data;
+    for (Py_ssize_t col = 0; col < op->cols; col++) {
         double total = 0.0;
-        for (Py_ssize_t offset = self->csc_indptr[col]; offset < self->csc_indptr[col + 1]; offset++) {
-            total += operator_csc_data[offset] * y[self->csc_rows[offset]];
+        Py_ssize_t end = col_start[col + 1];
+        for (Py_ssize_t offset = col_start[col]; offset < end; offset++) {
+            total += csc_data[offset] * y[row_index[offset]];
         }
         out[col] = total;
     }
@@ -308,45 +322,42 @@ static void active_set_cgls_cleanup(
     free(free_col);
 }
 
-static double estimate_scaled_operator_norm(
-    CSRMatrixObject *self,
-    const double *operator_data,
-    const double *operator_csc_data) {
-    double *x = calloc((size_t)self->cols, sizeof(double));
-    double *y = calloc((size_t)self->rows, sizeof(double));
-    double *z = calloc((size_t)self->cols, sizeof(double));
+static double estimate_scaled_operator_norm(const ScaledOp *op) {
+    double *x = calloc((size_t)op->cols, sizeof(double));
+    double *y = calloc((size_t)op->rows, sizeof(double));
+    double *z = calloc((size_t)op->cols, sizeof(double));
     if (x == NULL || y == NULL || z == NULL) {
         free(x);
         free(y);
         free(z);
         return -1.0;
     }
-    double initial = self->cols > 0 ? 1.0 / sqrt((double)self->cols) : 0.0;
-    for (Py_ssize_t col = 0; col < self->cols; col++) {
+    double initial = op->cols > 0 ? 1.0 / sqrt((double)op->cols) : 0.0;
+    for (Py_ssize_t col = 0; col < op->cols; col++) {
         x[col] = initial;
     }
     double norm = 1.0;
     for (int iter = 0; iter < 30; iter++) {
-        csr_scaled_matvec(self, x, operator_data, y);
-        double ynorm = l2_norm(y, self->rows);
+        scaled_op_matvec(op, x, y);
+        double ynorm = l2_norm(y, op->rows);
         if (ynorm <= 0.0) {
             break;
         }
-        for (Py_ssize_t row = 0; row < self->rows; row++) {
+        for (Py_ssize_t row = 0; row < op->rows; row++) {
             y[row] /= ynorm;
         }
-        csr_scaled_transpose_matvec(self, y, operator_csc_data, z);
-        double znorm = l2_norm(z, self->cols);
+        scaled_op_transpose_matvec(op, y, z);
+        double znorm = l2_norm(z, op->cols);
         if (znorm <= 0.0) {
             break;
         }
-        for (Py_ssize_t col = 0; col < self->cols; col++) {
+        for (Py_ssize_t col = 0; col < op->cols; col++) {
             x[col] = z[col] / znorm;
         }
         norm = ynorm;
     }
-    csr_scaled_matvec(self, x, operator_data, y);
-    norm = l2_norm(y, self->rows);
+    scaled_op_matvec(op, x, y);
+    norm = l2_norm(y, op->rows);
     free(x);
     free(y);
     free(z);
@@ -369,11 +380,9 @@ typedef struct {
 } KKTEval;
 
 static void evaluate_kkt(
-    CSRMatrixObject *self,
+    const ScaledOp *op,
     const double *x_scaled,
     const double *y_scaled,
-    const double *operator_data,
-    const double *operator_csc_data,
     const double *c,
     const double *b,
     const double *lo,
@@ -390,19 +399,19 @@ static void evaluate_kkt(
     double pmax = 0.0;
     double pl2 = 0.0;
     double dual_obj = 0.0;
-    csr_scaled_matvec(self, x_scaled, operator_data, ax_work);
-    for (Py_ssize_t row = 0; row < self->rows; row++) {
+    scaled_op_matvec(op, x_scaled, ax_work);
+    for (Py_ssize_t row = 0; row < op->rows; row++) {
         double res = (ax_work[row] - scaled_b[row]) / row_scale[row];
         double abs_res = fabs(res);
         pmax = abs_res > pmax ? abs_res : pmax;
         pl2 += res * res;
         dual_obj -= b[row] * row_scale[row] * y_scaled[row];
     }
-    csr_scaled_transpose_matvec(self, y_scaled, operator_csc_data, r_work);
+    scaled_op_transpose_matvec(op, y_scaled, r_work);
     double dinf = 0.0;
     double dl2 = 0.0;
     double primal_obj = 0.0;
-    for (Py_ssize_t col = 0; col < self->cols; col++) {
+    for (Py_ssize_t col = 0; col < op->cols; col++) {
         double reduced = c[col] + r_work[col] / col_scale[col];
         primal_obj += c[col] * col_scale[col] * x_scaled[col];
         double violation = 0.0;
@@ -780,6 +789,8 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     double *y_restart = NULL;
     double *operator_data = NULL;
     double *operator_csc_data = NULL;
+    int32_t *op_col_index = NULL;
+    int32_t *op_row_index = NULL;
     unsigned char *bound_kind = NULL;
 
     c = calloc((size_t)self->cols, sizeof(double));
@@ -807,6 +818,8 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     y_restart = calloc((size_t)self->rows, sizeof(double));
     operator_data = calloc((size_t)self->nnz, sizeof(double));
     operator_csc_data = calloc((size_t)self->nnz, sizeof(double));
+    op_col_index = calloc((size_t)self->nnz, sizeof(int32_t));
+    op_row_index = calloc((size_t)self->nnz, sizeof(int32_t));
     bound_kind = calloc((size_t)self->cols, sizeof(unsigned char));
     if (c == NULL || b == NULL || lo == NULL || hi == NULL ||
         col_scale == NULL || scaled_lo == NULL || scaled_hi == NULL || scaled_c == NULL ||
@@ -815,8 +828,13 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         y_trial == NULL || ax_trial == NULL ||
         x_sum == NULL || y_sum == NULL || avg_x == NULL || avg_y == NULL ||
         x_restart == NULL || y_restart == NULL ||
-        operator_data == NULL || operator_csc_data == NULL || bound_kind == NULL) {
+        operator_data == NULL || operator_csc_data == NULL ||
+        op_col_index == NULL || op_row_index == NULL || bound_kind == NULL) {
         PyErr_NoMemory();
+        goto done;
+    }
+    if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError, "matrix dimensions exceed the 32-bit solver limit");
         goto done;
     }
     if (fill_double_array(c_obj, self->cols, c, "c") != 0 ||
@@ -926,9 +944,23 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             operator_csc_data[offset] = self->csc_data[offset] * row_scale[row] * col_scale[col];
         }
     }
+    for (Py_ssize_t i = 0; i < self->nnz; i++) {
+        op_col_index[i] = (int32_t)self->indices[i];
+        op_row_index[i] = (int32_t)self->csc_rows[i];
+    }
+    ScaledOp op = {
+        self->rows,
+        self->cols,
+        self->indptr,
+        op_col_index,
+        operator_data,
+        self->csc_indptr,
+        op_row_index,
+        operator_csc_data,
+    };
 
     double norm;
-    norm = estimate_scaled_operator_norm(self, operator_data, operator_csc_data);
+    norm = estimate_scaled_operator_norm(&op);
     if (norm < 0.0) {
         PyErr_NoMemory();
         goto done;
@@ -987,7 +1019,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     const char *status = "iteration_limit";
     KKTEval final_ev;
     evaluate_kkt(
-        self, x, y, operator_data, operator_csc_data, c, b, lo, hi, bound_kind,
+        &op, x, y, c, b, lo, hi, bound_kind,
         col_scale, row_scale, scaled_b, b_l2, c_l2, ax, aty, &final_ev);
 
     if (kkt_terminated(&final_ev, tol, c_inf)) {
@@ -1010,6 +1042,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 step_trials++;
                 double trial_tau = eta / omega;
                 double trial_sigma = eta * omega;
+                double dx_sq = 0.0;
                 for (Py_ssize_t col = 0; col < self->cols; col++) {
                     double updated = x[col] - trial_tau * (aty[col] + scaled_c[col]);
                     switch (bound_kind[col]) {
@@ -1032,9 +1065,10 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                             break;
                     }
                     xbar[col] = updated;
+                    double dx = updated - x[col];
+                    dx_sq += dx * dx;
                 }
-                csr_scaled_matvec(self, xbar, operator_data, ax_trial);
-                double dx_sq = 0.0;
+                scaled_op_matvec(&op, xbar, ax_trial);
                 double dy_sq = 0.0;
                 double interaction = 0.0;
                 for (Py_ssize_t row = 0; row < self->rows; row++) {
@@ -1044,10 +1078,6 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                     y_trial[row] = updated;
                     dy_sq += dy * dy;
                     interaction += dy * (ax_trial[row] - ax[row]);
-                }
-                for (Py_ssize_t col = 0; col < self->cols; col++) {
-                    double dx = xbar[col] - x[col];
-                    dx_sq += dx * dx;
                 }
                 double movement = 0.5 * omega * dx_sq + 0.5 * dy_sq / omega;
                 double inter_abs = fabs(interaction);
@@ -1083,7 +1113,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 ax = ax_trial;
                 ax_trial = swap;
             }
-            csr_scaled_transpose_matvec(self, y, operator_csc_data, aty);
+            scaled_op_transpose_matvec(&op, y, aty);
             for (Py_ssize_t col = 0; col < self->cols; col++) {
                 x_sum[col] += x[col];
             }
@@ -1099,7 +1129,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             KKTEval ev_current;
             KKTEval ev_average;
             evaluate_kkt(
-                self, x, y, operator_data, operator_csc_data, c, b, lo, hi, bound_kind,
+                &op, x, y, c, b, lo, hi, bound_kind,
                 col_scale, row_scale, scaled_b, b_l2, c_l2, ax, aty, &ev_current);
             double inv_navg = 1.0 / (double)navg;
             for (Py_ssize_t col = 0; col < self->cols; col++) {
@@ -1111,7 +1141,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             /* The average eval writes A*avg_x into ax_trial and A'*avg_y into
              * xbar, leaving the current-iterate caches in ax and aty intact. */
             evaluate_kkt(
-                self, avg_x, avg_y, operator_data, operator_csc_data, c, b, lo, hi, bound_kind,
+                &op, avg_x, avg_y, c, b, lo, hi, bound_kind,
                 col_scale, row_scale, scaled_b, b_l2, c_l2, ax_trial, xbar, &ev_average);
             int best_is_average = ev_average.kkt < ev_current.kkt;
             KKTEval ev_best = best_is_average ? ev_average : ev_current;
@@ -1341,6 +1371,8 @@ done:
     free(y_restart);
     free(operator_data);
     free(operator_csc_data);
+    free(op_col_index);
+    free(op_row_index);
     free(bound_kind);
     return result;
 }
