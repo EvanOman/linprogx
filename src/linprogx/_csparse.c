@@ -744,16 +744,19 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     double restart_necessary = PDHG_RESTART_NECESSARY;
     double restart_artificial = PDHG_RESTART_ARTIFICIAL;
     Py_ssize_t eval_interval_override = 0;
+    Py_ssize_t plateau_window = 80;
+    double plateau_threshold = 0.02;
     static char *kwlist[] = {
         "c", "b", "lo", "hi", "max_iter", "tol", "check_interval", "objective_scale",
         "adaptive_weight", "debug", "restart_sufficient", "restart_necessary",
-        "restart_artificial", "eval_interval_override", NULL
+        "restart_artificial", "eval_interval_override", "plateau_window",
+        "plateau_threshold", NULL
     };
 
     if (!PyArg_ParseTupleAndKeywords(
             args,
             kwds,
-            "OOOO|ndndiidddn",
+            "OOOO|ndndiidddnnd",
             kwlist,
             &c_obj,
             &b_obj,
@@ -768,12 +771,17 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             &restart_sufficient,
             &restart_necessary,
             &restart_artificial,
-            &eval_interval_override)) {
+            &eval_interval_override,
+            &plateau_window,
+            &plateau_threshold)) {
         return NULL;
     }
     if (max_iter < 0 || check_interval <= 0) {
         PyErr_SetString(PyExc_ValueError, "max_iter must be nonnegative and check_interval positive");
         return NULL;
+    }
+    if (plateau_window < 0) {
+        plateau_window = 0;
     }
 
     PyObject *result = NULL;
@@ -800,6 +808,9 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     double *avg_y = NULL;
     double *x_restart = NULL;
     double *y_restart = NULL;
+    double *best_x = NULL;
+    double *best_y = NULL;
+    double *plateau_kkt_buf = NULL;
     double *operator_data = NULL;
     double *operator_csc_data = NULL;
     int32_t *op_col_index = NULL;
@@ -829,6 +840,8 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     avg_y = calloc((size_t)self->rows, sizeof(double));
     x_restart = calloc((size_t)self->cols, sizeof(double));
     y_restart = calloc((size_t)self->rows, sizeof(double));
+    best_x = calloc((size_t)self->cols, sizeof(double));
+    best_y = calloc((size_t)self->rows, sizeof(double));
     operator_data = calloc((size_t)self->nnz, sizeof(double));
     operator_csc_data = calloc((size_t)self->nnz, sizeof(double));
     op_col_index = calloc((size_t)self->nnz, sizeof(int32_t));
@@ -841,6 +854,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         y_trial == NULL || ax_trial == NULL ||
         x_sum == NULL || y_sum == NULL || avg_x == NULL || avg_y == NULL ||
         x_restart == NULL || y_restart == NULL ||
+        best_x == NULL || best_y == NULL ||
         operator_data == NULL || operator_csc_data == NULL ||
         op_col_index == NULL || op_row_index == NULL || bound_kind == NULL) {
         PyErr_NoMemory();
@@ -1029,8 +1043,30 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     Py_ssize_t iterations = 0;
     Py_ssize_t restarts = 0;
     Py_ssize_t step_trials = 0;
+    int plateau_exit_flag = 0;
     const char *status = "iteration_limit";
     KKTEval final_ev;
+    /* Plateau detection state: track the best relative KKT seen and a ring
+     * buffer of the best-KKT-at-each-eval over the last plateau_window evals.
+     * When the improvement over that window is less than plateau_threshold
+     * AND the best candidate's primal residual is within striking distance
+     * (pres_max <= 50*tol, so CGLS can close the gap), exit early. */
+    double best_kkt_global = INFINITY;
+    KKTEval best_ev_global;
+    best_ev_global.kkt = INFINITY;
+    best_ev_global.primal_res_max = INFINITY;
+    /* We use a simple ring buffer to store the best KKT at each eval point. */
+    Py_ssize_t plateau_buf_size = plateau_window > 0 ? plateau_window : 1;
+    plateau_kkt_buf = calloc((size_t)plateau_buf_size, sizeof(double));
+    Py_ssize_t plateau_buf_pos = 0;
+    Py_ssize_t plateau_eval_count = 0;
+    if (plateau_kkt_buf == NULL) {
+        PyErr_NoMemory();
+        goto done;
+    }
+    for (Py_ssize_t i = 0; i < plateau_buf_size; i++) {
+        plateau_kkt_buf[i] = INFINITY;
+    }
     evaluate_kkt(
         &op, x, y, c, b, lo, hi, bound_kind,
         col_scale, row_scale, scaled_b, b_l2, c_l2, ax, aty, &final_ev);
@@ -1162,6 +1198,21 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             int best_is_average = ev_average.kkt < ev_current.kkt;
             KKTEval ev_best = best_is_average ? ev_average : ev_current;
 
+            /* Snapshot the best iterate seen so far (used by plateau
+             * exit to return the best point, not the current wander). */
+            if (ev_best.kkt < best_kkt_global) {
+                best_kkt_global = ev_best.kkt;
+                best_ev_global = ev_best;
+                const double *snap_x = best_is_average ? avg_x : x;
+                const double *snap_y = best_is_average ? avg_y : y;
+                for (Py_ssize_t col = 0; col < self->cols; col++) {
+                    best_x[col] = snap_x[col];
+                }
+                for (Py_ssize_t row = 0; row < self->rows; row++) {
+                    best_y[row] = snap_y[row];
+                }
+            }
+
             if (kkt_terminated(&ev_best, tol, c_inf)) {
                 if (best_is_average) {
                     for (Py_ssize_t col = 0; col < self->cols; col++) {
@@ -1175,6 +1226,44 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 status = "optimal";
                 break;
             }
+
+            /* Plateau detection: if over the last plateau_window evals
+             * the best KKT has improved by less than plateau_threshold
+             * (relative), AND the best candidate's primal residual is
+             * within striking distance (pres_max <= 50*tol so CGLS can
+             * close the gap), exit early with the best-seen iterate.
+             * This fires for degenerate problems like CYCLE that plateau
+             * but never pass the full KKT test. */
+            if (plateau_window > 0) {
+                /* Record current best_kkt_global in the ring buffer. */
+                plateau_kkt_buf[plateau_buf_pos] = best_kkt_global;
+                plateau_buf_pos = (plateau_buf_pos + 1) % plateau_buf_size;
+                plateau_eval_count++;
+
+                if (plateau_eval_count >= plateau_window) {
+                    /* The oldest entry in the ring is what was the best
+                     * KKT plateau_window evals ago. */
+                    double old_best = plateau_kkt_buf[plateau_buf_pos % plateau_buf_size];
+                    /* Improvement fraction: (old - current) / old. */
+                    double improvement = (old_best > 1e-30)
+                        ? (old_best - best_kkt_global) / old_best
+                        : 0.0;
+                    if (improvement < plateau_threshold &&
+                        best_ev_global.primal_res_max <= 50.0 * tol) {
+                        /* Adopt the best-seen iterate and exit. */
+                        for (Py_ssize_t col = 0; col < self->cols; col++) {
+                            x[col] = best_x[col];
+                        }
+                        for (Py_ssize_t row = 0; row < self->rows; row++) {
+                            y[row] = best_y[row];
+                        }
+                        final_ev = best_ev_global;
+                        plateau_exit_flag = 1;
+                        break;
+                    }
+                }
+            }
+
             if (iter == max_iter) {
                 if (best_is_average) {
                     for (Py_ssize_t col = 0; col < self->cols; col++) {
@@ -1354,7 +1443,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             PyList_SET_ITEM(x_list, col, boxed);
         }
         result = Py_BuildValue(
-            "{s:s,s:d,s:d,s:d,s:n,s:d,s:d,s:d,s:d,s:d,s:d,s:n,s:n,s:N}",
+            "{s:s,s:d,s:d,s:d,s:n,s:d,s:d,s:d,s:d,s:d,s:d,s:n,s:n,s:i,s:N}",
             "status",
             status,
             "objective",
@@ -1381,11 +1470,14 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             restarts,
             "step_trials",
             step_trials,
+            "plateau_exit",
+            plateau_exit_flag,
             "x",
             x_list);
     }
 
 done:
+    free(plateau_kkt_buf);
     free(c);
     free(b);
     free(lo);
@@ -1409,6 +1501,8 @@ done:
     free(avg_y);
     free(x_restart);
     free(y_restart);
+    free(best_x);
+    free(best_y);
     free(operator_data);
     free(operator_csc_data);
     free(op_col_index);
