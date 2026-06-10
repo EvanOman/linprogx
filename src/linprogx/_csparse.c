@@ -73,62 +73,29 @@ static int fill_double_array(PyObject *source, Py_ssize_t expected, double *targ
     return 0;
 }
 
-static int compare_doubles(const void *left, const void *right) {
-    double a = *(const double *)left;
-    double b = *(const double *)right;
-    return (a > b) - (a < b);
-}
-
-static double median_nonzero_abs(const double *values, Py_ssize_t count) {
-    double *nonzero = calloc((size_t)count, sizeof(double));
-    if (nonzero == NULL) {
-        return -1.0;
-    }
-    Py_ssize_t kept = 0;
-    for (Py_ssize_t i = 0; i < count; i++) {
-        double value = fabs(values[i]);
-        if (value > 0.0 && isfinite(value)) {
-            nonzero[kept] = value;
-            kept++;
-        }
-    }
-    if (kept == 0) {
-        free(nonzero);
-        return 1.0;
-    }
-    qsort(nonzero, (size_t)kept, sizeof(double), compare_doubles);
-    double median;
-    Py_ssize_t midpoint = kept / 2;
-    if (kept % 2 == 0) {
-        median = 0.5 * (nonzero[midpoint - 1] + nonzero[midpoint]);
-    } else {
-        median = nonzero[midpoint];
-    }
-    free(nonzero);
-    if (median <= 0.0) {
-        return 1.0;
-    }
-    double magnitude = pow(10.0, floor(log10(median)));
-    double rounded = round(median / magnitude) * magnitude;
-    return rounded > 0.0 ? rounded : median;
-}
-
-static void csr_scaled_matvec(CSRMatrixObject *self, const double *x, const double *row_scale, double *out) {
+static void csr_scaled_matvec(
+    CSRMatrixObject *self,
+    const double *x,
+    const double *operator_data,
+    double *out) {
     for (Py_ssize_t row = 0; row < self->rows; row++) {
         double total = 0.0;
         for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
-            total += self->data[offset] * x[self->indices[offset]];
+            total += operator_data[offset] * x[self->indices[offset]];
         }
-        out[row] = total * row_scale[row];
+        out[row] = total;
     }
 }
 
-static void csr_scaled_transpose_matvec(CSRMatrixObject *self, const double *y, const double *row_scale, double *out) {
+static void csr_scaled_transpose_matvec(
+    CSRMatrixObject *self,
+    const double *y,
+    const double *operator_csc_data,
+    double *out) {
     for (Py_ssize_t col = 0; col < self->cols; col++) {
         double total = 0.0;
         for (Py_ssize_t offset = self->csc_indptr[col]; offset < self->csc_indptr[col + 1]; offset++) {
-            Py_ssize_t row = self->csc_rows[offset];
-            total += self->csc_data[offset] * y[row] * row_scale[row];
+            total += operator_csc_data[offset] * y[self->csc_rows[offset]];
         }
         out[col] = total;
     }
@@ -206,8 +173,8 @@ static void active_set_cgls_cleanup(
     double *max_residual,
     double *l2_residual) {
     const double margin = 1e-3;
-    const int max_passes = 1;
-    const int max_iter = 1000;
+    const int max_passes = 12;
+    const int max_iter = 600;
     double *residual = calloc((size_t)self->rows, sizeof(double));
     double *q = calloc((size_t)self->rows, sizeof(double));
     double *s = calloc((size_t)self->cols, sizeof(double));
@@ -224,11 +191,18 @@ static void active_set_cgls_cleanup(
         return;
     }
 
+    double previous_l2 = INFINITY;
     for (int pass = 0; pass < max_passes; pass++) {
         csr_residual(self, x, b, residual, max_residual, l2_residual);
         if (*max_residual <= tol) {
             break;
         }
+        /* Each pass refreshes the active set after the previous bound-limited
+         * step; stop once a pass no longer makes meaningful progress. */
+        if (*l2_residual > 0.99 * previous_l2) {
+            break;
+        }
+        previous_l2 = *l2_residual;
 
         Py_ssize_t free_count = 0;
         for (Py_ssize_t col = 0; col < self->cols; col++) {
@@ -334,7 +308,10 @@ static void active_set_cgls_cleanup(
     free(free_col);
 }
 
-static double estimate_scaled_operator_norm(CSRMatrixObject *self, const double *row_scale) {
+static double estimate_scaled_operator_norm(
+    CSRMatrixObject *self,
+    const double *operator_data,
+    const double *operator_csc_data) {
     double *x = calloc((size_t)self->cols, sizeof(double));
     double *y = calloc((size_t)self->rows, sizeof(double));
     double *z = calloc((size_t)self->cols, sizeof(double));
@@ -350,7 +327,7 @@ static double estimate_scaled_operator_norm(CSRMatrixObject *self, const double 
     }
     double norm = 1.0;
     for (int iter = 0; iter < 30; iter++) {
-        csr_scaled_matvec(self, x, row_scale, y);
+        csr_scaled_matvec(self, x, operator_data, y);
         double ynorm = l2_norm(y, self->rows);
         if (ynorm <= 0.0) {
             break;
@@ -358,7 +335,7 @@ static double estimate_scaled_operator_norm(CSRMatrixObject *self, const double 
         for (Py_ssize_t row = 0; row < self->rows; row++) {
             y[row] /= ynorm;
         }
-        csr_scaled_transpose_matvec(self, y, row_scale, z);
+        csr_scaled_transpose_matvec(self, y, operator_csc_data, z);
         double znorm = l2_norm(z, self->cols);
         if (znorm <= 0.0) {
             break;
@@ -368,12 +345,103 @@ static double estimate_scaled_operator_norm(CSRMatrixObject *self, const double 
         }
         norm = ynorm;
     }
-    csr_scaled_matvec(self, x, row_scale, y);
+    csr_scaled_matvec(self, x, operator_data, y);
     norm = l2_norm(y, self->rows);
     free(x);
     free(y);
     free(z);
     return norm > 0.0 ? norm : 1.0;
+}
+
+/* KKT diagnostics for the scaled iterate (x_scaled, y_scaled), reported in
+ * original problem units. The scaled operator is A_tilde = R A C with
+ * R = diag(row_scale) and C = diag(col_scale); x_orig = C x_scaled and the
+ * original-space dual is y_orig = R y_scaled. */
+typedef struct {
+    double primal_res_max;
+    double primal_res_l2;
+    double dual_res_inf;
+    double dual_res_l2;
+    double primal_obj;
+    double dual_obj;
+    double gap;
+    double kkt;
+} KKTEval;
+
+static void evaluate_kkt(
+    CSRMatrixObject *self,
+    const double *x_scaled,
+    const double *y_scaled,
+    const double *operator_data,
+    const double *operator_csc_data,
+    const double *c,
+    const double *b,
+    const double *lo,
+    const double *hi,
+    const unsigned char *bound_kind,
+    const double *col_scale,
+    const double *row_scale,
+    const double *scaled_b,
+    double b_l2,
+    double c_l2,
+    double *ax_work,
+    double *r_work,
+    KKTEval *out) {
+    double pmax = 0.0;
+    double pl2 = 0.0;
+    double dual_obj = 0.0;
+    csr_scaled_matvec(self, x_scaled, operator_data, ax_work);
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        double res = (ax_work[row] - scaled_b[row]) / row_scale[row];
+        double abs_res = fabs(res);
+        pmax = abs_res > pmax ? abs_res : pmax;
+        pl2 += res * res;
+        dual_obj -= b[row] * row_scale[row] * y_scaled[row];
+    }
+    csr_scaled_transpose_matvec(self, y_scaled, operator_csc_data, r_work);
+    double dinf = 0.0;
+    double dl2 = 0.0;
+    double primal_obj = 0.0;
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        double reduced = c[col] + r_work[col] / col_scale[col];
+        primal_obj += c[col] * col_scale[col] * x_scaled[col];
+        double violation = 0.0;
+        if (reduced > 0.0) {
+            if (bound_kind[col] & 1) {
+                dual_obj += reduced * lo[col];
+            } else {
+                violation = reduced;
+            }
+        } else if (reduced < 0.0) {
+            if (bound_kind[col] & 2) {
+                dual_obj += reduced * hi[col];
+            } else {
+                violation = -reduced;
+            }
+        }
+        dinf = violation > dinf ? violation : dinf;
+        dl2 += violation * violation;
+    }
+    out->primal_res_max = pmax;
+    out->primal_res_l2 = sqrt(pl2);
+    out->dual_res_inf = dinf;
+    out->dual_res_l2 = sqrt(dl2);
+    out->primal_obj = primal_obj;
+    out->dual_obj = dual_obj;
+    out->gap = primal_obj - dual_obj;
+    /* Scale-free progress measure: every component is normalized so that the
+     * restart and candidate-selection logic stays coherent while the primal
+     * weight omega adapts between restarts. */
+    double rel_primal = out->primal_res_l2 / (1.0 + b_l2);
+    double rel_dual = out->dual_res_l2 / (1.0 + c_l2);
+    double rel_gap = out->gap / (1.0 + fabs(primal_obj) + fabs(dual_obj));
+    out->kkt = sqrt(rel_primal * rel_primal + rel_dual * rel_dual + rel_gap * rel_gap);
+}
+
+static int kkt_terminated(const KKTEval *ev, double tol, double c_inf) {
+    double dual_tol = tol * (1.0 + c_inf);
+    double gap_tol = tol * (1.0 + fabs(ev->primal_obj) + fabs(ev->dual_obj));
+    return ev->primal_res_max <= tol && ev->dual_res_inf <= dual_tol && fabs(ev->gap) <= gap_tol;
 }
 
 static PyObject *CSRMatrix_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
@@ -642,6 +710,14 @@ static PyObject *CSRMatrix_to_dense(CSRMatrixObject *self, PyObject *Py_UNUSED(i
     return rows;
 }
 
+/* Restart tuning constants in the spirit of restarted average PDHG for LP. */
+#define PDHG_RESTART_SUFFICIENT 0.2
+#define PDHG_RESTART_NECESSARY 0.8
+#define PDHG_RESTART_ARTIFICIAL 0.36
+#define PDHG_OMEGA_SMOOTHING 0.5
+#define PDHG_OMEGA_MIN 1e-8
+#define PDHG_OMEGA_MAX 1e8
+
 static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *args, PyObject *kwds) {
     PyObject *c_obj;
     PyObject *b_obj;
@@ -651,14 +727,16 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     Py_ssize_t check_interval = 500;
     double tol = 1e-6;
     double objective_scale = 0.0;
+    int adaptive_weight = 1;
     static char *kwlist[] = {
-        "c", "b", "lo", "hi", "max_iter", "tol", "check_interval", "objective_scale", NULL
+        "c", "b", "lo", "hi", "max_iter", "tol", "check_interval", "objective_scale",
+        "adaptive_weight", NULL
     };
 
     if (!PyArg_ParseTupleAndKeywords(
             args,
             kwds,
-            "OOOO|ndnd",
+            "OOOO|ndndi",
             kwlist,
             &c_obj,
             &b_obj,
@@ -667,7 +745,8 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             &max_iter,
             &tol,
             &check_interval,
-            &objective_scale)) {
+            &objective_scale,
+            &adaptive_weight)) {
         return NULL;
     }
     if (max_iter < 0 || check_interval <= 0) {
@@ -675,281 +754,576 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         return NULL;
     }
 
-    double *c = calloc((size_t)self->cols, sizeof(double));
-    double *b = calloc((size_t)self->rows, sizeof(double));
-    double *lo = calloc((size_t)self->cols, sizeof(double));
-    double *hi = calloc((size_t)self->cols, sizeof(double));
-    double *row_scale = calloc((size_t)self->rows, sizeof(double));
-    double *scaled_b = calloc((size_t)self->rows, sizeof(double));
-    double *x = calloc((size_t)self->cols, sizeof(double));
-    double *xbar = calloc((size_t)self->cols, sizeof(double));
-    double *y = calloc((size_t)self->rows, sizeof(double));
-    double *ax = calloc((size_t)self->rows, sizeof(double));
-    double *aty = calloc((size_t)self->cols, sizeof(double));
-    double *scaled_c = calloc((size_t)self->cols, sizeof(double));
-    unsigned char *bound_kind = calloc((size_t)self->cols, sizeof(unsigned char));
-    if (c == NULL || b == NULL || lo == NULL || hi == NULL || row_scale == NULL || scaled_b == NULL ||
+    PyObject *result = NULL;
+    double *c = NULL;
+    double *b = NULL;
+    double *lo = NULL;
+    double *hi = NULL;
+    double *col_scale = NULL;
+    double *scaled_lo = NULL;
+    double *scaled_hi = NULL;
+    double *scaled_c = NULL;
+    double *row_scale = NULL;
+    double *scaled_b = NULL;
+    double *x = NULL;
+    double *xbar = NULL;
+    double *y = NULL;
+    double *ax = NULL;
+    double *aty = NULL;
+    double *y_trial = NULL;
+    double *ax_trial = NULL;
+    double *x_sum = NULL;
+    double *y_sum = NULL;
+    double *avg_x = NULL;
+    double *avg_y = NULL;
+    double *x_restart = NULL;
+    double *y_restart = NULL;
+    double *operator_data = NULL;
+    double *operator_csc_data = NULL;
+    unsigned char *bound_kind = NULL;
+
+    c = calloc((size_t)self->cols, sizeof(double));
+    b = calloc((size_t)self->rows, sizeof(double));
+    lo = calloc((size_t)self->cols, sizeof(double));
+    hi = calloc((size_t)self->cols, sizeof(double));
+    col_scale = calloc((size_t)self->cols, sizeof(double));
+    scaled_lo = calloc((size_t)self->cols, sizeof(double));
+    scaled_hi = calloc((size_t)self->cols, sizeof(double));
+    scaled_c = calloc((size_t)self->cols, sizeof(double));
+    row_scale = calloc((size_t)self->rows, sizeof(double));
+    scaled_b = calloc((size_t)self->rows, sizeof(double));
+    x = calloc((size_t)self->cols, sizeof(double));
+    xbar = calloc((size_t)self->cols, sizeof(double));
+    y = calloc((size_t)self->rows, sizeof(double));
+    ax = calloc((size_t)self->rows, sizeof(double));
+    aty = calloc((size_t)self->cols, sizeof(double));
+    y_trial = calloc((size_t)self->rows, sizeof(double));
+    ax_trial = calloc((size_t)self->rows, sizeof(double));
+    x_sum = calloc((size_t)self->cols, sizeof(double));
+    y_sum = calloc((size_t)self->rows, sizeof(double));
+    avg_x = calloc((size_t)self->cols, sizeof(double));
+    avg_y = calloc((size_t)self->rows, sizeof(double));
+    x_restart = calloc((size_t)self->cols, sizeof(double));
+    y_restart = calloc((size_t)self->rows, sizeof(double));
+    operator_data = calloc((size_t)self->nnz, sizeof(double));
+    operator_csc_data = calloc((size_t)self->nnz, sizeof(double));
+    bound_kind = calloc((size_t)self->cols, sizeof(unsigned char));
+    if (c == NULL || b == NULL || lo == NULL || hi == NULL ||
+        col_scale == NULL || scaled_lo == NULL || scaled_hi == NULL || scaled_c == NULL ||
+        row_scale == NULL || scaled_b == NULL ||
         x == NULL || xbar == NULL || y == NULL || ax == NULL || aty == NULL ||
-        scaled_c == NULL || bound_kind == NULL) {
-        free(c);
-        free(b);
-        free(lo);
-        free(hi);
-        free(row_scale);
-        free(scaled_b);
-        free(x);
-        free(xbar);
-        free(y);
-        free(ax);
-        free(aty);
-        free(scaled_c);
-        free(bound_kind);
+        y_trial == NULL || ax_trial == NULL ||
+        x_sum == NULL || y_sum == NULL || avg_x == NULL || avg_y == NULL ||
+        x_restart == NULL || y_restart == NULL ||
+        operator_data == NULL || operator_csc_data == NULL || bound_kind == NULL) {
         PyErr_NoMemory();
-        return NULL;
+        goto done;
     }
     if (fill_double_array(c_obj, self->cols, c, "c") != 0 ||
         fill_double_array(b_obj, self->rows, b, "b") != 0 ||
         fill_double_array(lo_obj, self->cols, lo, "lo") != 0 ||
         fill_double_array(hi_obj, self->cols, hi, "hi") != 0) {
-        free(c);
-        free(b);
-        free(lo);
-        free(hi);
-        free(row_scale);
-        free(scaled_b);
-        free(x);
-        free(xbar);
-        free(y);
-        free(ax);
-        free(aty);
-        free(scaled_c);
-        free(bound_kind);
-        return NULL;
+        goto done;
     }
 
-    double c_scale = objective_scale > 0.0 ? objective_scale : median_nonzero_abs(c, self->cols);
-    if (c_scale < 0.0) {
-        free(c);
-        free(b);
-        free(lo);
-        free(hi);
-        free(row_scale);
-        free(scaled_b);
-        free(x);
-        free(xbar);
-        free(y);
-        free(ax);
-        free(aty);
-        free(scaled_c);
-        free(bound_kind);
-        PyErr_NoMemory();
-        return NULL;
-    }
     for (Py_ssize_t col = 0; col < self->cols; col++) {
-        scaled_c[col] = c[col] / c_scale;
         int has_lo = isfinite(lo[col]);
         int has_hi = isfinite(hi[col]);
         bound_kind[col] = (unsigned char)((has_lo ? 1 : 0) | (has_hi ? 2 : 0));
-        if (isfinite(lo[col]) && isfinite(hi[col]) && hi[col] < lo[col]) {
-            free(c);
-            free(b);
-            free(lo);
-            free(hi);
-            free(row_scale);
-            free(scaled_b);
-            free(x);
-            free(xbar);
-            free(y);
-            free(ax);
-            free(aty);
-            free(scaled_c);
-            free(bound_kind);
+        if (has_lo && has_hi && hi[col] < lo[col]) {
             PyErr_SetString(PyExc_ValueError, "upper bound is lower than lower bound");
-            return NULL;
+            goto done;
+        }
+        col_scale[col] = 0.0;
+    }
+    /* Ruiz equilibration: iteratively divide each row and column by the
+     * square root of its infinity norm so both approach 1, then apply one
+     * l2 balancing pass. This conditions the operator far more evenly than
+     * single-shot norm scaling. */
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        col_scale[col] = 1.0;
+    }
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        row_scale[row] = 1.0;
+    }
+    for (int ruiz_iter = 0; ruiz_iter < 10; ruiz_iter++) {
+        for (Py_ssize_t row = 0; row < self->rows; row++) {
+            scaled_b[row] = 0.0;
+        }
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            aty[col] = 0.0;
+        }
+        for (Py_ssize_t row = 0; row < self->rows; row++) {
+            for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
+                Py_ssize_t col = self->indices[offset];
+                double value = fabs(self->data[offset] * row_scale[row] * col_scale[col]);
+                if (value > scaled_b[row]) {
+                    scaled_b[row] = value;
+                }
+                if (value > aty[col]) {
+                    aty[col] = value;
+                }
+            }
+        }
+        for (Py_ssize_t row = 0; row < self->rows; row++) {
+            if (scaled_b[row] > 0.0) {
+                row_scale[row] /= sqrt(scaled_b[row]);
+            }
+        }
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            if (aty[col] > 0.0) {
+                col_scale[col] /= sqrt(aty[col]);
+            }
+        }
+    }
+    /* One l2 pass on the Ruiz-equilibrated matrix. */
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        scaled_b[row] = 0.0;
+    }
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        aty[col] = 0.0;
+    }
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
+            Py_ssize_t col = self->indices[offset];
+            double value = self->data[offset] * row_scale[row] * col_scale[col];
+            scaled_b[row] += value * value;
+            aty[col] += value * value;
         }
     }
     for (Py_ssize_t row = 0; row < self->rows; row++) {
-        double row_norm_sq = 0.0;
-        for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
-            row_norm_sq += self->data[offset] * self->data[offset];
+        if (scaled_b[row] > 0.0) {
+            row_scale[row] /= sqrt(sqrt(scaled_b[row]));
         }
-        double row_norm = sqrt(row_norm_sq);
-        row_scale[row] = row_norm > 0.0 ? 1.0 / row_norm : 1.0;
+    }
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        if (aty[col] > 0.0) {
+            col_scale[col] /= sqrt(sqrt(aty[col]));
+        }
+    }
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        if (col_scale[col] < 1e-8) {
+            col_scale[col] = 1e-8;
+        } else if (col_scale[col] > 1e8) {
+            col_scale[col] = 1e8;
+        }
+        scaled_c[col] = c[col] * col_scale[col];
+        scaled_lo[col] = isfinite(lo[col]) ? lo[col] / col_scale[col] : lo[col];
+        scaled_hi[col] = isfinite(hi[col]) ? hi[col] / col_scale[col] : hi[col];
+    }
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
         scaled_b[row] = row_scale[row] * b[row];
     }
-    double norm = estimate_scaled_operator_norm(self, row_scale);
-    if (norm < 0.0) {
-        free(c);
-        free(b);
-        free(lo);
-        free(hi);
-        free(row_scale);
-        free(scaled_b);
-        free(x);
-        free(xbar);
-        free(y);
-        free(ax);
-        free(aty);
-        free(scaled_c);
-        free(bound_kind);
-        PyErr_NoMemory();
-        return NULL;
+    for (Py_ssize_t row = 0; row < self->rows; row++) {
+        for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
+            Py_ssize_t col = self->indices[offset];
+            operator_data[offset] = self->data[offset] * row_scale[row] * col_scale[col];
+        }
     }
-    double tau = 0.99 / norm;
-    double sigma = 0.99 / norm;
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        for (Py_ssize_t offset = self->csc_indptr[col]; offset < self->csc_indptr[col + 1]; offset++) {
+            Py_ssize_t row = self->csc_rows[offset];
+            operator_csc_data[offset] = self->csc_data[offset] * row_scale[row] * col_scale[col];
+        }
+    }
+
+    double norm;
+    norm = estimate_scaled_operator_norm(self, operator_data, operator_csc_data);
+    if (norm < 0.0) {
+        PyErr_NoMemory();
+        goto done;
+    }
+    double eta = 0.99 / norm;
+
+    /* The primal weight omega balances primal and dual step sizes:
+     * tau = eta / omega and sigma = eta * omega. A user-provided
+     * objective_scale seeds it for backwards compatibility; otherwise it
+     * starts at ||scaled c|| / ||scaled b|| and adapts at every restart. */
+    double omega = 1.0;
+    if (objective_scale > 0.0) {
+        omega = objective_scale;
+    } else {
+        double c_norm = l2_norm(scaled_c, self->cols);
+        double b_norm = l2_norm(scaled_b, self->rows);
+        if (c_norm > 1e-12 && b_norm > 1e-12) {
+            omega = c_norm / b_norm;
+        }
+    }
+    if (omega < PDHG_OMEGA_MIN) {
+        omega = PDHG_OMEGA_MIN;
+    } else if (omega > PDHG_OMEGA_MAX) {
+        omega = PDHG_OMEGA_MAX;
+    }
+    double omega_initial = omega;
+    double tau = eta / omega;
+    double sigma = eta * omega;
+
+    double c_inf = 0.0;
+    double c_l2 = 0.0;
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        double abs_c = fabs(c[col]);
+        c_inf = abs_c > c_inf ? abs_c : c_inf;
+        c_l2 += c[col] * c[col];
+    }
+    c_l2 = sqrt(c_l2);
+    double b_l2 = l2_norm(b, self->rows);
+
     for (Py_ssize_t col = 0; col < self->cols; col++) {
         double start = 0.0;
-        if (isfinite(lo[col]) && start < lo[col]) {
-            start = lo[col];
+        if (isfinite(scaled_lo[col]) && start < scaled_lo[col]) {
+            start = scaled_lo[col];
         }
-        if (isfinite(hi[col]) && start > hi[col]) {
-            start = hi[col];
-        }
-        if (isfinite(lo[col]) && isfinite(hi[col]) && lo[col] <= hi[col]) {
-            start = 0.5 * (lo[col] + hi[col]);
+        if (isfinite(scaled_hi[col]) && start > scaled_hi[col]) {
+            start = scaled_hi[col];
         }
         x[col] = start;
         xbar[col] = start;
+        x_restart[col] = start;
     }
 
-    double objective = 0.0;
-    double max_residual = INFINITY;
-    double l2_residual = INFINITY;
     Py_ssize_t iterations = 0;
+    Py_ssize_t restarts = 0;
+    Py_ssize_t step_trials = 0;
     const char *status = "iteration_limit";
+    KKTEval final_ev;
+    evaluate_kkt(
+        self, x, y, operator_data, operator_csc_data, c, b, lo, hi, bound_kind,
+        col_scale, row_scale, scaled_b, b_l2, c_l2, ax, aty, &final_ev);
 
-    Py_BEGIN_ALLOW_THREADS
-    for (Py_ssize_t iter = 1; iter <= max_iter; iter++) {
-        csr_scaled_matvec(self, xbar, row_scale, ax);
-        for (Py_ssize_t row = 0; row < self->rows; row++) {
-            y[row] += sigma * (ax[row] - scaled_b[row]);
-        }
-        csr_scaled_transpose_matvec(self, y, row_scale, aty);
-        for (Py_ssize_t col = 0; col < self->cols; col++) {
-            double old = x[col];
-            double updated = x[col] - tau * (aty[col] + scaled_c[col]);
-            switch (bound_kind[col]) {
-                case 1:
-                    if (updated < lo[col]) {
-                        updated = lo[col];
+    if (kkt_terminated(&final_ev, tol, c_inf)) {
+        status = "optimal";
+    } else if (max_iter > 0) {
+        Py_ssize_t eval_interval = check_interval < 64 ? check_interval : 64;
+        Py_BEGIN_ALLOW_THREADS
+        double mu_start = final_ev.kkt;
+        double mu_last = final_ev.kkt;
+        Py_ssize_t navg = 0;
+        /* ax and aty cache the scaled products for the current iterate; the
+         * pre-loop evaluate_kkt call has already filled both. */
+        for (Py_ssize_t iter = 1; iter <= max_iter; iter++) {
+            /* Adaptive step size: try eta, accept when it is no larger than
+             * the locally safe bound movement/interaction, otherwise shrink
+             * and retry. Accepted steps may grow eta slightly. */
+            double shrink = 1.0 - pow((double)iter + 1.0, -0.3);
+            double grow = 1.0 + pow((double)iter + 1.0, -0.6);
+            for (int trial = 0; trial < 60; trial++) {
+                step_trials++;
+                double trial_tau = eta / omega;
+                double trial_sigma = eta * omega;
+                for (Py_ssize_t col = 0; col < self->cols; col++) {
+                    double updated = x[col] - trial_tau * (aty[col] + scaled_c[col]);
+                    switch (bound_kind[col]) {
+                        case 1:
+                            if (updated < scaled_lo[col]) {
+                                updated = scaled_lo[col];
+                            }
+                            break;
+                        case 2:
+                            if (updated > scaled_hi[col]) {
+                                updated = scaled_hi[col];
+                            }
+                            break;
+                        case 3:
+                            if (updated < scaled_lo[col]) {
+                                updated = scaled_lo[col];
+                            } else if (updated > scaled_hi[col]) {
+                                updated = scaled_hi[col];
+                            }
+                            break;
                     }
-                    break;
-                case 2:
-                    if (updated > hi[col]) {
-                        updated = hi[col];
-                    }
-                    break;
-                case 3:
-                    if (updated < lo[col]) {
-                        updated = lo[col];
-                    } else if (updated > hi[col]) {
-                        updated = hi[col];
-                    }
-                    break;
-            }
-            x[col] = updated;
-            xbar[col] = 2.0 * updated - old;
-        }
-        iterations = iter;
-        if (iter % check_interval == 0 || iter == max_iter) {
-            max_residual = 0.0;
-            l2_residual = 0.0;
-            for (Py_ssize_t row = 0; row < self->rows; row++) {
-                double total = 0.0;
-                for (Py_ssize_t offset = self->indptr[row]; offset < self->indptr[row + 1]; offset++) {
-                    total += self->data[offset] * x[self->indices[offset]];
+                    xbar[col] = updated;
                 }
-                double residual = fabs(total - b[row]);
-                max_residual = residual > max_residual ? residual : max_residual;
-                l2_residual += residual * residual;
+                csr_scaled_matvec(self, xbar, operator_data, ax_trial);
+                double dx_sq = 0.0;
+                double dy_sq = 0.0;
+                double interaction = 0.0;
+                for (Py_ssize_t row = 0; row < self->rows; row++) {
+                    double gradient = 2.0 * ax_trial[row] - ax[row] - scaled_b[row];
+                    double updated = y[row] + trial_sigma * gradient;
+                    double dy = updated - y[row];
+                    y_trial[row] = updated;
+                    dy_sq += dy * dy;
+                    interaction += dy * (ax_trial[row] - ax[row]);
+                }
+                for (Py_ssize_t col = 0; col < self->cols; col++) {
+                    double dx = xbar[col] - x[col];
+                    dx_sq += dx * dx;
+                }
+                double movement = 0.5 * omega * dx_sq + 0.5 * dy_sq / omega;
+                double inter_abs = fabs(interaction);
+                if (movement <= 1e-30 || inter_abs <= 1e-30) {
+                    eta *= grow;
+                    tau = trial_tau;
+                    sigma = trial_sigma;
+                    break;
+                }
+                double eta_bar = movement / inter_abs;
+                if (eta <= eta_bar) {
+                    double eta_shrunk = shrink * eta_bar;
+                    double eta_grown = grow * eta;
+                    eta = eta_shrunk < eta_grown ? eta_shrunk : eta_grown;
+                    tau = trial_tau;
+                    sigma = trial_sigma;
+                    break;
+                }
+                eta = shrink * eta_bar;
             }
-            l2_residual = sqrt(l2_residual);
-            if (max_residual <= tol) {
+            {
+                double *swap = x;
+                x = xbar;
+                xbar = swap;
+            }
+            {
+                double *swap = y;
+                y = y_trial;
+                y_trial = swap;
+            }
+            {
+                double *swap = ax;
+                ax = ax_trial;
+                ax_trial = swap;
+            }
+            csr_scaled_transpose_matvec(self, y, operator_csc_data, aty);
+            for (Py_ssize_t col = 0; col < self->cols; col++) {
+                x_sum[col] += x[col];
+            }
+            for (Py_ssize_t row = 0; row < self->rows; row++) {
+                y_sum[row] += y[row];
+            }
+            navg++;
+            iterations = iter;
+            if (iter % eval_interval != 0 && iter != max_iter) {
+                continue;
+            }
+
+            KKTEval ev_current;
+            KKTEval ev_average;
+            evaluate_kkt(
+                self, x, y, operator_data, operator_csc_data, c, b, lo, hi, bound_kind,
+                col_scale, row_scale, scaled_b, b_l2, c_l2, ax, aty, &ev_current);
+            double inv_navg = 1.0 / (double)navg;
+            for (Py_ssize_t col = 0; col < self->cols; col++) {
+                avg_x[col] = x_sum[col] * inv_navg;
+            }
+            for (Py_ssize_t row = 0; row < self->rows; row++) {
+                avg_y[row] = y_sum[row] * inv_navg;
+            }
+            /* The average eval writes A*avg_x into ax_trial and A'*avg_y into
+             * xbar, leaving the current-iterate caches in ax and aty intact. */
+            evaluate_kkt(
+                self, avg_x, avg_y, operator_data, operator_csc_data, c, b, lo, hi, bound_kind,
+                col_scale, row_scale, scaled_b, b_l2, c_l2, ax_trial, xbar, &ev_average);
+            int best_is_average = ev_average.kkt < ev_current.kkt;
+            KKTEval ev_best = best_is_average ? ev_average : ev_current;
+
+            if (kkt_terminated(&ev_best, tol, c_inf)) {
+                if (best_is_average) {
+                    for (Py_ssize_t col = 0; col < self->cols; col++) {
+                        x[col] = avg_x[col];
+                    }
+                    for (Py_ssize_t row = 0; row < self->rows; row++) {
+                        y[row] = avg_y[row];
+                    }
+                }
+                final_ev = ev_best;
                 status = "optimal";
                 break;
             }
+            if (iter == max_iter) {
+                if (best_is_average) {
+                    for (Py_ssize_t col = 0; col < self->cols; col++) {
+                        x[col] = avg_x[col];
+                    }
+                    for (Py_ssize_t row = 0; row < self->rows; row++) {
+                        y[row] = avg_y[row];
+                    }
+                }
+                final_ev = ev_best;
+                break;
+            }
+
+            int do_restart = 0;
+            if (ev_best.kkt <= PDHG_RESTART_SUFFICIENT * mu_start) {
+                do_restart = 1;
+            } else if (ev_best.kkt <= PDHG_RESTART_NECESSARY * mu_start && ev_best.kkt > mu_last) {
+                do_restart = 1;
+            } else if ((double)navg >= PDHG_RESTART_ARTIFICIAL * (double)iter) {
+                do_restart = 1;
+            }
+            mu_last = ev_best.kkt;
+            if (do_restart) {
+                const double *cand_x = best_is_average ? avg_x : x;
+                const double *cand_y = best_is_average ? avg_y : y;
+                if (adaptive_weight == 1) {
+                    double dx_sq = 0.0;
+                    double dy_sq = 0.0;
+                    for (Py_ssize_t col = 0; col < self->cols; col++) {
+                        double diff = cand_x[col] - x_restart[col];
+                        dx_sq += diff * diff;
+                    }
+                    for (Py_ssize_t row = 0; row < self->rows; row++) {
+                        double diff = cand_y[row] - y_restart[row];
+                        dy_sq += diff * diff;
+                    }
+                    if (dx_sq > 1e-30 && dy_sq > 1e-30) {
+                        double ratio = sqrt(dy_sq / dx_sq);
+                        omega = exp(
+                            PDHG_OMEGA_SMOOTHING * log(ratio) +
+                            (1.0 - PDHG_OMEGA_SMOOTHING) * log(omega));
+                    }
+                    /* Safeguard: the movement update can spiral when one side
+                     * has converged (tiny steps keep its movement tiny). When
+                     * the KKT error is grossly lopsided, nudge omega toward
+                     * the lagging side: a larger omega strengthens the dual
+                     * ascent that enforces primal feasibility and vice
+                     * versa. */
+                    {
+                        double rel_primal = ev_best.primal_res_l2 / (1.0 + b_l2);
+                        double rel_dual = ev_best.dual_res_l2 / (1.0 + c_l2);
+                        double rel_gap = fabs(ev_best.gap) /
+                            (1.0 + fabs(ev_best.primal_obj) + fabs(ev_best.dual_obj));
+                        if (rel_primal > 20.0 * rel_dual && rel_primal > 20.0 * rel_gap) {
+                            omega *= 2.0;
+                        } else if (rel_dual > 20.0 * rel_primal) {
+                            omega *= 0.5;
+                        }
+                    }
+                } else if (adaptive_weight == 2) {
+                    /* Residual-balance update: when primal infeasibility
+                     * dominates the dual error, raise omega so the dual
+                     * ascent gets stronger, and vice versa. The per-restart
+                     * change is clamped so omega cannot spiral. */
+                    double rel_primal = ev_best.primal_res_l2 / (1.0 + b_l2);
+                    double rel_dual = ev_best.dual_res_l2 / (1.0 + c_l2);
+                    double rel_gap = fabs(ev_best.gap) /
+                        (1.0 + fabs(ev_best.primal_obj) + fabs(ev_best.dual_obj));
+                    double dual_err = sqrt(rel_dual * rel_dual + rel_gap * rel_gap);
+                    if (rel_primal > 1e-30 && dual_err > 1e-30) {
+                        double step = PDHG_OMEGA_SMOOTHING * log(rel_primal / dual_err);
+                        if (step > 1.3862943611198906) {
+                            step = 1.3862943611198906;
+                        } else if (step < -1.3862943611198906) {
+                            step = -1.3862943611198906;
+                        }
+                        omega = exp(log(omega) + step);
+                    }
+                }
+                if (adaptive_weight) {
+                    if (omega < PDHG_OMEGA_MIN) {
+                        omega = PDHG_OMEGA_MIN;
+                    } else if (omega > PDHG_OMEGA_MAX) {
+                        omega = PDHG_OMEGA_MAX;
+                    }
+                    tau = eta / omega;
+                    sigma = eta * omega;
+                }
+                if (best_is_average) {
+                    /* Adopt the average iterate and reuse the products that
+                     * its KKT evaluation just computed. */
+                    for (Py_ssize_t col = 0; col < self->cols; col++) {
+                        x[col] = avg_x[col];
+                        aty[col] = xbar[col];
+                    }
+                    for (Py_ssize_t row = 0; row < self->rows; row++) {
+                        y[row] = avg_y[row];
+                        ax[row] = ax_trial[row];
+                    }
+                }
+                for (Py_ssize_t col = 0; col < self->cols; col++) {
+                    x_restart[col] = x[col];
+                    x_sum[col] = 0.0;
+                }
+                for (Py_ssize_t row = 0; row < self->rows; row++) {
+                    y_restart[row] = y[row];
+                    y_sum[row] = 0.0;
+                }
+                navg = 0;
+                restarts++;
+                mu_start = ev_best.kkt;
+                mu_last = ev_best.kkt;
+            }
         }
+        Py_END_ALLOW_THREADS
     }
-    Py_END_ALLOW_THREADS
+
+    double max_residual = final_ev.primal_res_max;
+    double l2_residual = final_ev.primal_res_l2;
+
+    for (Py_ssize_t col = 0; col < self->cols; col++) {
+        x[col] *= col_scale[col];
+    }
 
     if (max_residual > tol) {
         Py_BEGIN_ALLOW_THREADS
         active_set_cgls_cleanup(self, x, b, lo, hi, bound_kind, tol, &max_residual, &l2_residual);
         Py_END_ALLOW_THREADS
-        if (max_residual <= tol) {
-            status = "optimal";
-        }
+    }
+    /* Status follows the project's feasibility-based convention: the KKT
+     * test can stop the loop early, but a primal-feasible final point is
+     * reported optimal even when the gap test missed an eval point. */
+    if (max_residual <= tol) {
+        status = "optimal";
     }
 
-    objective = 0.0;
+    double objective = 0.0;
     for (Py_ssize_t col = 0; col < self->cols; col++) {
         objective += c[col] * x[col];
     }
 
-    PyObject *x_list = PyList_New(self->cols);
-    if (x_list == NULL) {
-        free(c);
-        free(b);
-        free(lo);
-        free(hi);
-        free(row_scale);
-        free(scaled_b);
-        free(x);
-        free(xbar);
-        free(y);
-        free(ax);
-        free(aty);
-        free(scaled_c);
-        free(bound_kind);
-        return NULL;
-    }
-    for (Py_ssize_t col = 0; col < self->cols; col++) {
-        PyObject *boxed = PyFloat_FromDouble(x[col]);
-        if (boxed == NULL) {
-            Py_DECREF(x_list);
-            free(c);
-            free(b);
-            free(lo);
-            free(hi);
-            free(row_scale);
-            free(scaled_b);
-            free(x);
-            free(xbar);
-            free(y);
-            free(ax);
-            free(aty);
-            free(scaled_c);
-            free(bound_kind);
-            return NULL;
+    {
+        PyObject *x_list = PyList_New(self->cols);
+        if (x_list == NULL) {
+            goto done;
         }
-        PyList_SET_ITEM(x_list, col, boxed);
+        for (Py_ssize_t col = 0; col < self->cols; col++) {
+            PyObject *boxed = PyFloat_FromDouble(x[col]);
+            if (boxed == NULL) {
+                Py_DECREF(x_list);
+                goto done;
+            }
+            PyList_SET_ITEM(x_list, col, boxed);
+        }
+        result = Py_BuildValue(
+            "{s:s,s:d,s:d,s:d,s:n,s:d,s:d,s:d,s:d,s:d,s:d,s:n,s:n,s:N}",
+            "status",
+            status,
+            "objective",
+            objective,
+            "max_primal_residual",
+            max_residual,
+            "l2_primal_residual",
+            l2_residual,
+            "iterations",
+            iterations,
+            "operator_norm",
+            norm,
+            "step_size",
+            tau,
+            "objective_scale",
+            omega_initial,
+            "primal_weight",
+            omega,
+            "dual_residual",
+            final_ev.dual_res_inf,
+            "gap",
+            final_ev.gap,
+            "restarts",
+            restarts,
+            "step_trials",
+            step_trials,
+            "x",
+            x_list);
     }
 
-    PyObject *result = Py_BuildValue(
-        "{s:s,s:d,s:d,s:d,s:n,s:d,s:d,s:d,s:N}",
-        "status",
-        status,
-        "objective",
-        objective,
-        "max_primal_residual",
-        max_residual,
-        "l2_primal_residual",
-        l2_residual,
-        "iterations",
-        iterations,
-        "operator_norm",
-        norm,
-        "step_size",
-        tau,
-        "objective_scale",
-        c_scale,
-        "x",
-        x_list);
-
+done:
     free(c);
     free(b);
     free(lo);
     free(hi);
+    free(col_scale);
+    free(scaled_lo);
+    free(scaled_hi);
+    free(scaled_c);
     free(row_scale);
     free(scaled_b);
     free(x);
@@ -957,7 +1331,16 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     free(y);
     free(ax);
     free(aty);
-    free(scaled_c);
+    free(y_trial);
+    free(ax_trial);
+    free(x_sum);
+    free(y_sum);
+    free(avg_x);
+    free(avg_y);
+    free(x_restart);
+    free(y_restart);
+    free(operator_data);
+    free(operator_csc_data);
     free(bound_kind);
     return result;
 }

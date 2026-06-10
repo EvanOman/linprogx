@@ -169,6 +169,30 @@ def test_sparse_pdhg_respects_active_lower_bound() -> None:
     assert result.solution.x == pytest.approx([1.0, 2.0], abs=1e-3)
 
 
+def test_sparse_pdhg_zero_iteration_uses_projected_zero_start() -> None:
+    a_eq = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, -1.0])
+
+    result = SparseSolver(
+        algorithm="pdhg",
+        eps=1e-8,
+        max_iterations=0,
+        objective_scale=1.0,
+        check_interval=1,
+    ).solve(
+        SparseLPProblem(
+            [1.0, 1.0],
+            A_eq=a_eq,
+            b_eq=[0.0],
+            objective="min",
+            bounds=[(0.0, 1.0), (0.0, 1.0)],
+        )
+    )
+
+    assert result.solution.status == Status.OPTIMAL
+    assert result.solution.objective_value == pytest.approx(0.0)
+    assert result.solution.x == pytest.approx([0.0, 0.0])
+
+
 def test_sparse_problem_validation() -> None:
     matrix = csr_matrix(1, 2, [0, 1], [0], [1.0])
 

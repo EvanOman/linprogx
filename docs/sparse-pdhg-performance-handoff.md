@@ -1,6 +1,7 @@
 # Sparse PDHG Performance Handoff
 
 **Date:** Monday, May 18, 2026 at 01:41 PM CDT
+**Continuation update:** Monday, May 18, 2026 after column equilibration and CYCLE polish work
 **Primary worktree:** `/home/evan/dev/linprogx`
 **Primary branch:** `sparse-support`
 **Primary last commit:** `64d0f69 Add active-set cleanup for sparse PDHG`
@@ -15,9 +16,9 @@ Both branches were pushed:
 
 ## High-Level Status
 
-The current C-backed sparse PDHG branch is much faster than the earlier large-benchmark state, but it is still not at parity with HiGHS or Clarabel. DFL001 improved from the previous committed `24.042s` run to `9.467s` by adding a post-PDHG active-set CGLS feasibility cleanup and lowering the DFL001 PDHG budget from `220_000` to `58_000` iterations.
+The current C-backed sparse PDHG branch is much faster than the earlier large-benchmark state, but it is still not at runtime parity with HiGHS or Clarabel. DFL001 improved from the previous committed `24.042s` run to `9.478s` with a much tighter objective delta by adding column equilibration, keeping the active-set CGLS feasibility cleanup, and retuning the DFL001 PDHG budget from `58_000` to `55_000` iterations.
 
-The new CYCLE guardrail still fails for `linprogx-sparse`, which is intentional and useful: it shows the current tuning remains DFL001-specific and does not solve a different sparse Netlib shape.
+CYCLE no longer fails feasibility. The tuned CYCLE run now reaches `optimal` under the configured `2e-5` feasibility tolerance with objective delta `6.589e-03`, but it is still far slower than HiGHS and Clarabel. Treat CYCLE as solved for correctness guardrail purposes, not solved for performance parity.
 
 The Rust experiment was run in a separate worktree and branch. A faithful Rust/PyO3 port did not beat the C extension on DFL001. It reached rough parity on CYCLE and was slower on the small fast cases, so the next performance work should focus on structural algorithm changes rather than a language rewrite.
 
@@ -36,11 +37,11 @@ Latest committed benchmark from `assets/large_dfl001_summary.md`:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx-sparse | optimal | 11266398.367904 | 2.321e+00 | 9.467s | max equality residual 1.867e-05; objective scale 1.5e+04 |
-| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 5.939s | HiGHS optimal |
-| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 6.879s | max equality residual 1.074e-11 |
+| linprogx-sparse | optimal | 11266396.062835 | 1.584e-02 | 9.478s | max equality residual 1.063e-05; objective scale 1.5e+04 |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.196s | HiGHS optimal |
+| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 7.137s | max equality residual 1.074e-11 |
 
-Important caveat: the `9.467s` DFL001 run is feasible under the configured `2e-5` equality tolerance, but the objective delta is worse than the previous 220k-iteration result. Previous result was `24.042s`, objective delta `2.455e-02`, residual `1.577e-05`. The current setting trades objective tightness for runtime.
+Important caveat: the `9.478s` DFL001 run is feasible under the configured `2e-5` equality tolerance and now has better objective delta than the previous 220k-iteration result. HiGHS remains faster and tighter, but the DFL001 quality gap is now small enough that further work should focus on reducing iterations/runtime without losing this accuracy.
 
 ### Netlib CYCLE Guardrail
 
@@ -55,11 +56,11 @@ Latest committed benchmark from `assets/cycle_summary.md`:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx-sparse | iteration_limit | -4.574261 | 6.521e-01 | 3.592s | max equality residual 5.469e+00; objective scale 0.06 |
-| SciPy/HiGHS | optimal | -5.226393 | 5.898e-12 | 0.309s | HiGHS optimal |
-| Clarabel | optimal | -5.226393 | 8.174e-10 | 0.361s | max equality residual 7.276e-12 |
+| linprogx-sparse | optimal | -5.219804 | 6.589e-03 | 5.045s | max equality residual 1.726e-05; objective scale 6e-05 |
+| SciPy/HiGHS | optimal | -5.226393 | 5.898e-12 | 0.179s | HiGHS optimal |
+| Clarabel | optimal | -5.226393 | 8.174e-10 | 0.212s | max equality residual 7.276e-12 |
 
-The CYCLE failure is not just a runtime problem. Residual remains several units away from feasibility. This should be treated as an algorithm/scaling robustness issue.
+The old CYCLE failure was primarily scaling and phase-balance related. Median-normalized inverse column-norm scaling drops the residual by orders of magnitude, and an explicitly objective-heavy first phase followed by a feasibility-only warm polish certifies feasibility. Runtime is still the major problem: `linprogx-sparse` is roughly 28x slower than HiGHS/Clarabel on CYCLE.
 
 ### Rust Experiment
 
@@ -99,12 +100,16 @@ Important files:
   - Existing C CSR matrix path now stores CSC transpose data as well as CSR data.
   - Transpose matvec uses CSC column traversal instead of CSR scatter-add.
   - PDHG loop has fused projection/update work.
+  - PDHG now applies median-normalized inverse column-norm scaling in addition to row scaling.
+  - PDHG precomputes the scaled CSR/CSC operator once per solve instead of multiplying row/column scales on every matvec nonzero.
+  - The initial point now uses projected zero rather than finite-bound midpoints when zero is feasible.
+  - Explicitly objective-heavy runs can use a warm feasibility-only PDHG polish before active-set cleanup, and that polish now stops early once feasibility tolerance is reached.
   - New active-set CGLS cleanup starts at `active_set_cgls_cleanup`.
   - Cleanup is called after PDHG if final max equality residual is still above tolerance.
 - `bench_large.py`
-  - DFL001 `linprogx-sparse` run now uses `max_iterations=58_000`, `check_interval=58_000`, `eps=2e-5`, `objective_scale=15_000.0`.
+  - DFL001 `linprogx-sparse` run now uses `max_iterations=55_000`, `check_interval=55_000`, `eps=2e-5`, `objective_scale=15_000.0`.
 - `bench_cycle.py`
-  - Adds CYCLE guardrail benchmark.
+  - CYCLE `linprogx-sparse` run now uses `max_iterations=110_000`, `check_interval=110_000`, `eps=2e-5`, `objective_scale=6e-5`.
 - `benchmark_data/netlib_cycle/lp_cycle.mat`
   - SuiteSparse LPnetlib CYCLE data.
 - `assets/large_dfl001_*`
@@ -330,13 +335,18 @@ Do not commit generated `.so` files.
 - CSC transpose storage improved transpose matvec by avoiding CSR scatter-add.
 - Fusing the PDHG projection/update loop reduced allocation and loop overhead.
 - Active-set CGLS cleanup can certify DFL001 feasibility after far fewer PDHG iterations.
-- Lowering DFL001 to `58_000` iterations with cleanup is the best committed runtime point so far.
+- Median-normalized inverse column-norm scaling dramatically improves CYCLE feasibility and also improves DFL001 objective quality.
+- Projected-zero initialization is better than finite-bound midpoint initialization for homogeneous equality problems such as CYCLE.
+- A small-objective-scale first phase plus a warm feasibility-only polish can make CYCLE feasible without losing too much objective quality.
+- Early stopping inside the feasibility polish trims CYCLE iterations, and precomputing the scaled operator cuts CYCLE runtime by about one second on the current machine.
+- Lowering DFL001 to `55_000` iterations with cleanup is the best committed runtime/quality point so far.
 
 ### Tried But Not A Win
 
 - Multiple active-set cleanup passes (`max_passes = 3`) were tested locally and did not help DFL001 threshold cases. It was reverted to `max_passes = 1`.
 - A faithful Rust port did not beat C on DFL001. It was close enough to be useful for experiments, but language alone is not the win.
-- CYCLE does not improve meaningfully with current active-set cleanup; it remains infeasible by a large residual.
+- Diagonal l1 PDHG preconditioning was prototyped in Python for CYCLE and did not beat column scaling; l2 diagonal steps diverged in that quick probe.
+- Active-set LSQR-style cleanup alone did not fix CYCLE's near-optimal infeasible iterates; it stalled around `1e-3` residual in probes.
 
 ### Important Diagnostic
 
@@ -348,9 +358,9 @@ uv pip install -e . --force-reinstall
 
 ## Suggested Structural Investigation Next
 
-1. Add column scaling / diagonal preconditioning to PDHG.
+1. Reduce the CYCLE iteration budget.
 
-   Current native PDHG uses row scaling, but not a full row/column equilibration strategy. CYCLE is rank-deficient, denser, has free and upper-bounded variables, a negative optimum, and degeneracy. That makes it a better test of scaling robustness than DFL001. Implementing column scaling or Ruiz-style equilibration is the most plausible next algorithmic improvement.
+   Column scaling and warm feasibility polish made CYCLE correct, but not fast. The best committed point is still around `5.0s` versus roughly `0.18s` for HiGHS and `0.22s` for Clarabel. Next work should focus on why the objective-heavy phase needs roughly `110_000` main iterations and whether restart/averaging, adaptive primal-dual weighting, or better optimality measures can cut that by an order of magnitude.
 
 2. Make active-set cleanup preconditioned and instrumented.
 
@@ -373,7 +383,7 @@ uv pip install -e . --force-reinstall
 
 3. Separate feasibility convergence from objective convergence.
 
-   DFL001 at `58_000` iterations is feasible but has objective delta `2.321`. The older `140_000` to `220_000` region gives much tighter objective values at higher runtime. The benchmark currently reports both, but solver status is only feasibility-based. Decide whether the sparse PDHG status should include a dual gap, objective movement, or KKT-style criterion before optimizing only feasibility.
+   DFL001 at `55_000` iterations is feasible and accurate, but CYCLE showed that feasibility-only status can be misleading when the objective scale is not tuned. The benchmark currently reports both, but solver status is still feasibility-based. Decide whether the sparse PDHG status should include a dual gap, objective movement, or KKT-style criterion before optimizing only feasibility.
 
 4. Investigate CYCLE rank deficiency / presolve.
 
@@ -405,13 +415,13 @@ uv pip install -e . --force-reinstall
 - Do not treat `iteration_limit` with a good objective as solved; equality residual matters.
 - Rebuild the extension after every C change.
 - Keep SciPy/HiGHS and Clarabel in every large-benchmark result for calibration.
-- Watch objective delta as well as residual; DFL001 has a real speed/accuracy tradeoff now.
+- Watch objective delta as well as residual; both DFL001 and CYCLE still have real speed/accuracy tradeoffs.
 - If adding build flags or Rust machinery, keep the default dependency story clear. The original branch is meant to remain dependency-free for the C sparse path.
 
 ## Open Questions
 
-- Can row/column equilibration make CYCLE converge at all under PDHG?
-- Can a preconditioned active-set CGLS cleanup certify CYCLE feasibility after PDHG?
+- Can adaptive restarts, averaging, or primal-dual weighting reduce CYCLE's `110_000` main-iteration requirement?
+- Can presolve remove enough CYCLE degeneracy or dependent rows to get closer to HiGHS/Clarabel runtime?
 - What is the acceptable DFL001 objective delta for this project: relative `2e-7`, Clarabel-level `3e-2`, or HiGHS-level `1e-4`?
 - Should `SparseSolver` expose a debug/stats mode for residuals, cleanup iterations, and scaling diagnostics?
 - Should the benchmark report dual/KKT quality instead of only equality residual and objective delta?

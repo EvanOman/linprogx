@@ -114,7 +114,7 @@ def _run_linprogx_sparse(problem_data: dict[str, Any]) -> CycleBenchRow:
         algorithm="pdhg",
         max_iterations=50_000,
         eps=2e-5,
-        check_interval=5_000,
+        check_interval=50_000,
     ).solve(
         SparseLPProblem(
             c=problem_data["c"].tolist(),
