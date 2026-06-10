@@ -99,9 +99,7 @@ def test_sparse_pdhg_presolve_matches_unpresolved_solution() -> None:
         assert result.solution.status == Status.OPTIMAL
         solved[presolve] = result.solution
 
-    assert solved[True].objective_value == pytest.approx(
-        solved[False].objective_value, abs=1e-4
-    )
+    assert solved[True].objective_value == pytest.approx(solved[False].objective_value, abs=1e-4)
     assert solved[True].x == pytest.approx(solved[False].x, abs=1e-3)
     assert "presolve removed" in solved[True].message
 
