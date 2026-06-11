@@ -185,6 +185,9 @@ def run(name, load, path, bounds_fn, expected):
     red = presolve_eq_box(
         rows, cols, indptr, indices, dat, data["b"].tolist(), data["c"].tolist(), lo_l, hi_l
     )
+    if red is None:
+        msg = f"{name}: presolve found nothing to reduce; prototype expects a reduction"
+        raise RuntimeError(msg)
     A = sp.csr_matrix((red.data, red.indices, red.indptr), shape=(red.rows, red.cols))
     print(f"== {name}: reduced {A.shape}, nnz {A.nnz} ==", flush=True)
     t0 = time.perf_counter()
