@@ -260,11 +260,11 @@ Current local result:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx-sparse | optimal | 11266396.207350 | 1.604e-01 | 5.336s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG converged; max equality residual 1.961e-05; objective scale 4.96e+05; presolve removed 15 rows and 15 cols |
-| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.378s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 8.057s | Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11 |
+| linprogx-sparse | optimal | 11266396.207350 | 1.604e-01 | 6.505s | C CSR matrix with native-c-sparse-pdhg; equality+bounds; native sparse PDHG converged; max equality residual 1.961e-05; objective scale 4.96e+05; presolve removed 15 rows and 15 cols |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 7.491s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 14.258s | Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11 |
 
-On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `1.4e-08` relative error with a max equality residual below the configured `2e-5` tolerance, with no per-problem tuning: a dependency-free presolve (empty/singleton/doubleton rows) feeds a sparse PDHG with Ruiz equilibration, restarted iterate averaging, an adaptive primal weight, an adaptive step size, and KKT-based termination. It now runs faster than both HiGHS and Clarabel on this benchmark.
+On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `1.4e-08` relative error with a max equality residual below the configured `2e-5` tolerance, with no per-problem tuning. The solver is a portfolio: a dependency-free presolve (empty/singleton/doubleton rows) feeds either a native interior point method (small/degenerate problems) or a sparse PDHG with Ruiz equilibration, restarted iterate averaging, an adaptive primal weight, an adaptive step size, and KKT-based termination (large problems); `algorithm="auto"` routes by reduced problem size. DFL001 routes to PDHG and runs faster than both HiGHS and Clarabel on this benchmark.
 
 ![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
 
@@ -289,11 +289,11 @@ Current local result:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx-sparse | optimal | -5.226396 | 2.835e-06 | 1.389s | C CSR matrix with native-c-sparse-pdhg; equality+bounds PDHG; native sparse PDHG converged; max equality residual 4.404e-06; objective scale 1; presolve removed 388 rows and 360 cols |
-| SciPy/HiGHS | optimal | -5.226393 | 5.898e-12 | 0.180s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | optimal | -5.226393 | 8.174e-10 | 0.218s | Clarabel status: Solved; max equality residual 7.276e-12 |
+| linprogx-sparse | optimal | -5.226393 | 1.682e-07 | 0.161s | C CSR matrix with native-c-sparse-ipm; equality+bounds; native sparse IPM converged; max equality residual 1.091e-11; presolve removed 388 rows and 360 cols |
+| SciPy/HiGHS | optimal | -5.226393 | 5.898e-12 | 0.243s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | -5.226393 | 8.174e-10 | 0.303s | Clarabel status: Solved; max equality residual 7.276e-12 |
 
-This guardrail now converges via the full KKT test with the same untuned solver settings as DFL001. Doubleton-row presolve removes the dependent-row mass that previously stalled the duality gap, taking the objective delta from 8.8e-4 to 2.8e-6 and the runtime from 2.0s to 1.4s. HiGHS and Clarabel are still faster on this small degenerate shape, which is expected simplex/interior-point territory; closing the rest of the gap would need plateau-aware budgets or a different algorithm class.
+The auto-routed solver sends this small degenerate problem to the native interior point method: a Mehrotra predictor-corrector on the regularized normal equations, factored by a dependency-free sparse Cholesky with exact minimum-degree ordering. It converges in 34 interior point iterations with a max equality residual of `1.1e-11` and is now the fastest solver on this benchmark.
 
 Example local run on the included samples:
 

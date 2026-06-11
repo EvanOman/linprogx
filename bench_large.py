@@ -137,7 +137,7 @@ def write_plot(result: LargeBenchResult, path: Path) -> None:
 
 def _run_linprogx_sparse(problem_data: dict[str, Any]) -> LargeBenchRow:
     result = SparseSolver(
-        algorithm="pdhg",
+        algorithm="auto",
         max_iterations=50_000,
         eps=2e-5,
         check_interval=50_000,
@@ -158,9 +158,7 @@ def _run_linprogx_sparse(problem_data: dict[str, Any]) -> LargeBenchRow:
         objective=objective,
         objective_delta=None if objective is None else abs(objective - EXPECTED_DFL001_OBJECTIVE),
         seconds=result.seconds,
-        notes=(
-            f"C CSR matrix with {result.backend}; equality+bounds PDHG; {result.solution.message}"
-        ),
+        notes=(f"C CSR matrix with {result.backend}; equality+bounds; {result.solution.message}"),
     )
 
 

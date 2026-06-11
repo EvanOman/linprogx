@@ -81,12 +81,17 @@ class _SparseTableau:
 class SparseSolver:
     """Dependency-free sparse two-phase simplex over linprogx's C CSR type."""
 
+    #: reduced problems at or below this many rows route to the interior
+    #: point method under ``algorithm="auto"``; direct factorization wins
+    #: on small or degenerate systems while first-order PDHG scales better.
+    AUTO_IPM_MAX_ROWS = 4000
+
     def __init__(
         self,
         *,
         eps: float = 1e-9,
         max_iterations: int = 50_000,
-        algorithm: Literal["simplex", "pdhg"] = "simplex",
+        algorithm: Literal["simplex", "pdhg", "ipm", "auto"] = "simplex",
         objective_scale: float | None = None,
         check_interval: int | None = None,
         presolve: bool = True,
@@ -100,27 +105,27 @@ class SparseSolver:
 
     def solve(self, problem: SparseLPProblem) -> SparseSolveResult:
         start = time.perf_counter()
-        if self.algorithm == "pdhg":
-            solution = self._solve_pdhg(problem)
-            backend = "native-c-sparse-pdhg"
+        if self.algorithm in ("pdhg", "ipm", "auto"):
+            solution, backend = self._solve_eq_box(problem, self.algorithm)
         else:
             solution = self._solve(problem)
             backend = "native-sparse-simplex"
         return SparseSolveResult(solution, backend, time.perf_counter() - start)
 
-    def _solve_pdhg(self, problem: SparseLPProblem) -> Solution:
+    def _solve_eq_box(self, problem: SparseLPProblem, algorithm: str) -> tuple[Solution, str]:
+        backend = f"native-c-sparse-{algorithm}"
         if problem.objective != "min":
             return Solution(
                 Status.INFEASIBLE, message="PDHG sparse path currently expects minimization"
-            )
+            ), backend
         if problem.A_eq is None or problem.b_eq is None:
             return Solution(
                 Status.INFEASIBLE, message="PDHG sparse path expects equality constraints"
-            )
+            ), backend
         if problem.G_ub is not None:
             return Solution(
                 Status.INFEASIBLE, message="PDHG sparse path expects bounds instead of G_ub"
-            )
+            ), backend
         bounds = problem.bounds or [(0.0, None) for _ in problem.c]
         lo = [float("-inf") if lower is None else float(lower) for lower, _ in bounds]
         hi = [float("inf") if upper is None else float(upper) for _, upper in bounds]
@@ -146,16 +151,38 @@ class SparseSolver:
         else:
             solve_c, solve_b, solve_lo, solve_hi = c, b, lo, hi
 
-        result = matrix.solve_eq_box_pdhg(
-            solve_c,
-            solve_b,
-            solve_lo,
-            solve_hi,
-            max_iter=self.max_iterations,
-            tol=self.eps,
-            check_interval=self.check_interval or 250,
-            objective_scale=0.0 if self.objective_scale is None else self.objective_scale,
-        )
+        chosen = algorithm
+        if algorithm == "auto":
+            rows, _ = matrix.shape
+            chosen = "ipm" if rows <= self.AUTO_IPM_MAX_ROWS else "pdhg"
+
+        result = None
+        if chosen == "ipm":
+            result = matrix.solve_eq_box_ipm(
+                solve_c,
+                solve_b,
+                solve_lo,
+                solve_hi,
+                max_iter=min(self.max_iterations, 100),
+                tol=min(self.eps, 1e-9),
+            )
+            if result["status"] != "optimal" and algorithm == "auto":
+                chosen = "pdhg"
+                result = None
+        if result is None:
+            chosen = "pdhg"
+            result = matrix.solve_eq_box_pdhg(
+                solve_c,
+                solve_b,
+                solve_lo,
+                solve_hi,
+                max_iter=self.max_iterations,
+                tol=self.eps,
+                check_interval=self.check_interval or 250,
+                objective_scale=0.0 if self.objective_scale is None else self.objective_scale,
+            )
+        backend = f"native-c-sparse-{chosen}"
+
         x = [float(value) for value in result["x"]]
         objective = float(result["objective"])
         if reduction is not None:
@@ -164,32 +191,31 @@ class SparseSolver:
 
         status = Status.OPTIMAL if result["status"] == "optimal" else Status.ITERATION_LIMIT
         residual = float(result["max_primal_residual"])
-        objective_scale = float(result["objective_scale"])
         presolve_note = (
             f"; presolve removed {reduction.removed_rows} rows and {reduction.removed_cols} cols"
             if reduction is not None
             else ""
         )
-        message = (
-            (
-                "native sparse PDHG converged; "
+        if chosen == "ipm":
+            verb = "converged" if status == Status.OPTIMAL else "hit the iteration limit"
+            message = (
+                f"native sparse IPM {verb}; max equality residual {residual:.3e}{presolve_note}"
+            )
+        else:
+            objective_scale = float(result["objective_scale"])
+            verb = "converged" if status == Status.OPTIMAL else "hit the iteration limit"
+            message = (
+                f"native sparse PDHG {verb}; "
                 f"max equality residual {residual:.3e}; objective scale {objective_scale:.3g}"
                 f"{presolve_note}"
             )
-            if status == Status.OPTIMAL
-            else (
-                "native sparse PDHG hit the iteration limit; "
-                f"max equality residual {residual:.3e}; objective scale {objective_scale:.3g}"
-                f"{presolve_note}"
-            )
-        )
         return Solution(
             status,
             objective,
             x,
             message=message,
             iterations=int(result["iterations"]),
-        )
+        ), backend
 
     def _solve(self, problem: SparseLPProblem) -> Solution:
         prepared = self._prepare(problem)

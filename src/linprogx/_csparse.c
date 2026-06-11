@@ -1531,6 +1531,7 @@ done:
 }
 
 static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObject *args);
+static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
 
 static PyGetSetDef CSRMatrix_getset[] = {
     {"shape", (getter)CSRMatrix_shape, NULL, "matrix shape", NULL},
@@ -1546,6 +1547,7 @@ static PyMethodDef CSRMatrix_methods[] = {
     {"to_dense", (PyCFunction)CSRMatrix_to_dense, METH_NOARGS, "Materialize as nested Python lists."},
     {"solve_eq_box_pdhg", (PyCFunction)CSRMatrix_solve_eq_box_pdhg, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with native PDHG."},
     {"normal_equations_solve", (PyCFunction)CSRMatrix_normal_equations_solve, METH_VARARGS, "Solve (A diag(d) A' + delta I) x = rhs with the native sparse Cholesky."},
+    {"solve_eq_box_ipm", (PyCFunction)CSRMatrix_solve_eq_box_ipm, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with a native interior point method."},
     {NULL}
 };
 
@@ -2201,10 +2203,13 @@ fail:
     return NULL;
 }
 
-/* Numeric refactorization with diagonal D and regularization delta.
- * Tiny or negative pivots are boosted (dynamic regularization), standard
- * practice for IPM normal equations. */
-static void chol_refactor(CholContext *ctx, CSRMatrixObject *A, const double *D, double delta) {
+/* Numeric refactorization with diagonal D and regularization delta, using
+ * the provided CSC value array (so callers can factor a rescaled operator
+ * over the same pattern). Tiny or negative pivots are boosted (dynamic
+ * regularization), standard practice for IPM normal equations. */
+static void chol_refactor(
+    CholContext *ctx, CSRMatrixObject *A, const double *csc_values,
+    const double *D, double delta) {
     int32_t m = ctx->m;
     memset(ctx->Cx, 0, (size_t)ctx->Cp[m] * sizeof(double));
     {
@@ -2212,9 +2217,9 @@ static void chol_refactor(CholContext *ctx, CSRMatrixObject *A, const double *D,
         for (Py_ssize_t t = 0; t < A->cols; t++) {
             double dt = D[t];
             for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
-                double vp = A->csc_data[p] * dt;
+                double vp = csc_values[p] * dt;
                 for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
-                    ctx->Cx[ctx->pair_offset[at++]] += vp * A->csc_data[q];
+                    ctx->Cx[ctx->pair_offset[at++]] += vp * csc_values[q];
                 }
             }
         }
@@ -2311,7 +2316,7 @@ static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObjec
     Py_BEGIN_ALLOW_THREADS
     ctx = chol_setup(self);
     if (ctx != NULL) {
-        chol_refactor(ctx, self, d, delta);
+        chol_refactor(ctx, self, self->csc_data, d, delta);
         chol_solve(ctx, rhs, out);
     }
     Py_END_ALLOW_THREADS
@@ -2332,6 +2337,556 @@ static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObjec
         PyList_SET_ITEM(result, i, PyFloat_FromDouble(out[i]));
     }
     free(out);
+    return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* Mehrotra predictor-corrector interior point method for              */
+/*   min c'x  s.t.  Ax = b, lo <= x <= hi                              */
+/* mirroring the validated Python prototype: Ruiz + cost scaling,      */
+/* zero-width boxes pinned, regularized normal equations solved with   */
+/* the native Cholesky.                                                */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    CholContext *chol;
+    const ScaledOp *op;
+    const double *D;
+    const double *sl;
+    const double *su;
+    const double *zl;
+    const double *zu;
+    const unsigned char *bound_kind;
+    double *rhs_x;   /* cols scratch */
+    double *tmp_x;   /* cols scratch */
+    double *rhs_m;   /* rows scratch */
+    double *aty;     /* cols scratch */
+} IpmNewton;
+
+static void ipm_newton_solve(
+    const IpmNewton *nw,
+    const double *rp,
+    const double *rd,
+    const double *rcl,
+    const double *rcu,
+    double *dy,
+    double *dx,
+    double *dzl,
+    double *dzu) {
+    Py_ssize_t n = nw->op->cols;
+    Py_ssize_t m = nw->op->rows;
+    for (Py_ssize_t j = 0; j < n; j++) {
+        double value = rd[j];
+        if (nw->bound_kind[j] & 1) {
+            value -= rcl[j] / nw->sl[j];
+        }
+        if (nw->bound_kind[j] & 2) {
+            value += rcu[j] / nw->su[j];
+        }
+        nw->rhs_x[j] = value;
+        nw->tmp_x[j] = nw->D[j] * value;
+    }
+    scaled_op_matvec(nw->op, nw->tmp_x, nw->rhs_m);
+    for (Py_ssize_t i = 0; i < m; i++) {
+        nw->rhs_m[i] += rp[i];
+    }
+    chol_solve(nw->chol, nw->rhs_m, dy);
+    scaled_op_transpose_matvec(nw->op, dy, nw->aty);
+    for (Py_ssize_t j = 0; j < n; j++) {
+        double step = nw->D[j] * (nw->aty[j] - nw->rhs_x[j]);
+        dx[j] = step;
+        dzl[j] = (nw->bound_kind[j] & 1) ? (rcl[j] - nw->zl[j] * step) / nw->sl[j] : 0.0;
+        dzu[j] = (nw->bound_kind[j] & 2) ? (rcu[j] + nw->zu[j] * step) / nw->su[j] : 0.0;
+    }
+}
+
+static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *args, PyObject *kwds) {
+    PyObject *c_obj;
+    PyObject *b_obj;
+    PyObject *lo_obj;
+    PyObject *hi_obj;
+    Py_ssize_t max_iter = 60;
+    double tol = 1e-9;
+    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", NULL};
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwds, "OOOO|nd", kwlist,
+            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter, &tol)) {
+        return NULL;
+    }
+    if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError, "matrix too large for the 32-bit factorization");
+        return NULL;
+    }
+    Py_ssize_t m = self->rows;
+    Py_ssize_t n = self->cols;
+    Py_ssize_t nnz = self->nnz;
+
+    PyObject *result = NULL;
+    CholContext *chol = NULL;
+    double *c = NULL, *b = NULL, *lo = NULL, *hi = NULL;
+    double *row_scale = NULL, *col_scale = NULL;
+    double *csr_vals = NULL, *csc_vals = NULL;
+    int32_t *op_col_index = NULL, *op_row_index = NULL;
+    double *x = NULL, *y = NULL, *zl = NULL, *zu = NULL;
+    double *sl = NULL, *su = NULL;
+    double *rp = NULL, *rd = NULL, *H = NULL, *D = NULL;
+    double *rcl = NULL, *rcu = NULL;
+    double *dx_a = NULL, *dy_a = NULL, *dzl_a = NULL, *dzu_a = NULL;
+    double *dx = NULL, *dy = NULL, *dzl = NULL, *dzu = NULL;
+    double *rhs_x = NULL, *tmp_x = NULL, *rhs_m = NULL, *aty = NULL, *ax = NULL;
+    unsigned char *bound_kind = NULL;
+
+    c = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    b = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    lo = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    hi = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    row_scale = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    col_scale = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    csr_vals = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(double));
+    csc_vals = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(double));
+    op_col_index = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(int32_t));
+    op_row_index = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(int32_t));
+    x = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    y = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    zl = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    zu = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    sl = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    su = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    rp = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    rd = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    H = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    D = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    rcl = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    rcu = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    dx_a = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    dy_a = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    dzl_a = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    dzu_a = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    dx = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    dy = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    dzl = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    dzu = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    rhs_x = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    tmp_x = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    rhs_m = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    aty = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    ax = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    bound_kind = calloc((size_t)(n > 0 ? n : 1), sizeof(unsigned char));
+    if (c == NULL || b == NULL || lo == NULL || hi == NULL ||
+        row_scale == NULL || col_scale == NULL ||
+        csr_vals == NULL || csc_vals == NULL ||
+        op_col_index == NULL || op_row_index == NULL ||
+        x == NULL || y == NULL || zl == NULL || zu == NULL ||
+        sl == NULL || su == NULL || rp == NULL || rd == NULL ||
+        H == NULL || D == NULL || rcl == NULL || rcu == NULL ||
+        dx_a == NULL || dy_a == NULL || dzl_a == NULL || dzu_a == NULL ||
+        dx == NULL || dy == NULL || dzl == NULL || dzu == NULL ||
+        rhs_x == NULL || tmp_x == NULL || rhs_m == NULL || aty == NULL ||
+        ax == NULL || bound_kind == NULL) {
+        PyErr_NoMemory();
+        goto done;
+    }
+    if (fill_double_array(c_obj, n, c, "c") != 0 ||
+        fill_double_array(b_obj, m, b, "b") != 0 ||
+        fill_double_array(lo_obj, n, lo, "lo") != 0 ||
+        fill_double_array(hi_obj, n, hi, "hi") != 0) {
+        goto done;
+    }
+
+    /* --- Ruiz equilibration (inf-norm, 10 passes) --- */
+    for (Py_ssize_t i = 0; i < m; i++) {
+        row_scale[i] = 1.0;
+    }
+    for (Py_ssize_t j = 0; j < n; j++) {
+        col_scale[j] = 1.0;
+    }
+    for (int pass = 0; pass < 10; pass++) {
+        for (Py_ssize_t i = 0; i < m; i++) {
+            rp[i] = 0.0;
+        }
+        for (Py_ssize_t j = 0; j < n; j++) {
+            rd[j] = 0.0;
+        }
+        for (Py_ssize_t i = 0; i < m; i++) {
+            for (Py_ssize_t p = self->indptr[i]; p < self->indptr[i + 1]; p++) {
+                double value = fabs(self->data[p] * row_scale[i] * col_scale[self->indices[p]]);
+                if (value > rp[i]) {
+                    rp[i] = value;
+                }
+                if (value > rd[self->indices[p]]) {
+                    rd[self->indices[p]] = value;
+                }
+            }
+        }
+        for (Py_ssize_t i = 0; i < m; i++) {
+            if (rp[i] > 0.0) {
+                row_scale[i] /= sqrt(rp[i]);
+            }
+        }
+        for (Py_ssize_t j = 0; j < n; j++) {
+            if (rd[j] > 0.0) {
+                col_scale[j] /= sqrt(rd[j]);
+            }
+        }
+    }
+    for (Py_ssize_t i = 0; i < m; i++) {
+        for (Py_ssize_t p = self->indptr[i]; p < self->indptr[i + 1]; p++) {
+            csr_vals[p] = self->data[p] * row_scale[i] * col_scale[self->indices[p]];
+            op_col_index[p] = (int32_t)self->indices[p];
+        }
+    }
+    for (Py_ssize_t j = 0; j < n; j++) {
+        for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+            csc_vals[p] = self->csc_data[p] * row_scale[self->csc_rows[p]] * col_scale[j];
+            op_row_index[p] = (int32_t)self->csc_rows[p];
+        }
+    }
+    ScaledOp op = {
+        m, n, self->indptr, op_col_index, csr_vals,
+        self->csc_indptr, op_row_index, csc_vals,
+    };
+
+    /* scaled problem data: b_s = R b, c_s = S c / c_scale, bounds / S */
+    double c_scale = 1.0;
+    for (Py_ssize_t i = 0; i < m; i++) {
+        b[i] *= row_scale[i];
+    }
+    for (Py_ssize_t j = 0; j < n; j++) {
+        c[j] *= col_scale[j];
+        double abs_c = fabs(c[j]);
+        if (abs_c > c_scale) {
+            c_scale = abs_c;
+        }
+        if (isfinite(lo[j])) {
+            lo[j] /= col_scale[j];
+        }
+        if (isfinite(hi[j])) {
+            hi[j] /= col_scale[j];
+        }
+    }
+    for (Py_ssize_t j = 0; j < n; j++) {
+        c[j] /= c_scale;
+    }
+
+    /* bound classification; zero-width boxes are pinned (bit 4) */
+    for (Py_ssize_t j = 0; j < n; j++) {
+        int has_lo = isfinite(lo[j]);
+        int has_hi = isfinite(hi[j]);
+        unsigned char kind = (unsigned char)((has_lo ? 1 : 0) | (has_hi ? 2 : 0));
+        if (has_lo && has_hi && hi[j] - lo[j] < 1e-10) {
+            kind = 4;
+        }
+        bound_kind[j] = kind;
+    }
+
+    /* starting point */
+    Py_ssize_t n_comp = 0;
+    for (Py_ssize_t j = 0; j < n; j++) {
+        double z_mag = fabs(c[j]);
+        if (z_mag < 1.0) {
+            z_mag = 1.0;
+        }
+        switch (bound_kind[j]) {
+            case 1:
+                x[j] = lo[j] + 1.0;
+                zl[j] = z_mag;
+                n_comp += 1;
+                break;
+            case 2:
+                x[j] = hi[j] - 1.0;
+                zu[j] = z_mag;
+                n_comp += 1;
+                break;
+            case 3:
+                x[j] = 0.5 * (lo[j] + hi[j]);
+                zl[j] = z_mag;
+                zu[j] = z_mag;
+                n_comp += 2;
+                break;
+            case 4:
+                x[j] = 0.5 * (lo[j] + hi[j]);
+                break;
+            default:
+                x[j] = 0.0;
+                break;
+        }
+    }
+    if (n_comp == 0) {
+        n_comp = 1;
+    }
+
+    chol = chol_setup(self);
+    if (chol == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "Cholesky setup failed");
+        goto done;
+    }
+
+    double delta_reg = 1e-8;
+    double b_norm = 1.0 + l2_norm(b, m);
+    double c_norm = 1.0 + l2_norm(c, n);
+    Py_ssize_t iterations = 0;
+    double pres = INFINITY;
+    double dres = INFINITY;
+    double mu = INFINITY;
+    const char *status = "iteration_limit";
+
+    Py_BEGIN_ALLOW_THREADS
+    IpmNewton nw = {chol, &op, D, sl, su, zl, zu, bound_kind, rhs_x, tmp_x, rhs_m, aty};
+    for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
+        iterations = iter;
+        /* slacks, residuals, and the barrier parameter */
+        scaled_op_matvec(&op, x, ax);
+        for (Py_ssize_t i = 0; i < m; i++) {
+            rp[i] = b[i] - ax[i];
+        }
+        scaled_op_transpose_matvec(&op, y, aty);
+        double mu_sum = 0.0;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            sl[j] = (kind & 1) ? x[j] - lo[j] : 1.0;
+            su[j] = (kind & 2) ? hi[j] - x[j] : 1.0;
+            rd[j] = (kind == 4) ? 0.0 : c[j] - aty[j] - zl[j] + zu[j];
+            if (kind & 1) {
+                mu_sum += sl[j] * zl[j];
+            }
+            if (kind & 2) {
+                mu_sum += su[j] * zu[j];
+            }
+        }
+        mu = mu_sum / (double)n_comp;
+        pres = l2_norm(rp, m) / b_norm;
+        dres = l2_norm(rd, n) / c_norm;
+        if (pres < tol && dres < tol && mu < 10.0 * tol) {
+            status = "optimal";
+            break;
+        }
+
+        /* scaling matrix and factorization */
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            double h = delta_reg;
+            if (kind == 4) {
+                h = 1e16;
+            } else {
+                if (kind & 1) {
+                    h += zl[j] / sl[j];
+                }
+                if (kind & 2) {
+                    h += zu[j] / su[j];
+                }
+            }
+            H[j] = h;
+            D[j] = 1.0 / h;
+        }
+        chol_refactor(chol, self, csc_vals, D, delta_reg);
+
+        /* affine direction */
+        for (Py_ssize_t j = 0; j < n; j++) {
+            rcl[j] = (bound_kind[j] & 1) ? -sl[j] * zl[j] : 0.0;
+            rcu[j] = (bound_kind[j] & 2) ? -su[j] * zu[j] : 0.0;
+        }
+        ipm_newton_solve(&nw, rp, rd, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
+
+        double ap_aff = 1.0;
+        double ad_aff = 1.0;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            if ((kind & 1) && dx_a[j] < 0.0) {
+                double step = -sl[j] / dx_a[j];
+                if (step < ap_aff) {
+                    ap_aff = step;
+                }
+            }
+            if ((kind & 2) && dx_a[j] > 0.0) {
+                double step = su[j] / dx_a[j];
+                if (step < ap_aff) {
+                    ap_aff = step;
+                }
+            }
+            if ((kind & 1) && dzl_a[j] < 0.0) {
+                double step = -zl[j] / dzl_a[j];
+                if (step < ad_aff) {
+                    ad_aff = step;
+                }
+            }
+            if ((kind & 2) && dzu_a[j] < 0.0) {
+                double step = -zu[j] / dzu_a[j];
+                if (step < ad_aff) {
+                    ad_aff = step;
+                }
+            }
+        }
+        double mu_aff_sum = 0.0;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            if (kind & 1) {
+                mu_aff_sum += (sl[j] + ap_aff * dx_a[j]) * (zl[j] + ad_aff * dzl_a[j]);
+            }
+            if (kind & 2) {
+                mu_aff_sum += (su[j] - ap_aff * dx_a[j]) * (zu[j] + ad_aff * dzu_a[j]);
+            }
+        }
+        double mu_aff = mu_aff_sum / (double)n_comp;
+        double ratio = mu > 0.0 ? mu_aff / mu : 0.1;
+        double sigma = ratio * ratio * ratio;
+
+        /* corrector */
+        double coupling = ap_aff * ad_aff;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            rcl[j] = (kind & 1)
+                ? sigma * mu - sl[j] * zl[j] - coupling * dx_a[j] * dzl_a[j]
+                : 0.0;
+            rcu[j] = (kind & 2)
+                ? sigma * mu - su[j] * zu[j] + coupling * dx_a[j] * dzu_a[j]
+                : 0.0;
+        }
+        ipm_newton_solve(&nw, rp, rd, rcl, rcu, dy, dx, dzl, dzu);
+
+        double ap = 1.0;
+        double ad = 1.0;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            if ((kind & 1) && dx[j] < 0.0) {
+                double step = -sl[j] / dx[j];
+                if (step < ap) {
+                    ap = step;
+                }
+            }
+            if ((kind & 2) && dx[j] > 0.0) {
+                double step = su[j] / dx[j];
+                if (step < ap) {
+                    ap = step;
+                }
+            }
+            if ((kind & 1) && dzl[j] < 0.0) {
+                double step = -zl[j] / dzl[j];
+                if (step < ad) {
+                    ad = step;
+                }
+            }
+            if ((kind & 2) && dzu[j] < 0.0) {
+                double step = -zu[j] / dzu[j];
+                if (step < ad) {
+                    ad = step;
+                }
+            }
+        }
+        ap *= 0.995;
+        ad *= 0.995;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            if (bound_kind[j] == 4) {
+                continue;
+            }
+            x[j] += ap * dx[j];
+            if (bound_kind[j] & 1) {
+                zl[j] += ad * dzl[j];
+            }
+            if (bound_kind[j] & 2) {
+                zu[j] += ad * dzu[j];
+            }
+        }
+        for (Py_ssize_t i = 0; i < m; i++) {
+            y[i] += ad * dy[i];
+        }
+    }
+    Py_END_ALLOW_THREADS
+
+    /* unscale and report in original units */
+    for (Py_ssize_t j = 0; j < n; j++) {
+        x[j] *= col_scale[j];
+    }
+    for (Py_ssize_t i = 0; i < m; i++) {
+        y[i] *= row_scale[i] * c_scale;
+    }
+    {
+        double objective = 0.0;
+        double max_residual = 0.0;
+        /* original-unit residual via the raw matrix */
+        for (Py_ssize_t i = 0; i < m; i++) {
+            double total = 0.0;
+            for (Py_ssize_t p = self->indptr[i]; p < self->indptr[i + 1]; p++) {
+                total += self->data[p] * x[self->indices[p]];
+            }
+            rp[i] = total;
+        }
+        if (fill_double_array(b_obj, m, b, "b") != 0 ||
+            fill_double_array(c_obj, n, c, "c") != 0) {
+            goto done;
+        }
+        for (Py_ssize_t i = 0; i < m; i++) {
+            double res = fabs(rp[i] - b[i]);
+            if (res > max_residual) {
+                max_residual = res;
+            }
+        }
+        for (Py_ssize_t j = 0; j < n; j++) {
+            objective += c[j] * x[j];
+        }
+        PyObject *x_list = PyList_New(n);
+        PyObject *y_list = PyList_New(m);
+        if (x_list == NULL || y_list == NULL) {
+            Py_XDECREF(x_list);
+            Py_XDECREF(y_list);
+            goto done;
+        }
+        for (Py_ssize_t j = 0; j < n; j++) {
+            PyList_SET_ITEM(x_list, j, PyFloat_FromDouble(x[j]));
+        }
+        for (Py_ssize_t i = 0; i < m; i++) {
+            PyList_SET_ITEM(y_list, i, PyFloat_FromDouble(y[i]));
+        }
+        result = Py_BuildValue(
+            "{s:s,s:d,s:d,s:d,s:d,s:d,s:n,s:N,s:N}",
+            "status", status,
+            "objective", objective,
+            "max_primal_residual", max_residual,
+            "rel_primal_residual", pres,
+            "rel_dual_residual", dres,
+            "mu", mu,
+            "iterations", iterations,
+            "x", x_list,
+            "y", y_list);
+    }
+
+done:
+    chol_free(chol);
+    free(c);
+    free(b);
+    free(lo);
+    free(hi);
+    free(row_scale);
+    free(col_scale);
+    free(csr_vals);
+    free(csc_vals);
+    free(op_col_index);
+    free(op_row_index);
+    free(x);
+    free(y);
+    free(zl);
+    free(zu);
+    free(sl);
+    free(su);
+    free(rp);
+    free(rd);
+    free(H);
+    free(D);
+    free(rcl);
+    free(rcu);
+    free(dx_a);
+    free(dy_a);
+    free(dzl_a);
+    free(dzu_a);
+    free(dx);
+    free(dy);
+    free(dzl);
+    free(dzu);
+    free(rhs_x);
+    free(tmp_x);
+    free(rhs_m);
+    free(aty);
+    free(ax);
+    free(bound_kind);
     return result;
 }
 

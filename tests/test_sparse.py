@@ -251,3 +251,40 @@ def test_min_degree_returns_permutation() -> None:
     assert sorted(order) == [0, 1, 2, 3, 4]
     # the dense hub must not be eliminated while leaves remain cheaper
     assert order[0] != 0
+
+
+def test_sparse_ipm_equality_bounds_path() -> None:
+    a_eq = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
+
+    result = SparseSolver(algorithm="ipm", eps=1e-9).solve(
+        SparseLPProblem(
+            [1.0, 2.0],
+            A_eq=a_eq,
+            b_eq=[3.0],
+            objective="min",
+            bounds=[(0.0, 2.0), (0.0, 3.0)],
+        )
+    )
+
+    assert result.backend == "native-c-sparse-ipm"
+    assert result.solution.status == Status.OPTIMAL
+    assert result.solution.objective_value == pytest.approx(4.0, abs=1e-6)
+    assert result.solution.x == pytest.approx([2.0, 1.0], abs=1e-6)
+
+
+def test_sparse_auto_routes_small_problems_to_ipm() -> None:
+    a_eq = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, -1.0])
+
+    result = SparseSolver(algorithm="auto", eps=1e-9).solve(
+        SparseLPProblem(
+            [1.0, 1.0],
+            A_eq=a_eq,
+            b_eq=[0.0],
+            objective="min",
+            bounds=[(0.0, 1.0), (0.0, 1.0)],
+        )
+    )
+
+    assert result.backend == "native-c-sparse-ipm"
+    assert result.solution.status == Status.OPTIMAL
+    assert result.solution.objective_value == pytest.approx(0.0, abs=1e-7)

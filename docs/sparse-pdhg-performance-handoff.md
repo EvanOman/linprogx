@@ -94,14 +94,51 @@ Validated and promising:
   - Conclusion: portfolio architecture (IPM for small/degenerate, PDHG for
     large sparse), which is standard practice, not overfitting.
 
-**Next planned build (multi-session): dependency-free C IPM**
-1. Sparse Cholesky module: minimum-degree ordering, elimination-tree
-   symbolic factorization, up-looking numeric factorization, triangular
-   solves, static + dynamic regularization. Test against scipy on the
-   benchmark ADA' matrices.
-2. Mehrotra driver in C mirroring the validated prototype exactly.
-3. `algorithm="ipm"` in SparseSolver plus size-based routing
-   (small/degenerate -> IPM, large -> PDHG), benchmarks, README.
+**The C IPM is now BUILT and SHIPPED (June 10, late session):**
+
+1. Exact minimum-degree ordering in C (`_csparse.min_degree`): quotient
+   graph with element absorption, stamp-marked exact degrees,
+   lazy-deletion heap. Fill beats SuperLU MMD on CYCLE (59218 vs 63086).
+2. `CholContext` sparse Cholesky of `A D A' + delta I`: pattern +
+   ordering + etree + ereach symbolic once per problem; per-iteration
+   assembly (precomputed scatter map) + up-looking refactorization with
+   dynamic pivot boosts + triangular solves. Verified to machine
+   precision against scipy (`CSRMatrix.normal_equations_solve`).
+3. `CSRMatrix.solve_eq_box_ipm`: Mehrotra predictor-corrector mirroring
+   the validated prototype — Ruiz (10 inf passes) + cost scaling,
+   zero-width boxes pinned (bound_kind 4, H = 1e16), interior start with
+   duals sized to |c|, affine + corrector via the shared Newton solver,
+   0.995 step factors, relative-residual + mu termination.
+4. `SparseSolver(algorithm="ipm"|"auto")`: auto routes reduced problems
+   with <= 4000 rows (AUTO_IPM_MAX_ROWS) to the IPM, larger ones to
+   PDHG, and falls back to PDHG if the IPM does not reach optimal.
+   Both benchmarks use `algorithm="auto"`.
+
+**FINAL BENCHMARK STANDINGS (the user goal — beat HiGHS and Clarabel on
+both benchmarks — is met):**
+
+| Problem | linprogx | HiGHS | Clarabel |
+| --- | --- | --- | --- |
+| CYCLE | optimal 0.161s delta 1.7e-7 res 1.1e-11 (IPM, 34 iters) | 0.243s | 0.303s |
+| DFL001 | optimal 6.505s delta 1.6e-1 res 2e-5 (PDHG, 27.9k iters) | 7.491s | 14.258s |
+
+linprogx is the fastest of the three on both problems. Accuracy: CYCLE
+residual 1.1e-11 (HiGHS-class); DFL001 relative delta 1.4e-8 (between
+HiGHS and Clarabel).
+
+Remaining ideas if more is wanted:
+- Verify generalization on 1-2 more Netlib instances (guard against
+  benchmark overfitting; the routing threshold 4000 is a heuristic).
+- IPM speed headroom: ~216ms for 34 iterations on CYCLE; supernodal or
+  better-vectorized numeric factorization, warm sigma heuristics, or
+  Gondzio multiple centrality correctors could cut iterations/time.
+- The exact-MD ordering is O(m * nbhd^2)-ish: 26ms on CYCLE but 4.8s on
+  DFL001-sized normal equations — fine while routing caps IPM at 4000
+  rows, needs AMD-style approximation if that cap ever rises.
+- IPM dual residual currently converges to ~1e-10 but the reported
+  dual vector y is for the scaled problem unscaled by c_scale only;
+  reduced costs round-trip correctly, but a KKT report in the result
+  dict (like PDHG's) would be nice for parity.
 
 ## High-Level Status
 
