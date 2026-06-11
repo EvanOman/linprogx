@@ -288,3 +288,55 @@ def test_sparse_auto_routes_small_problems_to_ipm() -> None:
     assert result.backend == "native-c-sparse-ipm"
     assert result.solution.status == Status.OPTIMAL
     assert result.solution.objective_value == pytest.approx(0.0, abs=1e-7)
+
+
+def test_pdhg_result_dict_exposes_diagnostics() -> None:
+    matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
+
+    result = matrix.solve_eq_box_pdhg(
+        [1.0, 2.0], [3.0], [0.0, 0.0], [2.0, 3.0], max_iter=5_000, tol=1e-6
+    )
+
+    expected = {
+        "status",
+        "objective",
+        "max_primal_residual",
+        "l2_primal_residual",
+        "iterations",
+        "operator_norm",
+        "step_size",
+        "objective_scale",
+        "primal_weight",
+        "dual_residual",
+        "gap",
+        "restarts",
+        "step_trials",
+        "plateau_exit",
+        "x",
+        "y",
+    }
+    assert expected <= set(result)
+    assert result["status"] == "optimal"
+    assert len(result["y"]) == 1
+
+
+def test_pdhg_experiment_knobs_are_accepted() -> None:
+    matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
+
+    result = matrix.solve_eq_box_pdhg(
+        [1.0, 2.0],
+        [3.0],
+        [0.0, 0.0],
+        [2.0, 3.0],
+        max_iter=5_000,
+        tol=1e-6,
+        adaptive_weight=0,
+        plateau_window=0,
+        eval_interval_override=32,
+        restart_sufficient=0.25,
+        restart_necessary=0.75,
+        restart_artificial=0.4,
+    )
+
+    assert result["status"] == "optimal"
+    assert result["objective"] == pytest.approx(4.0, abs=1e-3)
