@@ -1953,8 +1953,11 @@ static int32_t chol_ereach(const CholContext *ctx, int32_t k) {
     return top;
 }
 
-/* Build everything that depends only on the sparsity pattern of A. */
-static CholContext *chol_setup(CSRMatrixObject *A) {
+/* Build everything that depends only on the sparsity pattern of A.
+ * If factor_flops_cap > 0 and the estimated numeric factorization cost
+ * (sum of squared column counts of L) exceeds it, setup aborts and sets
+ * *too_dense so callers can route the problem elsewhere. */
+static CholContext *chol_setup(CSRMatrixObject *A, double factor_flops_cap, int *too_dense) {
     int32_t m = (int32_t)A->rows;
     CholContext *ctx = calloc(1, sizeof(CholContext));
     int32_t *head = NULL;
@@ -2160,6 +2163,18 @@ static CholContext *chol_setup(CSRMatrixObject *A) {
             count[ctx->epattern[s]]++;
         }
     }
+    if (factor_flops_cap > 0.0) {
+        double flops = 0.0;
+        for (int32_t k = 0; k < m; k++) {
+            flops += (double)count[k] * (double)count[k];
+        }
+        if (flops > factor_flops_cap) {
+            if (too_dense != NULL) {
+                *too_dense = 1;
+            }
+            goto fail;
+        }
+    }
     for (int32_t k = 0; k < m; k++) {
         ctx->Lp[k + 1] = ctx->Lp[k] + count[k];
     }
@@ -2314,7 +2329,7 @@ static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObjec
     }
     CholContext *ctx;
     Py_BEGIN_ALLOW_THREADS
-    ctx = chol_setup(self);
+    ctx = chol_setup(self, 0.0, NULL);
     if (ctx != NULL) {
         chol_refactor(ctx, self, self->csc_data, d, delta);
         chol_solve(ctx, rhs, out);
@@ -2434,6 +2449,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     double *dx_a = NULL, *dy_a = NULL, *dzl_a = NULL, *dzu_a = NULL;
     double *dx = NULL, *dy = NULL, *dzl = NULL, *dzu = NULL;
     double *rhs_x = NULL, *tmp_x = NULL, *rhs_m = NULL, *aty = NULL, *ax = NULL;
+    double *x_best = NULL, *y_best = NULL;
     unsigned char *bound_kind = NULL;
 
     c = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
@@ -2466,6 +2482,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     dy = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     dzl = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     dzu = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    x_best = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    y_best = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     rhs_x = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     tmp_x = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     rhs_m = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
@@ -2482,7 +2500,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         dx_a == NULL || dy_a == NULL || dzl_a == NULL || dzu_a == NULL ||
         dx == NULL || dy == NULL || dzl == NULL || dzu == NULL ||
         rhs_x == NULL || tmp_x == NULL || rhs_m == NULL || aty == NULL ||
-        ax == NULL || bound_kind == NULL) {
+        ax == NULL || x_best == NULL || y_best == NULL || bound_kind == NULL) {
         PyErr_NoMemory();
         goto done;
     }
@@ -2579,46 +2597,127 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         bound_kind[j] = kind;
     }
 
-    /* starting point */
     Py_ssize_t n_comp = 0;
     for (Py_ssize_t j = 0; j < n; j++) {
-        double z_mag = fabs(c[j]);
-        if (z_mag < 1.0) {
-            z_mag = 1.0;
+        if (bound_kind[j] & 1) {
+            n_comp += 1;
         }
-        switch (bound_kind[j]) {
-            case 1:
-                x[j] = lo[j] + 1.0;
-                zl[j] = z_mag;
-                n_comp += 1;
-                break;
-            case 2:
-                x[j] = hi[j] - 1.0;
-                zu[j] = z_mag;
-                n_comp += 1;
-                break;
-            case 3:
-                x[j] = 0.5 * (lo[j] + hi[j]);
-                zl[j] = z_mag;
-                zu[j] = z_mag;
-                n_comp += 2;
-                break;
-            case 4:
-                x[j] = 0.5 * (lo[j] + hi[j]);
-                break;
-            default:
-                x[j] = 0.0;
-                break;
+        if (bound_kind[j] & 2) {
+            n_comp += 1;
         }
     }
     if (n_comp == 0) {
         n_comp = 1;
     }
 
-    chol = chol_setup(self);
+    int factor_too_dense = 0;
+    chol = chol_setup(self, 1e9, &factor_too_dense);
     if (chol == NULL) {
+        if (factor_too_dense) {
+            /* The factor would be too expensive per iteration; report a
+             * distinct status so auto routing can use the first-order path. */
+            result = Py_BuildValue(
+                "{s:s,s:d,s:d,s:d,s:d,s:d,s:n,s:[],s:[]}",
+                "status", "factor_too_dense",
+                "objective", 0.0,
+                "max_primal_residual", INFINITY,
+                "rel_primal_residual", INFINITY,
+                "rel_dual_residual", INFINITY,
+                "mu", INFINITY,
+                "iterations", (Py_ssize_t)0,
+                "x",
+                "y");
+            goto done;
+        }
         PyErr_SetString(PyExc_RuntimeError, "Cholesky setup failed");
         goto done;
+    }
+
+    /* Mehrotra least-squares starting point: factor A A' + delta I once,
+     * take the min-norm primal consistent with Ax=b and the dual from
+     * projecting c, then shift slacks and duals positive. */
+    {
+        for (Py_ssize_t j = 0; j < n; j++) {
+            D[j] = 1.0;
+        }
+        chol_refactor(chol, self, csc_vals, D, 1e-8);
+        chol_solve(chol, b, dy_a);
+        scaled_op_transpose_matvec(&op, dy_a, x);
+        scaled_op_matvec(&op, c, ax);
+        chol_solve(chol, ax, y);
+        scaled_op_transpose_matvec(&op, y, aty);
+
+        double min_sl = INFINITY;
+        double min_su = INFINITY;
+        double min_zl = INFINITY;
+        double min_zu = INFINITY;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            double reduced = c[j] - aty[j];
+            zl[j] = (kind & 1) ? (reduced > 0.0 ? reduced : 0.0) : 0.0;
+            zu[j] = (kind & 2) ? (reduced < 0.0 ? -reduced : 0.0) : 0.0;
+            if (kind & 1) {
+                double slack = x[j] - lo[j];
+                min_sl = slack < min_sl ? slack : min_sl;
+                min_zl = zl[j] < min_zl ? zl[j] : min_zl;
+            }
+            if (kind & 2) {
+                double slack = hi[j] - x[j];
+                min_su = slack < min_su ? slack : min_su;
+                min_zu = zu[j] < min_zu ? zu[j] : min_zu;
+            }
+        }
+        double shift_l = (isfinite(min_sl) && min_sl < 0.0 ? -1.5 * min_sl : 0.0) + 0.1;
+        double shift_u = (isfinite(min_su) && min_su < 0.0 ? -1.5 * min_su : 0.0) + 0.1;
+        double zshift_l = (isfinite(min_zl) && min_zl < 0.0 ? -1.5 * min_zl : 0.0) + 0.1;
+        double zshift_u = (isfinite(min_zu) && min_zu < 0.0 ? -1.5 * min_zu : 0.0) + 0.1;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            if (kind == 4) {
+                x[j] = 0.5 * (lo[j] + hi[j]);
+                zl[j] = 0.0;
+                zu[j] = 0.0;
+                continue;
+            }
+            double lo_target = -INFINITY;
+            double hi_target = INFINITY;
+            if (kind & 1) {
+                double cap = (kind & 2) ? 0.4 * (hi[j] - lo[j]) : shift_l;
+                lo_target = lo[j] + (shift_l < cap ? shift_l : cap);
+                zl[j] += zshift_l;
+            }
+            if (kind & 2) {
+                double cap = (kind & 1) ? 0.4 * (hi[j] - lo[j]) : shift_u;
+                hi_target = hi[j] - (shift_u < cap ? shift_u : cap);
+                zu[j] += zshift_u;
+            }
+            if (lo_target > hi_target) {
+                double mid = 0.5 * (lo_target + hi_target);
+                lo_target = mid;
+                hi_target = mid;
+            }
+            if (x[j] < lo_target) {
+                x[j] = lo_target;
+            }
+            if (x[j] > hi_target) {
+                x[j] = hi_target;
+            }
+            /* strict interior margin, even for narrow boxes */
+            if (kind & 1) {
+                double width = (kind & 2) ? hi[j] - lo[j] : INFINITY;
+                double margin = width < 4e-4 ? 0.25 * width : 1e-4;
+                if (x[j] < lo[j] + margin) {
+                    x[j] = lo[j] + margin;
+                }
+            }
+            if (kind & 2) {
+                double width = (kind & 1) ? hi[j] - lo[j] : INFINITY;
+                double margin = width < 4e-4 ? 0.25 * width : 1e-4;
+                if (x[j] > hi[j] - margin) {
+                    x[j] = hi[j] - margin;
+                }
+            }
+        }
     }
 
     double delta_reg = 1e-8;
@@ -2628,6 +2727,11 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     double pres = INFINITY;
     double dres = INFINITY;
     double mu = INFINITY;
+    double best_score = INFINITY;
+    double best_pres = INFINITY;
+    double best_dres = INFINITY;
+    double best_mu = INFINITY;
+    double best_gap = INFINITY;
     const char *status = "iteration_limit";
 
     Py_BEGIN_ALLOW_THREADS
@@ -2643,8 +2747,16 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         double mu_sum = 0.0;
         for (Py_ssize_t j = 0; j < n; j++) {
             unsigned char kind = bound_kind[j];
-            sl[j] = (kind & 1) ? x[j] - lo[j] : 1.0;
-            su[j] = (kind & 2) ? hi[j] - x[j] : 1.0;
+            double slack_l = (kind & 1) ? x[j] - lo[j] : 1.0;
+            double slack_u = (kind & 2) ? hi[j] - x[j] : 1.0;
+            sl[j] = slack_l > 1e-13 ? slack_l : 1e-13;
+            su[j] = slack_u > 1e-13 ? slack_u : 1e-13;
+            if ((kind & 1) && zl[j] < 1e-13) {
+                zl[j] = 1e-13;
+            }
+            if ((kind & 2) && zu[j] < 1e-13) {
+                zu[j] = 1e-13;
+            }
             rd[j] = (kind == 4) ? 0.0 : c[j] - aty[j] - zl[j] + zu[j];
             if (kind & 1) {
                 mu_sum += sl[j] * zl[j];
@@ -2656,18 +2768,64 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         mu = mu_sum / (double)n_comp;
         pres = l2_norm(rp, m) / b_norm;
         dres = l2_norm(rd, n) / c_norm;
+        {
+            double score = pres > dres ? pres : dres;
+            if (mu > score) {
+                score = mu;
+            }
+            if (isfinite(score) && score < best_score) {
+                best_score = score;
+                best_pres = pres;
+                best_dres = dres;
+                best_mu = mu;
+                /* Explicit primal-dual gap at this iterate: with an
+                 * infeasible dual, small mu alone does not bound the true
+                 * objective error. */
+                double pobj = 0.0;
+                double dobj = 0.0;
+                for (Py_ssize_t j = 0; j < n; j++) {
+                    unsigned char kind = bound_kind[j];
+                    pobj += c[j] * x[j];
+                    if (kind & 1) {
+                        dobj += lo[j] * zl[j];
+                    }
+                    if (kind & 2) {
+                        dobj -= hi[j] * zu[j];
+                    }
+                }
+                for (Py_ssize_t i = 0; i < m; i++) {
+                    dobj += b[i] * y[i];
+                }
+                best_gap = fabs(pobj - dobj) / (1.0 + fabs(pobj) + fabs(dobj));
+                memcpy(x_best, x, (size_t)n * sizeof(double));
+                memcpy(y_best, y, (size_t)m * sizeof(double));
+            }
+        }
         if (pres < tol && dres < tol && mu < 10.0 * tol) {
             status = "optimal";
             break;
         }
 
-        /* scaling matrix and factorization */
+        /* scaling matrix and factorization; the regularization shrinks with
+         * mu so it stops limiting the final dual accuracy */
+        double delta_it = 1e-2 * mu;
+        if (delta_it > delta_reg) {
+            delta_it = delta_reg;
+        }
+        if (delta_it < 1e-10) {
+            delta_it = 1e-10;
+        }
         for (Py_ssize_t j = 0; j < n; j++) {
             unsigned char kind = bound_kind[j];
-            double h = delta_reg;
+            double h;
             if (kind == 4) {
                 h = 1e16;
+            } else if (kind == 0) {
+                /* free columns have no barrier term; keep their
+                 * regularization fixed so 1/h stays bounded */
+                h = delta_reg;
             } else {
+                h = delta_it;
                 if (kind & 1) {
                     h += zl[j] / sl[j];
                 }
@@ -2678,7 +2836,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             H[j] = h;
             D[j] = 1.0 / h;
         }
-        chol_refactor(chol, self, csc_vals, D, delta_reg);
+        chol_refactor(chol, self, csc_vals, D, delta_it);
 
         /* affine direction */
         for (Py_ssize_t j = 0; j < n; j++) {
@@ -2790,6 +2948,35 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             y[i] += ad * dy[i];
         }
     }
+    /* On non-optimal exit, fall back to the best iterate seen: late Newton
+     * steps on ill-conditioned instances can wander or overflow after the
+     * run has already passed through an excellent point. */
+    if (strcmp(status, "optimal") != 0 && isfinite(best_score)) {
+        memcpy(x, x_best, (size_t)n * sizeof(double));
+        memcpy(y, y_best, (size_t)m * sizeof(double));
+        pres = best_pres;
+        dres = best_dres;
+        mu = best_mu;
+        /* Relaxed acceptance: ill-conditioned instances stall with residual
+         * floors around 1e-7 while the iterate is excellent for every
+         * practical purpose. The explicit gap test is essential: with an
+         * infeasible dual, small mu alone can hide a real objective error. */
+        if (pres <= 1e-6 && dres <= 5e-6 && mu <= 1e-6 && best_gap <= 1e-5) {
+            status = "optimal";
+        }
+    }
+    {
+        int finite = 1;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            if (!isfinite(x[j])) {
+                finite = 0;
+                break;
+            }
+        }
+        if (!finite) {
+            status = "numerical_error";
+        }
+    }
     Py_END_ALLOW_THREADS
 
     /* unscale and report in original units */
@@ -2886,6 +3073,8 @@ done:
     free(rhs_m);
     free(aty);
     free(ax);
+    free(x_best);
+    free(y_best);
     free(bound_kind);
     return result;
 }

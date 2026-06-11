@@ -67,7 +67,9 @@ def test_auto_solver_matches_scipy_on_random_feasible_lps(seed: int) -> None:
     )
     assert reference.success
 
-    assert result.solution.objective_value == pytest.approx(float(reference.fun), abs=1e-5)
+    assert result.solution.objective_value == pytest.approx(
+        float(reference.fun), rel=1e-6, abs=1e-6
+    )
     x = np.array(result.solution.x)
     assert float(np.max(np.abs(dense @ x - np.array(b)))) < 1e-6
     assert float(np.min(x)) >= -1e-8

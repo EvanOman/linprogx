@@ -45,7 +45,7 @@ def ruiz_scale(A, iters=10):
     return sp.csr_matrix(A), r, s
 
 
-def ipm_solve(A, b, c, lo, hi, *, max_iter=60, tol=1e-9, verbose=True):
+def ipm_solve(A, b, c, lo, hi, *, max_iter=60, tol=1e-9, verbose=True, start="simple"):
     # Equilibrate: A_s = R A S, x = S x_s, y = R y_s.
     A, row_scale, col_scale = ruiz_scale(A)
     b = b * row_scale
@@ -75,16 +75,51 @@ def ipm_solve(A, b, c, lo, hi, *, max_iter=60, tol=1e-9, verbose=True):
     has_lo = np.isfinite(lo)
     has_hi = np.isfinite(hi)
 
-    # Starting point: x in the strict interior of the box, duals sized to c.
-    x = np.where(
-        has_lo & has_hi,
-        0.5 * (lo + hi),
-        np.where(has_lo, lo + 1.0, np.where(has_hi, hi - 1.0, 0.0)),
-    )
-    z_mag = np.maximum(1.0, np.abs(c))
-    zl = np.where(has_lo, z_mag, 0.0)
-    zu = np.where(has_hi, z_mag, 0.0)
-    y = np.zeros(m)
+    if start == "mehrotra":
+        # Least-squares starting point (Mehrotra's heuristic, box-adapted):
+        # min-norm primal consistent with Ax=b, dual from projecting c, and
+        # positive shifts sized by how negative the raw slacks/duals are.
+        AAt = (A @ A.T).tocsc() + 1e-8 * sp.eye(m, format="csc")
+        lu0 = splu(AAt, permc_spec="MMD_AT_PLUS_A")
+        x = A.T @ lu0.solve(b)
+        y = lu0.solve(A @ c)
+        r = c - (A.T @ y)
+        zl = np.where(has_lo, np.maximum(r, 0.0), 0.0)
+        zu = np.where(has_hi, np.maximum(-r, 0.0), 0.0)
+
+        sl_raw = np.where(has_lo, x - lo, 1.0)
+        su_raw = np.where(has_hi, hi - x, 1.0)
+
+        def positive_shift(values: np.ndarray, mask: np.ndarray) -> float:
+            if not mask.any():
+                return 0.0
+            return max(0.0, -1.5 * float(values[mask].min())) + 0.1
+
+        shift_l = positive_shift(sl_raw, has_lo)
+        shift_u = positive_shift(su_raw, has_hi)
+        width = np.where(has_lo & has_hi, hi - lo, np.inf)
+        lo_target = np.where(has_lo, lo + np.minimum(shift_l, 0.4 * width), -np.inf)
+        hi_target = np.where(has_hi, hi - np.minimum(shift_u, 0.4 * width), np.inf)
+        x = np.clip(x, np.minimum(lo_target, hi_target), np.maximum(lo_target, hi_target))
+        # guarantee a strict interior margin even for narrow boxes
+        margin = np.where(np.isfinite(width), np.minimum(1e-4, 0.25 * width), 1e-4)
+        x = np.where(has_lo, np.maximum(x, lo + margin), x)
+        x = np.where(has_hi, np.minimum(x, hi - margin), x)
+        z_shift_l = positive_shift(zl, has_lo)
+        z_shift_u = positive_shift(zu, has_hi)
+        zl = np.where(has_lo, zl + z_shift_l, 0.0)
+        zu = np.where(has_hi, zu + z_shift_u, 0.0)
+    else:
+        # Simple starting point: box interior, duals sized to c.
+        x = np.where(
+            has_lo & has_hi,
+            0.5 * (lo + hi),
+            np.where(has_lo, lo + 1.0, np.where(has_hi, hi - 1.0, 0.0)),
+        )
+        z_mag = np.maximum(1.0, np.abs(c))
+        zl = np.where(has_lo, z_mag, 0.0)
+        zu = np.where(has_hi, z_mag, 0.0)
+        y = np.zeros(m)
     delta_reg = 1e-8 * max(1.0, np.max(np.abs(A.data)))
 
     bnorm = 1.0 + np.linalg.norm(b)
@@ -94,9 +129,12 @@ def ipm_solve(A, b, c, lo, hi, *, max_iter=60, tol=1e-9, verbose=True):
     n_hi = int(has_hi.sum())
     n_comp = max(1, n_lo + n_hi)
 
+    slack_floor = 1e-13
     for it in range(max_iter):
-        sl = np.where(has_lo, x - lo, 1.0)
-        su = np.where(has_hi, hi - x, 1.0)
+        sl = np.where(has_lo, np.maximum(x - lo, slack_floor), 1.0)
+        su = np.where(has_hi, np.maximum(hi - x, slack_floor), 1.0)
+        zl = np.where(has_lo, np.maximum(zl, slack_floor), 0.0)
+        zu = np.where(has_hi, np.maximum(zu, slack_floor), 0.0)
         # residuals
         rp = b - A @ x
         rd = c - (At @ y) - np.where(has_lo, zl, 0.0) + np.where(has_hi, zu, 0.0)
@@ -110,12 +148,15 @@ def ipm_solve(A, b, c, lo, hi, *, max_iter=60, tol=1e-9, verbose=True):
         if pres < tol and dres < tol and mu < tol * 10:
             break
 
-        # scaling matrix H = Zl/Sl + Zu/Su (+ regularization for free vars)
+        # scaling matrix H = Zl/Sl + Zu/Su (+ regularization for free vars).
+        # The regularization shrinks with mu so it stops limiting the final
+        # dual accuracy (a fixed delta leaves an O(delta) dual residual).
+        delta_it = max(1e-12, min(delta_reg, 1e-2 * mu))
         H = np.where(has_lo, zl / sl, 0.0) + np.where(has_hi, zu / su, 0.0)
-        H = H + delta_reg  # primal regularization keeps D finite for free vars
+        H = H + delta_it  # primal regularization keeps D finite for free vars
         D = 1.0 / H
 
-        ADA = (A @ sp.diags(D) @ At).tocsc() + delta_reg * sp.eye(m, format="csc")
+        ADA = (A @ sp.diags(D) @ At).tocsc() + delta_it * sp.eye(m, format="csc")
         try:
             lu = splu(ADA, permc_spec="MMD_AT_PLUS_A")
         except RuntimeError:

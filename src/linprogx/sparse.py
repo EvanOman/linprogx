@@ -155,6 +155,8 @@ class SparseSolver:
         if algorithm == "auto":
             rows, _ = matrix.shape
             chosen = "ipm" if rows <= self.AUTO_IPM_MAX_ROWS else "pdhg"
+            if chosen == "ipm" and not self._ipm_pattern_is_tractable(matrix):
+                chosen = "pdhg"
 
         result = None
         if chosen == "ipm":
@@ -163,10 +165,12 @@ class SparseSolver:
                 solve_b,
                 solve_lo,
                 solve_hi,
-                max_iter=min(self.max_iterations, 100),
+                max_iter=min(self.max_iterations, 200),
                 tol=min(self.eps, 1e-9),
             )
-            if result["status"] != "optimal" and algorithm == "auto":
+            if result["status"] != "optimal" and (
+                algorithm == "auto" or result["status"] == "factor_too_dense"
+            ):
                 chosen = "pdhg"
                 result = None
         if result is None:
@@ -216,6 +220,25 @@ class SparseSolver:
             message=message,
             iterations=int(result["iterations"]),
         ), backend
+
+    @staticmethod
+    def _ipm_pattern_is_tractable(matrix: Any) -> bool:
+        """Guard the IPM route against dense columns.
+
+        A column with k nonzeros creates a k-by-k clique in the normal
+        equations; a handful of dense columns makes the Cholesky factor (and
+        the exact minimum-degree ordering) explode, so such problems are
+        better served by the first-order path.
+        """
+        _, indices, _ = matrix.to_components()
+        counts: dict[int, int] = {}
+        for column in indices:
+            counts[column] = counts.get(column, 0) + 1
+        if not counts:
+            return True
+        heaviest = max(counts.values())
+        pattern_cost = sum(value * value for value in counts.values())
+        return heaviest <= 1_000 and pattern_cost <= 30_000_000
 
     def _solve(self, problem: SparseLPProblem) -> Solution:
         prepared = self._prepare(problem)
