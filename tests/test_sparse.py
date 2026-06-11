@@ -215,3 +215,39 @@ def test_solve_sparse_max_with_bounds() -> None:
     assert result.solution.status == Status.OPTIMAL
     assert result.solution.objective_value == pytest.approx(10.0)
     assert result.solution.x == pytest.approx([2.0, 2.0])
+
+
+def test_normal_equations_solve_matches_dense_reference() -> None:
+    # A = [[1, 0, 2], [0, 3, 1]], d = [1, 2, 0.5], delta = 1e-3.
+    matrix = csr_matrix(2, 3, [0, 2, 4], [0, 2, 1, 2], [1.0, 2.0, 3.0, 1.0])
+    d = [1.0, 2.0, 0.5]
+    rhs = [1.0, -2.0]
+    delta = 1e-3
+
+    x = matrix.normal_equations_solve(d, rhs, delta)
+
+    # dense ADA' = [[1*1+0.5*4, 0.5*2], [0.5*2, 2*9+0.5*1]] + delta I
+    a11 = 3.0 + delta
+    a12 = 1.0
+    a22 = 18.5 + delta
+    det = a11 * a22 - a12 * a12
+    expected = [
+        (a22 * rhs[0] - a12 * rhs[1]) / det,
+        (a11 * rhs[1] - a12 * rhs[0]) / det,
+    ]
+    assert x == pytest.approx(expected, rel=1e-12)
+
+
+def test_min_degree_returns_permutation() -> None:
+    import importlib
+
+    _csparse = importlib.import_module("linprogx._csparse")
+
+    # arrow matrix pattern: dense first row/col plus diagonal
+    indptr = [0, 5, 7, 9, 11, 13]
+    indices = [0, 1, 2, 3, 4, 0, 1, 0, 2, 0, 3, 0, 4]
+    order = _csparse.min_degree(indptr, indices)
+
+    assert sorted(order) == [0, 1, 2, 3, 4]
+    # the dense hub must not be eliminated while leaves remain cheaper
+    assert order[0] != 0

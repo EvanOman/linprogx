@@ -1530,6 +1530,8 @@ done:
     return result;
 }
 
+static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObject *args);
+
 static PyGetSetDef CSRMatrix_getset[] = {
     {"shape", (getter)CSRMatrix_shape, NULL, "matrix shape", NULL},
     {"nnz", (getter)CSRMatrix_nnz, NULL, "number of stored nonzeros", NULL},
@@ -1543,6 +1545,7 @@ static PyMethodDef CSRMatrix_methods[] = {
     {"to_components", (PyCFunction)CSRMatrix_to_components, METH_NOARGS, "Return indptr, indices, data."},
     {"to_dense", (PyCFunction)CSRMatrix_to_dense, METH_NOARGS, "Materialize as nested Python lists."},
     {"solve_eq_box_pdhg", (PyCFunction)CSRMatrix_solve_eq_box_pdhg, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with native PDHG."},
+    {"normal_equations_solve", (PyCFunction)CSRMatrix_normal_equations_solve, METH_VARARGS, "Solve (A diag(d) A' + delta I) x = rhs with the native sparse Cholesky."},
     {NULL}
 };
 
@@ -1559,12 +1562,846 @@ static PyTypeObject CSRMatrixType = {
     .tp_new = CSRMatrix_new,
 };
 
+/* ------------------------------------------------------------------ */
+/* Exact minimum-degree ordering on a symmetric sparsity pattern.      */
+/* Quotient-graph formulation with element absorption; exact degrees   */
+/* recomputed with stamp-marked unions. Used to order the IPM normal   */
+/* equations before Cholesky factorization.                            */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int32_t *data;
+    int32_t len;
+    int32_t cap;
+} IntVec;
+
+static int intvec_push(IntVec *v, int32_t value) {
+    if (v->len == v->cap) {
+        int32_t cap = v->cap < 4 ? 4 : v->cap * 2;
+        int32_t *grown = realloc(v->data, (size_t)cap * sizeof(int32_t));
+        if (grown == NULL) {
+            return -1;
+        }
+        v->data = grown;
+        v->cap = cap;
+    }
+    v->data[v->len++] = value;
+    return 0;
+}
+
+typedef struct {
+    int64_t *keys;   /* (degree << 32) | var, lazy deletion */
+    Py_ssize_t len;
+    Py_ssize_t cap;
+} MinHeap;
+
+static int heap_push(MinHeap *h, int32_t degree, int32_t var) {
+    if (h->len == h->cap) {
+        Py_ssize_t cap = h->cap < 64 ? 64 : h->cap * 2;
+        int64_t *grown = realloc(h->keys, (size_t)cap * sizeof(int64_t));
+        if (grown == NULL) {
+            return -1;
+        }
+        h->keys = grown;
+        h->cap = cap;
+    }
+    int64_t key = ((int64_t)degree << 32) | (int64_t)(uint32_t)var;
+    Py_ssize_t i = h->len++;
+    while (i > 0) {
+        Py_ssize_t parent = (i - 1) / 2;
+        if (h->keys[parent] <= key) {
+            break;
+        }
+        h->keys[i] = h->keys[parent];
+        i = parent;
+    }
+    h->keys[i] = key;
+    return 0;
+}
+
+static int64_t heap_pop(MinHeap *h) {
+    int64_t top = h->keys[0];
+    int64_t last = h->keys[--h->len];
+    Py_ssize_t i = 0;
+    for (;;) {
+        Py_ssize_t left = 2 * i + 1;
+        if (left >= h->len) {
+            break;
+        }
+        Py_ssize_t small = left;
+        if (left + 1 < h->len && h->keys[left + 1] < h->keys[left]) {
+            small = left + 1;
+        }
+        if (h->keys[small] >= last) {
+            break;
+        }
+        h->keys[i] = h->keys[small];
+        i = small;
+    }
+    if (h->len > 0) {
+        h->keys[i] = last;
+    }
+    return top;
+}
+
+/* Compute an exact minimum-degree elimination order for the symmetric
+ * pattern given by (indptr, indices) over m nodes. Writes the order
+ * (a permutation of 0..m-1) into `order`. Returns 0 on success. */
+static int min_degree_impl(
+    int32_t m,
+    const Py_ssize_t *indptr,
+    const Py_ssize_t *indices,
+    int32_t *order) {
+    int status = -1;
+    IntVec *adj = calloc((size_t)m, sizeof(IntVec));
+    IntVec *var_elems = calloc((size_t)m, sizeof(IntVec));
+    IntVec *elements = NULL;
+    Py_ssize_t elements_len = 0;
+    Py_ssize_t elements_cap = 0;
+    unsigned char *alive = calloc((size_t)m, sizeof(unsigned char));
+    int32_t *degree = calloc((size_t)m, sizeof(int32_t));
+    int32_t *mark = calloc((size_t)m, sizeof(int32_t));
+    int32_t *elem_mark = NULL;
+    Py_ssize_t elem_mark_cap = 0;
+    int32_t *nbhd = calloc((size_t)m, sizeof(int32_t));
+    MinHeap heap = {NULL, 0, 0};
+    int32_t stamp = 0;
+    if (adj == NULL || var_elems == NULL || alive == NULL || degree == NULL ||
+        mark == NULL || nbhd == NULL) {
+        goto cleanup;
+    }
+
+    for (int32_t j = 0; j < m; j++) {
+        alive[j] = 1;
+        for (Py_ssize_t idx = indptr[j]; idx < indptr[j + 1]; idx++) {
+            int32_t i = (int32_t)indices[idx];
+            if (i > j) {
+                if (intvec_push(&adj[i], j) != 0 || intvec_push(&adj[j], i) != 0) {
+                    goto cleanup;
+                }
+            }
+        }
+    }
+    for (int32_t v = 0; v < m; v++) {
+        degree[v] = adj[v].len;
+        if (heap_push(&heap, degree[v], v) != 0) {
+            goto cleanup;
+        }
+    }
+
+    for (int32_t count = 0; count < m; count++) {
+        int32_t v = -1;
+        for (;;) {
+            int64_t key = heap_pop(&heap);
+            int32_t deg = (int32_t)(key >> 32);
+            int32_t cand = (int32_t)(uint32_t)(key & 0xffffffff);
+            if (alive[cand] && degree[cand] == deg) {
+                v = cand;
+                break;
+            }
+        }
+        order[count] = v;
+        alive[v] = 0;
+
+        /* Neighborhood = alive adjacency of v plus members of v's elements. */
+        stamp++;
+        mark[v] = stamp;
+        int32_t nbhd_len = 0;
+        for (int32_t k = 0; k < adj[v].len; k++) {
+            int32_t u = adj[v].data[k];
+            if (alive[u] && mark[u] != stamp) {
+                mark[u] = stamp;
+                nbhd[nbhd_len++] = u;
+            }
+        }
+        for (int32_t k = 0; k < var_elems[v].len; k++) {
+            IntVec *e = &elements[var_elems[v].data[k]];
+            for (int32_t t = 0; t < e->len; t++) {
+                int32_t u = e->data[t];
+                if (alive[u] && mark[u] != stamp) {
+                    mark[u] = stamp;
+                    nbhd[nbhd_len++] = u;
+                }
+            }
+        }
+        int32_t nbhd_stamp = stamp;
+
+        /* New element holding the neighborhood; absorb v's old elements. */
+        if (elements_len == elements_cap) {
+            Py_ssize_t cap = elements_cap < 16 ? 16 : elements_cap * 2;
+            IntVec *grown = realloc(elements, (size_t)cap * sizeof(IntVec));
+            if (grown == NULL) {
+                goto cleanup;
+            }
+            memset(grown + elements_cap, 0, (size_t)(cap - elements_cap) * sizeof(IntVec));
+            elements = grown;
+            elements_cap = cap;
+        }
+        int32_t eid = (int32_t)elements_len++;
+        if (elements_cap > elem_mark_cap) {
+            int32_t *grown = realloc(elem_mark, (size_t)elements_cap * sizeof(int32_t));
+            if (grown == NULL) {
+                goto cleanup;
+            }
+            memset(grown + elem_mark_cap, 0,
+                   (size_t)(elements_cap - elem_mark_cap) * sizeof(int32_t));
+            elem_mark = grown;
+            elem_mark_cap = elements_cap;
+        }
+        IntVec *new_elem = &elements[eid];
+        for (int32_t k = 0; k < nbhd_len; k++) {
+            if (intvec_push(new_elem, nbhd[k]) != 0) {
+                goto cleanup;
+            }
+        }
+        /* Mark absorbed element ids (they are emptied below). */
+        stamp++;
+        int32_t absorb_stamp = stamp;
+        for (int32_t k = 0; k < var_elems[v].len; k++) {
+            int32_t e = var_elems[v].data[k];
+            elem_mark[e] = absorb_stamp;
+            free(elements[e].data);
+            elements[e].data = NULL;
+            elements[e].len = 0;
+            elements[e].cap = 0;
+        }
+
+        for (int32_t k = 0; k < nbhd_len; k++) {
+            int32_t u = nbhd[k];
+            /* Drop v and any neighbor covered by the new element. */
+            int32_t kept = 0;
+            for (int32_t t = 0; t < adj[u].len; t++) {
+                int32_t w = adj[u].data[t];
+                if (w == v || !alive[w] || mark[w] == nbhd_stamp) {
+                    continue;
+                }
+                adj[u].data[kept++] = w;
+            }
+            adj[u].len = kept;
+            /* Drop absorbed elements, add the new one. */
+            kept = 0;
+            for (int32_t t = 0; t < var_elems[u].len; t++) {
+                int32_t e = var_elems[u].data[t];
+                if (elem_mark[e] == absorb_stamp) {
+                    continue;
+                }
+                var_elems[u].data[kept++] = e;
+            }
+            var_elems[u].len = kept;
+            if (intvec_push(&var_elems[u], eid) != 0) {
+                goto cleanup;
+            }
+        }
+
+        /* Exact degree recomputation for the neighborhood. */
+        for (int32_t k = 0; k < nbhd_len; k++) {
+            int32_t u = nbhd[k];
+            stamp++;
+            mark[u] = stamp;
+            int32_t deg = 0;
+            for (int32_t t = 0; t < adj[u].len; t++) {
+                int32_t w = adj[u].data[t];
+                if (alive[w] && mark[w] != stamp) {
+                    mark[w] = stamp;
+                    deg++;
+                }
+            }
+            for (int32_t t = 0; t < var_elems[u].len; t++) {
+                IntVec *e = &elements[var_elems[u].data[t]];
+                for (int32_t s = 0; s < e->len; s++) {
+                    int32_t w = e->data[s];
+                    if (alive[w] && mark[w] != stamp) {
+                        mark[w] = stamp;
+                        deg++;
+                    }
+                }
+            }
+            degree[u] = deg;
+            if (heap_push(&heap, deg, u) != 0) {
+                goto cleanup;
+            }
+        }
+    }
+    status = 0;
+
+cleanup:
+    if (adj != NULL) {
+        for (int32_t v = 0; v < m; v++) {
+            free(adj[v].data);
+        }
+    }
+    if (var_elems != NULL) {
+        for (int32_t v = 0; v < m; v++) {
+            free(var_elems[v].data);
+        }
+    }
+    if (elements != NULL) {
+        for (Py_ssize_t e = 0; e < elements_len; e++) {
+            free(elements[e].data);
+        }
+    }
+    free(adj);
+    free(var_elems);
+    free(elements);
+    free(alive);
+    free(degree);
+    free(mark);
+    free(elem_mark);
+    free(nbhd);
+    free(heap.keys);
+    return status;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sparse Cholesky of C = P (A D A' + delta I) P' with fixed pattern.  */
+/* Setup once per problem (pattern, ordering, elimination tree,        */
+/* symbolic factorization, assembly scatter map); refactor + solve     */
+/* once per IPM iteration with a new diagonal D.                       */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int32_t m;
+    /* permuted symmetric pattern of A D A' + delta I (full, CSC, sorted) */
+    Py_ssize_t *Cp;
+    int32_t *Ci;
+    double *Cx;
+    /* assembly map: ordered pairs of entries sharing an A column are
+     * enumerated in a fixed order at refactor time; pair_offset[at] is the
+     * destination offset in Cx of the at-th pair. */
+    Py_ssize_t *pair_offset;
+    Py_ssize_t n_pairs;
+    Py_ssize_t *diag_offset;
+    int32_t *perm;     /* order[k] = original row eliminated at step k */
+    int32_t *pinv;
+    /* Cholesky factor L (CSC, diagonal first in each column) */
+    Py_ssize_t *Lp;
+    int32_t *Li;
+    double *Lx;
+    int32_t *parent;   /* elimination tree */
+    int32_t *cursor;   /* per-column insertion cursor during refactor */
+    int32_t *estack;   /* ereach scratch */
+    int32_t *epattern; /* ereach result */
+    int32_t *emark;
+    double *work;      /* dense accumulator for the factorization */
+    double *work2;     /* dense buffer for triangular solves */
+} CholContext;
+
+static void chol_free(CholContext *ctx) {
+    if (ctx == NULL) {
+        return;
+    }
+    free(ctx->Cp);
+    free(ctx->Ci);
+    free(ctx->Cx);
+    free(ctx->pair_offset);
+    free(ctx->diag_offset);
+    free(ctx->perm);
+    free(ctx->pinv);
+    free(ctx->Lp);
+    free(ctx->Li);
+    free(ctx->Lx);
+    free(ctx->parent);
+    free(ctx->cursor);
+    free(ctx->estack);
+    free(ctx->epattern);
+    free(ctx->emark);
+    free(ctx->work);
+    free(ctx->work2);
+    free(ctx);
+}
+
+static Py_ssize_t chol_find_offset(const CholContext *ctx, int32_t row, int32_t col) {
+    Py_ssize_t lo_idx = ctx->Cp[col];
+    Py_ssize_t hi_idx = ctx->Cp[col + 1] - 1;
+    while (lo_idx <= hi_idx) {
+        Py_ssize_t mid = (lo_idx + hi_idx) / 2;
+        if (ctx->Ci[mid] == row) {
+            return mid;
+        }
+        if (ctx->Ci[mid] < row) {
+            lo_idx = mid + 1;
+        } else {
+            hi_idx = mid - 1;
+        }
+    }
+    return -1;
+}
+
+/* Pattern of row k of L in topological order; returns top index into
+ * ctx->epattern (entries epattern[top..m-1]). */
+static int32_t chol_ereach(const CholContext *ctx, int32_t k) {
+    int32_t top = ctx->m;
+    int32_t len;
+    ctx->emark[k] = k + 1;
+    for (Py_ssize_t p = ctx->Cp[k]; p < ctx->Cp[k + 1]; p++) {
+        int32_t i = ctx->Ci[p];
+        if (i >= k) {
+            continue;
+        }
+        len = 0;
+        while (ctx->emark[i] != k + 1) {
+            ctx->estack[len++] = i;
+            ctx->emark[i] = k + 1;
+            i = ctx->parent[i];
+        }
+        while (len > 0) {
+            ctx->epattern[--top] = ctx->estack[--len];
+        }
+    }
+    return top;
+}
+
+/* Build everything that depends only on the sparsity pattern of A. */
+static CholContext *chol_setup(CSRMatrixObject *A) {
+    int32_t m = (int32_t)A->rows;
+    CholContext *ctx = calloc(1, sizeof(CholContext));
+    int32_t *head = NULL;
+    int32_t *mark = NULL;
+    int32_t *colbuf = NULL;
+    int32_t *count = NULL;
+    Py_ssize_t *Bp = NULL;
+    int32_t *Bi = NULL;
+    int32_t *ancestor = NULL;
+    if (ctx == NULL) {
+        return NULL;
+    }
+    ctx->m = m;
+
+    /* --- unpermuted ADA' pattern (full symmetric, CSC) --- */
+    mark = calloc((size_t)m, sizeof(int32_t));
+    colbuf = calloc((size_t)m, sizeof(int32_t));
+    count = calloc((size_t)m, sizeof(int32_t));
+    if (mark == NULL || colbuf == NULL || count == NULL) {
+        goto fail;
+    }
+    Bp = calloc((size_t)m + 1, sizeof(Py_ssize_t));
+    if (Bp == NULL) {
+        goto fail;
+    }
+    /* Two passes: count then fill. Row i's pattern is the union of the
+     * rows appearing in every A-column touched by row i. */
+    for (int pass = 0; pass < 2; pass++) {
+        for (int32_t i = 0; i < m; i++) {
+            int32_t len = 0;
+            mark[i] = i + 1;
+            colbuf[len++] = i;
+            for (Py_ssize_t p = A->indptr[i]; p < A->indptr[i + 1]; p++) {
+                Py_ssize_t t = A->indices[p];
+                for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
+                    int32_t j = (int32_t)A->csc_rows[q];
+                    if (mark[j] != i + 1) {
+                        mark[j] = i + 1;
+                        colbuf[len++] = j;
+                    }
+                }
+            }
+            if (pass == 0) {
+                Bp[i + 1] = Bp[i] + len;
+            } else {
+                Py_ssize_t base = Bp[i];
+                for (int32_t t = 0; t < len; t++) {
+                    Bi[base + t] = colbuf[t];
+                }
+            }
+        }
+        if (pass == 0) {
+            Bi = calloc((size_t)Bp[m], sizeof(int32_t));
+            if (Bi == NULL) {
+                goto fail;
+            }
+            memset(mark, 0, (size_t)m * sizeof(int32_t));
+        }
+    }
+
+    /* --- minimum-degree ordering on that pattern --- */
+    ctx->perm = calloc((size_t)m, sizeof(int32_t));
+    ctx->pinv = calloc((size_t)m, sizeof(int32_t));
+    if (ctx->perm == NULL || ctx->pinv == NULL) {
+        goto fail;
+    }
+    {
+        Py_ssize_t *Bp_ss = Bp;
+        Py_ssize_t *Bi_ss = calloc((size_t)Bp[m], sizeof(Py_ssize_t));
+        if (Bi_ss == NULL) {
+            goto fail;
+        }
+        for (Py_ssize_t p = 0; p < Bp[m]; p++) {
+            Bi_ss[p] = Bi[p];
+        }
+        int status = min_degree_impl(m, Bp_ss, Bi_ss, ctx->perm);
+        free(Bi_ss);
+        if (status != 0) {
+            goto fail;
+        }
+    }
+    for (int32_t k = 0; k < m; k++) {
+        ctx->pinv[ctx->perm[k]] = k;
+    }
+
+    /* --- permuted pattern C = P B P', CSC with sorted columns --- */
+    ctx->Cp = calloc((size_t)m + 1, sizeof(Py_ssize_t));
+    if (ctx->Cp == NULL) {
+        goto fail;
+    }
+    for (int32_t newc = 0; newc < m; newc++) {
+        int32_t oldc = ctx->perm[newc];
+        ctx->Cp[newc + 1] = ctx->Cp[newc] + (Bp[oldc + 1] - Bp[oldc]);
+    }
+    ctx->Ci = calloc((size_t)ctx->Cp[m], sizeof(int32_t));
+    ctx->Cx = calloc((size_t)ctx->Cp[m], sizeof(double));
+    if (ctx->Ci == NULL || ctx->Cx == NULL) {
+        goto fail;
+    }
+    head = calloc((size_t)m, sizeof(int32_t));
+    if (head == NULL) {
+        goto fail;
+    }
+    /* counting sort by row to keep each column sorted */
+    memset(count, 0, (size_t)m * sizeof(int32_t));
+    for (int32_t newc = 0; newc < m; newc++) {
+        int32_t oldc = ctx->perm[newc];
+        for (Py_ssize_t p = Bp[oldc]; p < Bp[oldc + 1]; p++) {
+            count[ctx->pinv[Bi[p]]]++;
+        }
+        Py_ssize_t base = ctx->Cp[newc];
+        Py_ssize_t at = base;
+        for (int32_t r = 0; r < m && at < ctx->Cp[newc + 1]; r++) {
+            while (count[r] > 0) {
+                ctx->Ci[at++] = r;
+                count[r]--;
+            }
+        }
+    }
+    /* the loop above is O(m) per column; redo with a sort-free approach
+     * if it ever shows up in profiles. */
+
+    /* --- assembly map --- */
+    Py_ssize_t n_pairs = 0;
+    for (Py_ssize_t t = 0; t < A->cols; t++) {
+        Py_ssize_t nz = A->csc_indptr[t + 1] - A->csc_indptr[t];
+        n_pairs += nz * nz;
+    }
+    if (n_pairs > (Py_ssize_t)1 << 27) {
+        /* refuse absurd assembly maps (dense columns) */
+        goto fail;
+    }
+    ctx->n_pairs = n_pairs;
+    ctx->pair_offset = calloc((size_t)(n_pairs > 0 ? n_pairs : 1), sizeof(Py_ssize_t));
+    ctx->diag_offset = calloc((size_t)m, sizeof(Py_ssize_t));
+    if (ctx->pair_offset == NULL || ctx->diag_offset == NULL) {
+        goto fail;
+    }
+    {
+        Py_ssize_t at = 0;
+        for (Py_ssize_t t = 0; t < A->cols; t++) {
+            for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
+                int32_t r1 = ctx->pinv[A->csc_rows[p]];
+                for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
+                    int32_t r2 = ctx->pinv[A->csc_rows[q]];
+                    Py_ssize_t offset = chol_find_offset(ctx, r1, r2);
+                    if (offset < 0) {
+                        goto fail;
+                    }
+                    ctx->pair_offset[at++] = offset;
+                }
+            }
+        }
+    }
+    for (int32_t k = 0; k < m; k++) {
+        Py_ssize_t offset = chol_find_offset(ctx, k, k);
+        if (offset < 0) {
+            goto fail;
+        }
+        ctx->diag_offset[k] = offset;
+    }
+
+    /* --- elimination tree (Liu's algorithm with path compression) --- */
+    ctx->parent = calloc((size_t)m, sizeof(int32_t));
+    ancestor = calloc((size_t)m, sizeof(int32_t));
+    if (ctx->parent == NULL || ancestor == NULL) {
+        goto fail;
+    }
+    for (int32_t k = 0; k < m; k++) {
+        ctx->parent[k] = -1;
+        ancestor[k] = -1;
+        for (Py_ssize_t p = ctx->Cp[k]; p < ctx->Cp[k + 1]; p++) {
+            int32_t i = ctx->Ci[p];
+            while (i != -1 && i < k) {
+                int32_t inext = ancestor[i];
+                ancestor[i] = k;
+                if (inext == -1) {
+                    ctx->parent[i] = k;
+                }
+                i = inext;
+            }
+        }
+    }
+
+    /* --- symbolic: column counts via ereach, then fixed Li --- */
+    ctx->estack = calloc((size_t)m, sizeof(int32_t));
+    ctx->epattern = calloc((size_t)m, sizeof(int32_t));
+    ctx->emark = calloc((size_t)m, sizeof(int32_t));
+    ctx->cursor = calloc((size_t)m, sizeof(int32_t));
+    ctx->work = calloc((size_t)m, sizeof(double));
+    ctx->work2 = calloc((size_t)m, sizeof(double));
+    ctx->Lp = calloc((size_t)m + 1, sizeof(Py_ssize_t));
+    if (ctx->estack == NULL || ctx->epattern == NULL || ctx->emark == NULL ||
+        ctx->cursor == NULL || ctx->work == NULL || ctx->work2 == NULL ||
+        ctx->Lp == NULL) {
+        goto fail;
+    }
+    memset(count, 0, (size_t)m * sizeof(int32_t));
+    for (int32_t k = 0; k < m; k++) {
+        count[k]++; /* diagonal */
+        int32_t top = chol_ereach(ctx, k);
+        for (int32_t s = top; s < m; s++) {
+            count[ctx->epattern[s]]++;
+        }
+    }
+    for (int32_t k = 0; k < m; k++) {
+        ctx->Lp[k + 1] = ctx->Lp[k] + count[k];
+    }
+    ctx->Li = calloc((size_t)ctx->Lp[m], sizeof(int32_t));
+    ctx->Lx = calloc((size_t)ctx->Lp[m], sizeof(double));
+    if (ctx->Li == NULL || ctx->Lx == NULL) {
+        goto fail;
+    }
+    memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
+    for (int32_t k = 0; k < m; k++) {
+        ctx->Li[ctx->Lp[k]] = k;
+        ctx->cursor[k] = 1;
+    }
+    for (int32_t k = 0; k < m; k++) {
+        int32_t top = chol_ereach(ctx, k);
+        for (int32_t s = top; s < m; s++) {
+            int32_t j = ctx->epattern[s];
+            ctx->Li[ctx->Lp[j] + ctx->cursor[j]++] = k;
+        }
+    }
+    memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
+
+    free(head);
+    free(mark);
+    free(colbuf);
+    free(count);
+    free(Bp);
+    free(Bi);
+    free(ancestor);
+    return ctx;
+
+fail:
+    free(head);
+    free(mark);
+    free(colbuf);
+    free(count);
+    free(Bp);
+    free(Bi);
+    free(ancestor);
+    chol_free(ctx);
+    return NULL;
+}
+
+/* Numeric refactorization with diagonal D and regularization delta.
+ * Tiny or negative pivots are boosted (dynamic regularization), standard
+ * practice for IPM normal equations. */
+static void chol_refactor(CholContext *ctx, CSRMatrixObject *A, const double *D, double delta) {
+    int32_t m = ctx->m;
+    memset(ctx->Cx, 0, (size_t)ctx->Cp[m] * sizeof(double));
+    {
+        Py_ssize_t at = 0;
+        for (Py_ssize_t t = 0; t < A->cols; t++) {
+            double dt = D[t];
+            for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
+                double vp = A->csc_data[p] * dt;
+                for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
+                    ctx->Cx[ctx->pair_offset[at++]] += vp * A->csc_data[q];
+                }
+            }
+        }
+    }
+    for (int32_t k = 0; k < m; k++) {
+        ctx->Cx[ctx->diag_offset[k]] += delta;
+    }
+
+    /* up-looking Cholesky over the fixed pattern */
+    memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
+    for (int32_t k = 0; k < m; k++) {
+        ctx->cursor[k] = 1;
+    }
+    double *x = ctx->work; /* maintained all-zero between rows */
+    for (int32_t k = 0; k < m; k++) {
+        for (Py_ssize_t p = ctx->Cp[k]; p < ctx->Cp[k + 1]; p++) {
+            int32_t i = ctx->Ci[p];
+            if (i <= k) {
+                x[i] = ctx->Cx[p];
+            }
+        }
+        double d = x[k];
+        x[k] = 0.0;
+        int32_t top = chol_ereach(ctx, k);
+        for (int32_t s = top; s < m; s++) {
+            int32_t j = ctx->epattern[s];
+            double lkj = x[j] / ctx->Lx[ctx->Lp[j]];
+            x[j] = 0.0;
+            Py_ssize_t end = ctx->Lp[j] + ctx->cursor[j];
+            for (Py_ssize_t p = ctx->Lp[j] + 1; p < end; p++) {
+                x[ctx->Li[p]] -= ctx->Lx[p] * lkj;
+            }
+            d -= lkj * lkj;
+            ctx->Lx[end] = lkj;
+            ctx->cursor[j]++;
+        }
+        if (d < 1e-12) {
+            d = 1e-12;
+        }
+        ctx->Lx[ctx->Lp[k]] = sqrt(d);
+    }
+}
+
+/* Solve (A D A' + delta I) out = rhs using the current factor. */
+static void chol_solve(CholContext *ctx, const double *rhs, double *out) {
+    int32_t m = ctx->m;
+    double *y = ctx->work2;
+    for (int32_t k = 0; k < m; k++) {
+        y[k] = rhs[ctx->perm[k]];
+    }
+    for (int32_t j = 0; j < m; j++) {
+        double yj = y[j] / ctx->Lx[ctx->Lp[j]];
+        y[j] = yj;
+        for (Py_ssize_t p = ctx->Lp[j] + 1; p < ctx->Lp[j + 1]; p++) {
+            y[ctx->Li[p]] -= ctx->Lx[p] * yj;
+        }
+    }
+    for (int32_t j = m - 1; j >= 0; j--) {
+        double total = y[j];
+        for (Py_ssize_t p = ctx->Lp[j] + 1; p < ctx->Lp[j + 1]; p++) {
+            total -= ctx->Lx[p] * y[ctx->Li[p]];
+        }
+        y[j] = total / ctx->Lx[ctx->Lp[j]];
+    }
+    for (int32_t k = 0; k < m; k++) {
+        out[ctx->perm[k]] = y[k];
+    }
+}
+
+/* Test hook: solve (A D A' + delta I) x = rhs with the native Cholesky. */
+static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObject *args) {
+    PyObject *d_obj;
+    PyObject *rhs_obj;
+    double delta = 0.0;
+    if (!PyArg_ParseTuple(args, "OO|d", &d_obj, &rhs_obj, &delta)) {
+        return NULL;
+    }
+    if (self->rows > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError, "matrix too large for the 32-bit factorization");
+        return NULL;
+    }
+    double *d = calloc((size_t)(self->cols > 0 ? self->cols : 1), sizeof(double));
+    double *rhs = calloc((size_t)(self->rows > 0 ? self->rows : 1), sizeof(double));
+    double *out = calloc((size_t)(self->rows > 0 ? self->rows : 1), sizeof(double));
+    if (d == NULL || rhs == NULL || out == NULL ||
+        fill_double_array(d_obj, self->cols, d, "d") != 0 ||
+        fill_double_array(rhs_obj, self->rows, rhs, "rhs") != 0) {
+        free(d);
+        free(rhs);
+        free(out);
+        return NULL;
+    }
+    CholContext *ctx;
+    Py_BEGIN_ALLOW_THREADS
+    ctx = chol_setup(self);
+    if (ctx != NULL) {
+        chol_refactor(ctx, self, d, delta);
+        chol_solve(ctx, rhs, out);
+    }
+    Py_END_ALLOW_THREADS
+    free(d);
+    free(rhs);
+    if (ctx == NULL) {
+        free(out);
+        PyErr_SetString(PyExc_RuntimeError, "Cholesky setup failed");
+        return NULL;
+    }
+    chol_free(ctx);
+    PyObject *result = PyList_New(self->rows);
+    if (result == NULL) {
+        free(out);
+        return NULL;
+    }
+    for (Py_ssize_t i = 0; i < self->rows; i++) {
+        PyList_SET_ITEM(result, i, PyFloat_FromDouble(out[i]));
+    }
+    free(out);
+    return result;
+}
+
+static PyObject *csparse_min_degree(PyObject *self, PyObject *args) {
+    (void)self;
+    PyObject *indptr_obj;
+    PyObject *indices_obj;
+    if (!PyArg_ParseTuple(args, "OO", &indptr_obj, &indices_obj)) {
+        return NULL;
+    }
+    PyObject *indptr_seq = PySequence_Fast(indptr_obj, "indptr must be a sequence");
+    if (indptr_seq == NULL) {
+        return NULL;
+    }
+    Py_ssize_t m = PySequence_Fast_GET_SIZE(indptr_seq) - 1;
+    Py_DECREF(indptr_seq);
+    if (m < 0 || m > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError, "invalid pattern size");
+        return NULL;
+    }
+    Py_ssize_t *indptr = calloc((size_t)m + 1, sizeof(Py_ssize_t));
+    if (indptr == NULL || fill_index_array(indptr_obj, m + 1, indptr, "indptr") != 0) {
+        free(indptr);
+        return NULL;
+    }
+    Py_ssize_t nnz = indptr[m];
+    Py_ssize_t *indices = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(Py_ssize_t));
+    int32_t *order = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+    if (indices == NULL || order == NULL ||
+        fill_index_array(indices_obj, nnz, indices, "indices") != 0) {
+        free(indptr);
+        free(indices);
+        free(order);
+        return NULL;
+    }
+    int status;
+    Py_BEGIN_ALLOW_THREADS
+    status = min_degree_impl((int32_t)m, indptr, indices, order);
+    Py_END_ALLOW_THREADS
+    free(indptr);
+    free(indices);
+    if (status != 0) {
+        free(order);
+        PyErr_NoMemory();
+        return NULL;
+    }
+    PyObject *result = PyList_New(m);
+    if (result == NULL) {
+        free(order);
+        return NULL;
+    }
+    for (Py_ssize_t i = 0; i < m; i++) {
+        PyList_SET_ITEM(result, i, PyLong_FromLong((long)order[i]));
+    }
+    free(order);
+    return result;
+}
+
+static PyMethodDef module_methods[] = {
+    {"min_degree", csparse_min_degree, METH_VARARGS,
+     "Exact minimum-degree ordering of a symmetric CSC/CSR pattern (indptr, indices)."},
+    {NULL, NULL, 0, NULL}
+};
+
 static PyModuleDef module = {
     PyModuleDef_HEAD_INIT,
     "_csparse",
     "C sparse matrix types for linprogx.",
     -1,
-    NULL,
+    module_methods,
 };
 
 PyMODINIT_FUNC PyInit__csparse(void) {
