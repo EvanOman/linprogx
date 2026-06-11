@@ -5,6 +5,36 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 11 Update: LPnetlib Suite Round
+
+A 24-instance LPnetlib sweep (`experiments/suite_bench.py`, results in
+`assets/lpnetlib_suite.md`) drove a major IPM hardening round:
+
+- **Mehrotra least-squares starting point** (dominant fix), mu-proportional
+  regularization (floor 1e-10; free columns stay at fixed 1e-8 — shrinking
+  them overflows their Newton block), slack/dual positivity floors,
+  best-iterate snapshots with a finiteness guard, and a relaxed acceptance
+  for stalled runs that REQUIRES an explicit primal-dual gap <= 1e-5
+  (small mu with an infeasible dual hid a 1.3e-3 objective error on
+  greenbea — Clarabel certifies that same wrong point).
+- **Density guards**: Python-side dense-column check and a C-side factor
+  flops cap (1e9, measured as sum of squared L column counts after
+  symbolic analysis) route clique-forming instances (fit2p, qap12) to
+  PDHG. qap12: 84s IPM -> 4.6s PDHG (HiGHS needs 96.7s).
+- Suite scoreboard: linprogx 17/24 solved (HiGHS 23, Clarabel 23),
+  fastest-of-three on 3, quality 1.8e-12..2.2e-5 relative where solved.
+  CYCLE improved again: 28 IPM iterations, 0.106s.
+- Useful external references found this round: Mittelmann benchmarks
+  (plato.asu.edu, MPS format — needs a parser, future work), published
+  Netlib optima CSV (github.com/SkyLiu0/NETLIB, Gurobi 1e-8), Clarabel
+  benchmarks repo (oxfordcontrol/ClarabelBenchmarks).
+- **Next frontier**: the 7 unsolved instances are PDHG tails — cre_b/cre_d,
+  fit2p, ken_18 end at residuals 9e-5..1e-3 (just above the 2e-5 bar) with
+  excellent objectives; greenbea/stocfor3 stall further out; osa_60 needs
+  more than the 180s budget. A PDHG endgame that certifies these
+  near-misses (better cleanup, or longer adaptive budgets) is the highest
+  value remaining work.
+
 ## June 10 Update: Parallel CYCLE-gap Experiments
 
 Three experiments ran in parallel worktrees and were integrated:

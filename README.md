@@ -453,6 +453,21 @@ during development (`experiments/generalization_bench.py`): 25FV47, GANGES,
 STOCFOR2, and PDS-06 all solve to optimal with residuals between 1.9e-5 and
 1.7e-12, beating Clarabel on three of four and trading blows with HiGHS.
 
+### LPnetlib suite (24 instances)
+
+A larger sweep over the SuiteSparse LPnetlib collection — the same Netlib
+family used in the Clarabel and HiGHS benchmark papers, including the
+Kennington set — is recorded in [assets/lpnetlib_suite.md](assets/lpnetlib_suite.md)
+with the harness in `experiments/suite_bench.py`. Headline: linprogx solves
+17/24 with relative objective errors of 1.8e-12 to 2.2e-5 (HiGHS and
+Clarabel each solve 23/24), is fastest-of-three on 3 instances (qap15 in
+0.65s where HiGHS times out; qap12 in 4.6s vs HiGHS at 96.7s; truss 22x
+faster than HiGHS), and reports every miss honestly — including greenbea,
+where its explicit primal-dual gap test rejects a near-optimal point that
+Clarabel certifies despite a 1.3e-3 objective error. The seven unsolved
+instances are first-order tails just above the residual bar; closing them is
+the next frontier.
+
 ## License
 
 MIT
