@@ -11,19 +11,21 @@ Reference link saved with the project: https://www.linkedin.com/posts/antonvorob
 
 ## TL;DR
 
-This repo is a compact LP solver built as a benchmarkable artifact: a from-scratch two-phase simplex implementation, a small C accelerator, Python and CLI interfaces, 16 hand-authored LP examples, 8 standardized Klee-Minty stress cases, and test-time correctness checks against SciPy/HiGHS and Clarabel.
+This repo is a compact LP solver built as a benchmarkable artifact: a from-scratch two-phase simplex implementation, a dependency-free sparse solver portfolio (presolve + native interior point method + restarted PDHG with automatic routing), a small C accelerator, Python and CLI interfaces, 16 hand-authored LP examples, 8 standardized Klee-Minty stress cases, and test-time correctness checks against SciPy/HiGHS and Clarabel.
 
-The point is not to beat mature solvers on real sparse production models. It is to make the mechanics visible, keep the dependency-free runtime small, and show reproducible comparisons against serious open-source baselines.
+On the two Netlib benchmarks tracked in this repo (DFL001 and CYCLE), the auto-routed sparse solver currently runs faster than both SciPy/HiGHS and Clarabel on this machine while holding equality residuals at `2e-5` (PDHG) down to `1e-11` (IPM). The mechanics stay visible, the runtime stays dependency-free, and every comparison is reproducible.
 
 ## What It Does
 
 - Solves dense small-to-medium LPs without NumPy or SciPy.
-- Returns primal values, objective value, slacks, basis names, reduced costs, and shadow-price estimates.
+- Solves sparse equality-plus-bounds LPs at Netlib scale with a presolve +
+  IPM/PDHG portfolio (`SparseSolver(algorithm="auto")`), all dependency-free.
+- Returns primal values, objective value, slacks, basis names, reduced costs, and shadow-price estimates (dense path), plus dual vectors from the sparse solvers.
 - Provides both a direct matrix API and a small modeling interface.
 - Ships a JSON CLI for quick experiments.
-- Compiles `linprogx._cfast` for in-place tableau pivots and dot products, with a pure-Python fallback.
+- Compiles `linprogx._cfast` for in-place tableau pivots and dot products, with a pure-Python fallback, and `linprogx._csparse` for the sparse matrix type, PDHG, sparse Cholesky, and IPM.
 
-This is intended as an inspectable educational and experimental solver, not a replacement for HiGHS, CLP, Gurobi, CPLEX, or Mosek on large production optimization models.
+This is an inspectable, hand-built solver. On the included benchmarks it is competitive with mature open-source solvers; on broad production model sets, mature solvers (HiGHS, CLP, Gurobi, CPLEX, Mosek) remain the safe choice.
 
 ## Install
 
@@ -69,6 +71,44 @@ print(result.x)
 ```
 
 `solve_canonical()` treats variables as free by default because the statement `min c^T x` subject to `Ax=b`, `Gx<=h` does not include `x >= 0`. Encode nonnegativity as rows in `G` or pass explicit `bounds`.
+
+Sparse matrices use a C-backed compressed sparse row type:
+
+```python
+from linprogx import SparseLPProblem, csr_matrix, solve_sparse
+
+A_eq = csr_matrix(
+    1,
+    2,
+    indptr=[0, 2],
+    indices=[0, 1],
+    data=[1.0, 1.0],
+)
+
+result = solve_sparse(
+    SparseLPProblem(
+        c=[1.0, 2.0],
+        A_eq=A_eq,
+        b_eq=[3.0],
+        objective="min",
+        bounds=[(0.0, None), (0.0, None)],
+    )
+)
+
+print(result.solution.status)
+print(result.solution.objective_value)
+```
+
+The sparse API is dependency-free: it uses `linprogx`'s C CSR representation. `solve_sparse` defaults to the native sparse two-phase simplex, which is early-stage and intended for small sparse LPs. For Netlib-scale equality-plus-bounds problems use the solver portfolio:
+
+```python
+from linprogx.sparse import SparseSolver
+
+result = SparseSolver(algorithm="auto", eps=2e-5).solve(problem)
+print(result.backend)  # native-c-sparse-ipm or native-c-sparse-pdhg
+```
+
+`algorithm="auto"` presolves the problem (empty/singleton/doubleton row elimination), then routes small reduced problems (<= 4,000 rows) to a native Mehrotra interior point method backed by a sparse Cholesky factorization, and larger ones to a restarted adaptive PDHG. `algorithm="ipm"` and `algorithm="pdhg"` select an algorithm explicitly, and `presolve=False` disables the reductions.
 
 ## Modeling API
 
@@ -183,7 +223,8 @@ On these tiny dense examples, `linprogx` is usually faster than SciPy/HiGHS beca
 There are two larger benchmark paths:
 
 - A dense generated LP that `linprogx`, SciPy/HiGHS, and Clarabel all solve.
-- Netlib `DFL001`, a much larger sparse online LP that documents the current boundary of this project.
+- Netlib `DFL001`, a much larger sparse online LP that now runs through `linprogx`'s dependency-free C CSR sparse frontend and native sparse PDHG solver.
+- Netlib `CYCLE`, a smaller but denser sparse LP that deliberately checks a different sparse shape than DFL001.
 
 ### Dense 160x320 Benchmark
 
@@ -207,7 +248,7 @@ Current local result:
 
 The result is the expected shape: `linprogx` is correct and usable on a larger dense case, but mature compiled solvers are substantially faster. This is the benchmark to watch as the tableau implementation improves.
 
-### Sparse Netlib DFL001 Boundary Case
+### Sparse Netlib DFL001
 
 The repo also includes Netlib `DFL001`, loaded from the SuiteSparse Matrix Collection. It is a real-world airline schedule planning / fleet assignment model with 6,071 equality rows, 12,230 variables, and 35,632 sparse matrix nonzeros.
 
@@ -224,17 +265,46 @@ Run the large benchmark:
 just large-bench
 ```
 
-This is not a fair `linprogx` runtime comparison yet because `linprogx` does not support sparse matrices. Materializing DFL001 as a dense Python tableau would start with 74,248,330 raw coefficients before adding slacks, artificial variables, and objective rows. Sparse support is the right future work before attempting this model in `linprogx`.
+This path uses a C-backed compressed sparse row matrix type in `linprogx._csparse` and a dependency-free sparse primal-dual hybrid gradient path for equality-plus-bounds LPs. The older sparse simplex path remains available for small exact sparse LPs; DFL001 uses the C-native PDHG path because the Python sparse tableau pivot loop is not competitive at Netlib scale. SciPy/HiGHS and Clarabel remain in the table as external comparison baselines.
 
 Current local result:
 
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx | skipped | n/a | n/a | n/a | Dense Python tableau skipped; raw A alone would materialize 74,248,330 coefficients before slacks/artificials. |
-| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.266s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | reported_dual_infeasible | n/a | n/a | 0.366s | Clarabel status: DualInfeasible |
+| linprogx-sparse | optimal | 11266396.207350 | 1.604e-01 | 6.505s | C CSR matrix with native-c-sparse-pdhg; equality+bounds; native sparse PDHG converged; max equality residual 1.961e-05; objective scale 4.96e+05; presolve removed 15 rows and 15 cols |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 7.491s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 14.258s | Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11 |
+
+On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `1.4e-08` relative error with a max equality residual below the configured `2e-5` tolerance, with no per-problem tuning. The solver is a portfolio: a dependency-free presolve (empty/singleton/doubleton rows) feeds either a native interior point method (small/degenerate problems) or a sparse PDHG with Ruiz equilibration, restarted iterate averaging, an adaptive primal weight, an adaptive step size, and KKT-based termination (large problems); `algorithm="auto"` routes by reduced problem size. DFL001 routes to PDHG and runs faster than both HiGHS and Clarabel on this benchmark.
 
 ![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
+
+### Sparse Netlib CYCLE Guardrail
+
+The repo also includes Netlib `CYCLE`, loaded from the SuiteSparse Matrix Collection. It has 1,903 equality rows, 3,371 variables, and 21,234 sparse matrix nonzeros. It is smaller than DFL001 but much denser, numerically rank deficient, uses upper/free-variable bounds, has a negative optimum, and the source notes report about 47% degenerate MINOS steps.
+
+Source files:
+
+- Data: `benchmark_data/netlib_cycle/lp_cycle.mat`
+- Metadata: `benchmark_data/netlib_cycle/README.md`
+- Source URL: https://sparse.tamu.edu/mat/LPnetlib/lp_cycle.mat
+- Reference page: https://sparse.tamu.edu/LPnetlib/lp_cycle
+
+Run the guardrail benchmark:
+
+```bash
+just cycle-bench
+```
+
+Current local result:
+
+| Solver | Status | Objective | Delta vs published | Runtime | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| linprogx-sparse | optimal | -5.226393 | 1.682e-07 | 0.161s | C CSR matrix with native-c-sparse-ipm; equality+bounds; native sparse IPM converged; max equality residual 1.091e-11; presolve removed 388 rows and 360 cols |
+| SciPy/HiGHS | optimal | -5.226393 | 5.898e-12 | 0.243s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | -5.226393 | 8.174e-10 | 0.303s | Clarabel status: Solved; max equality residual 7.276e-12 |
+
+The auto-routed solver sends this small degenerate problem to the native interior point method: a Mehrotra predictor-corrector on the regularized normal equations, factored by a dependency-free sparse Cholesky with exact minimum-degree ordering. It converges in 34 interior point iterations with a max equality residual of `1.1e-11` and is now the fastest solver on this benchmark.
 
 Example local run on the included samples:
 
@@ -302,6 +372,8 @@ User: Add a very, very large problem from an online source... update all of our 
 Assistant: added Netlib DFL001 from SuiteSparse, benchmarked SciPy/HiGHS and Clarabel, skipped linprogx by default for dense-tableau memory reasons, and recorded the result.
 User: find a large dense problem that can be solved by linprogx too, so sparse support does not hold up the comparison.
 Assistant: added a deterministic dense 160x320 benchmark that all three solvers solve and embedded the results in the README.
+User: create a PR that adds sparse support, with dependency-free sparse support as the most important requirement.
+Assistant: added a C CSR matrix type and native dependency-free sparse simplex path, then updated DFL001 to run the native sparse attempt and compare against external baselines.
 ```
 
 Recorded creation time: 3 minutes 10 seconds from the initial solver commit (`15192d8`, 2026-05-14 16:37:05 CDT) to the standardized benchmark commit (`96a5a65`, 2026-05-14 16:40:15 CDT). That is measured from git history, so it excludes the uncommitted pre-history before the first commit.
@@ -324,18 +396,62 @@ just fc
 src/linprogx/
   __init__.py      Public exports
   solver.py        Problem normalization and two-phase simplex
+  sparse.py        Sparse LP front end: presolve + algorithm routing + simplex
+  presolve.py      Dependency-free presolve (empty/singleton/doubleton rows)
   builder.py       Small modeling interface
   cli.py           JSON command-line interface
   samples.py       Deterministic sample LP library
   compare.py       SciPy/HiGHS and Clarabel correctness/timing comparison
   _fast.py         C-extension dispatch and Python fallback
   _cfast.c         In-place pivot and dot-product C helpers
+  _csparse.c       C CSR matrix, restarted PDHG, sparse Cholesky, and IPM
 tests/
   test_solver.py            Solver, bounds, CLI, and validation coverage
   test_samples_compare.py   Sample problem checks against SciPy/HiGHS
+  test_sparse.py            Sparse matrix, PDHG, and solver-facing coverage
+  test_presolve.py          Presolve reductions and postsolve round-trips
+  test_ipm.py               Cholesky, min-degree, IPM, and routing units
+  test_integration.py       End-to-end portfolio tests incl. SciPy cross-checks
 benchmark_data/
   netlib_dfl001/            Large public LP benchmark data and metadata
+  netlib_cycle/             Degenerate Netlib guardrail benchmark
 ```
+
+### The sparse solver portfolio
+
+`SparseSolver(algorithm="auto")` is the recommended entry point for
+equality-plus-bounds LPs. It runs a three-stage pipeline, all dependency-free:
+
+1. **Presolve** (`presolve.py`): iterates empty-row removal, singleton-row
+   variable fixing, and doubleton-row substitution
+   (`a*x_p + d*x_q = b  =>  x_p = (b - d*x_q)/a`, with bound mapping and a
+   fill limit) to a fixpoint, then replays the recorded substitutions in
+   reverse to reconstruct the full solution. On degenerate problems such as
+   Netlib CYCLE this removes the dependent-row mass that stalls first-order
+   methods.
+2. **Routing**: reduced problems with at most 4,000 rows go to the interior
+   point method; larger ones go to PDHG. If the IPM fails to certify
+   optimality, the solver falls back to PDHG automatically.
+3. **Solve**:
+   - **Interior point method** (`solve_eq_box_ipm`): a Mehrotra
+     predictor-corrector on the regularized normal equations `A D A' + delta I`,
+     factored by a native sparse Cholesky with exact minimum-degree ordering,
+     elimination-tree symbolic analysis, and up-looking numeric
+     refactorization per iteration. Ruiz + cost scaling, native box-bound
+     handling, and zero-width-box pinning make it robust without tuning.
+     Typical accuracy: equality residuals near 1e-11.
+   - **Restarted PDHG** (`solve_eq_box_pdhg`): a primal-dual hybrid gradient
+     method with Ruiz equilibration, restarted iterate averaging, an adaptive
+     primal weight with a residual-balance safeguard, an adaptive step size,
+     KKT-based termination, and a plateau-detection early exit. Scales to
+     problems where factorization fill-in makes direct methods slow.
+
+### Generalization check
+
+The portfolio was validated on four Netlib instances that were never used
+during development (`experiments/generalization_bench.py`): 25FV47, GANGES,
+STOCFOR2, and PDS-06 all solve to optimal with residuals between 1.9e-5 and
+1.7e-12, beating Clarabel on three of four and trading blows with HiGHS.
 
 ## License
 

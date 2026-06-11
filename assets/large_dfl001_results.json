@@ -9,28 +9,28 @@
   },
   "rows": [
     {
-      "solver": "linprogx",
-      "status": "skipped",
-      "objective": null,
-      "objective_delta": null,
-      "seconds": null,
-      "notes": "Dense Python tableau skipped; raw A alone would materialize 74,248,330 coefficients before slacks/artificials."
+      "solver": "linprogx-sparse",
+      "status": "optimal",
+      "objective": 11266396.20735046,
+      "objective_delta": 0.16035046055912971,
+      "seconds": 6.505176599137485,
+      "notes": "C CSR matrix with native-c-sparse-pdhg; equality+bounds; native sparse PDHG converged; max equality residual 1.961e-05; objective scale 4.96e+05; presolve removed 15 rows and 15 cols"
     },
     {
       "solver": "SciPy/HiGHS",
       "status": "optimal",
       "objective": 11266396.04667138,
       "objective_delta": 0.00032862089574337006,
-      "seconds": 6.265720986062661,
+      "seconds": 7.491203283891082,
       "notes": "Optimization terminated successfully. (HiGHS Status 7: Optimal)"
     },
     {
       "solver": "Clarabel",
-      "status": "reported_dual_infeasible",
-      "objective": null,
-      "objective_delta": null,
-      "seconds": 0.36623295000754297,
-      "notes": "Clarabel status: DualInfeasible"
+      "status": "optimal",
+      "objective": 11266396.078089535,
+      "objective_delta": 0.031089534983038902,
+      "seconds": 14.258205669932067,
+      "notes": "Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11"
     }
   ]
 }

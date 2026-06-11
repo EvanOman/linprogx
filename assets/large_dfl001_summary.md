@@ -1,5 +1,5 @@
 | Solver | Status | Objective | Delta vs published | Runtime | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| linprogx | skipped | n/a | n/a | n/a | Dense Python tableau skipped; raw A alone would materialize 74,248,330 coefficients before slacks/artificials. |
-| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 6.266s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
-| Clarabel | reported_dual_infeasible | n/a | n/a | 0.366s | Clarabel status: DualInfeasible |
+| linprogx-sparse | optimal | 11266396.207350 | 1.604e-01 | 6.505s | C CSR matrix with native-c-sparse-pdhg; equality+bounds; native sparse PDHG converged; max equality residual 1.961e-05; objective scale 4.96e+05; presolve removed 15 rows and 15 cols |
+| SciPy/HiGHS | optimal | 11266396.046671 | 3.286e-04 | 7.491s | Optimization terminated successfully. (HiGHS Status 7: Optimal) |
+| Clarabel | optimal | 11266396.078090 | 3.109e-02 | 14.258s | Clarabel status: Solved; objective_scale=100; max equality residual 1.074e-11 |

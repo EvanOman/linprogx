@@ -83,6 +83,34 @@ def test_solve_canonical_defaults_to_free_variables() -> None:
     assert_close_list(result.x, [-1, 1])
 
 
+def test_solve_canonical_explicit_bounds_override_free_variable_default() -> None:
+    result = solve_canonical(
+        c=[1, 0],
+        A=[[1, -1]],
+        b=[-2],
+        G=[[0, 1], [0, -1]],
+        h=[1, -1],
+        bounds=[(0, None), (0, None)],
+    )
+
+    assert result.status == Status.INFEASIBLE
+    assert result.objective_value is None
+    assert result.x == []
+
+
+def test_solve_canonical_no_constraints_keeps_variables_free_unless_bounded() -> None:
+    free_result = solve_canonical([1], [], [], [], [])
+    bounded_result = solve_canonical([1], [], [], [], [], bounds=[(0, 2)])
+
+    assert free_result.status == Status.UNBOUNDED
+    assert free_result.objective_value is None
+    assert free_result.x == []
+
+    assert bounded_result.status == Status.OPTIMAL
+    assert bounded_result.objective_value == pytest.approx(0)
+    assert_close_list(bounded_result.x, [0])
+
+
 def test_solve_canonical_validates_dimensions() -> None:
     with pytest.raises(ValueError, match="G and h"):
         solve_canonical([1], [], [], [[1]], [])
@@ -124,12 +152,37 @@ def test_detects_infeasible_problem() -> None:
     )
 
     assert result.status == Status.INFEASIBLE
+    assert result.objective_value is None
+    assert result.x == []
+    assert result.slacks == []
+    assert result.sensitivity is None
 
 
 def test_detects_unbounded_problem() -> None:
     result = solve([1], [], [])
 
     assert result.status == Status.UNBOUNDED
+    assert result.objective_value is None
+    assert result.x == []
+    assert result.slacks == []
+    assert result.sensitivity is None
+
+
+def test_optimal_solution_reports_shape_invariants() -> None:
+    constraints = [
+        Constraint([1, 1], "<=", 4, "material"),
+        Constraint([1, 0], "<=", 2, "machine_a"),
+        Constraint([0, 1], "<=", 3, "machine_b"),
+    ]
+    result = Solver().solve(LPProblem([3, 2], constraints))
+
+    assert result.status == Status.OPTIMAL
+    assert len(result.x) == 2
+    assert len(result.slacks) == len(constraints)
+    assert result.sensitivity is not None
+    assert len(result.sensitivity.reduced_costs) == len(result.x)
+    assert len(result.sensitivity.shadow_prices) == len(constraints)
+    assert len(result.sensitivity.basis) == len(constraints)
 
 
 def test_builder_interface() -> None:
@@ -182,3 +235,8 @@ def test_iteration_limit() -> None:
     result = solver.solve(LPProblem([1], [Constraint([1], "<=", 1)]))
 
     assert result.status == Status.ITERATION_LIMIT
+    assert result.objective_value is None
+    assert result.x == []
+    assert result.slacks == []
+    assert result.sensitivity is None
+    assert result.iterations == 0

@@ -9,12 +9,12 @@ from typing import Any
 
 from linprogx.sparse import SparseLPProblem, SparseSolver, from_scipy_sparse
 
-EXPECTED_DFL001_OBJECTIVE = 11_266_396.047
-DATA_PATH = Path("benchmark_data/netlib_dfl001/lp_dfl001.mat")
+EXPECTED_CYCLE_OBJECTIVE = -5.2263930249
+DATA_PATH = Path("benchmark_data/netlib_cycle/lp_cycle.mat")
 
 
 @dataclass(frozen=True)
-class LargeProblem:
+class CycleProblem:
     name: str
     rows: int
     cols: int
@@ -24,7 +24,7 @@ class LargeProblem:
 
 
 @dataclass(frozen=True)
-class LargeBenchRow:
+class CycleBenchRow:
     solver: str
     status: str
     objective: float | None
@@ -34,39 +34,37 @@ class LargeBenchRow:
 
 
 @dataclass(frozen=True)
-class LargeBenchResult:
-    problem: LargeProblem
-    rows: list[LargeBenchRow]
+class CycleBenchResult:
+    problem: CycleProblem
+    rows: list[CycleBenchRow]
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the large Netlib DFL001 benchmark.")
+    parser = argparse.ArgumentParser(description="Run the Netlib CYCLE sparse benchmark.")
     parser.add_argument("--data", type=Path, default=DATA_PATH)
-    parser.add_argument("--out", type=Path, default=Path("assets/large_dfl001_results.json"))
-    parser.add_argument("--plot", type=Path, default=Path("assets/large_dfl001_runtime.png"))
-    parser.add_argument("--markdown", type=Path, default=Path("assets/large_dfl001_summary.md"))
+    parser.add_argument("--out", type=Path, default=Path("assets/cycle_results.json"))
+    parser.add_argument("--markdown", type=Path, default=Path("assets/cycle_summary.md"))
     args = parser.parse_args()
 
     result = run_benchmark(args.data)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(_jsonable(result), indent=2) + "\n")
     write_markdown(result, args.markdown)
-    write_plot(result, args.plot)
     print(json.dumps(_jsonable(result), indent=2))
     return 0
 
 
-def run_benchmark(path: Path) -> LargeBenchResult:
-    problem_data = load_dfl001(path)
-    problem = LargeProblem(
-        name="Netlib DFL001",
+def run_benchmark(path: Path) -> CycleBenchResult:
+    problem_data = load_cycle(path)
+    problem = CycleProblem(
+        name="Netlib CYCLE",
         rows=problem_data["A"].shape[0],
         cols=problem_data["A"].shape[1],
         nonzeros=problem_data["A"].nnz,
-        expected_objective=EXPECTED_DFL001_OBJECTIVE,
-        source_url="https://sparse.tamu.edu/mat/LPnetlib/lp_dfl001.mat",
+        expected_objective=EXPECTED_CYCLE_OBJECTIVE,
+        source_url="https://sparse.tamu.edu/mat/LPnetlib/lp_cycle.mat",
     )
-    return LargeBenchResult(
+    return CycleBenchResult(
         problem=problem,
         rows=[
             _run_linprogx_sparse(problem_data),
@@ -76,7 +74,7 @@ def run_benchmark(path: Path) -> LargeBenchResult:
     )
 
 
-def load_dfl001(path: Path) -> dict[str, Any]:
+def load_cycle(path: Path) -> dict[str, Any]:
     try:
         from scipy.io import loadmat
     except ImportError as exc:  # pragma: no cover
@@ -95,7 +93,7 @@ def load_dfl001(path: Path) -> dict[str, Any]:
     }
 
 
-def write_markdown(result: LargeBenchResult, path: Path) -> None:
+def write_markdown(result: CycleBenchResult, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "| Solver | Status | Objective | Delta vs published | Runtime | Notes |",
@@ -111,31 +109,7 @@ def write_markdown(result: LargeBenchResult, path: Path) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
-def write_plot(result: LargeBenchResult, path: Path) -> None:
-    import importlib
-
-    matplotlib = importlib.import_module("matplotlib")
-    matplotlib.use("Agg")
-    pyplot = importlib.import_module("matplotlib.pyplot")
-
-    solved = [row for row in result.rows if row.seconds is not None]
-    fig, ax = pyplot.subplots(figsize=(9, 4.8))
-    color_map = {"linprogx-sparse": "#28536b", "SciPy/HiGHS": "#c44536", "Clarabel": "#f3a712"}
-    colors = [color_map.get(row.solver, "#6c757d") for row in solved]
-    seconds = [float(row.seconds) for row in solved if row.seconds is not None]
-    ax.bar([row.solver for row in solved], seconds, color=colors)
-    ax.set_ylabel("seconds")
-    ax.set_title("Large Netlib DFL001 Runtime")
-    ax.grid(axis="y", color="#d8dee4", linewidth=0.8)
-    for index, row in enumerate(solved):
-        ax.text(index, row.seconds or 0.0, f"{row.seconds:.2f}s", ha="center", va="bottom")
-    fig.tight_layout()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=180)
-    pyplot.close(fig)
-
-
-def _run_linprogx_sparse(problem_data: dict[str, Any]) -> LargeBenchRow:
+def _run_linprogx_sparse(problem_data: dict[str, Any]) -> CycleBenchRow:
     result = SparseSolver(
         algorithm="auto",
         max_iterations=50_000,
@@ -148,21 +122,21 @@ def _run_linprogx_sparse(problem_data: dict[str, Any]) -> LargeBenchRow:
             b_eq=problem_data["b"].tolist(),
             objective="min",
             bounds=_bounds(problem_data),
-            name="dfl001",
+            name="cycle",
         )
     )
     objective = result.solution.objective_value
-    return LargeBenchRow(
+    return CycleBenchRow(
         solver="linprogx-sparse",
         status=result.solution.status.value,
         objective=objective,
-        objective_delta=None if objective is None else abs(objective - EXPECTED_DFL001_OBJECTIVE),
+        objective_delta=None if objective is None else abs(objective - EXPECTED_CYCLE_OBJECTIVE),
         seconds=result.seconds,
         notes=(f"C CSR matrix with {result.backend}; equality+bounds; {result.solution.message}"),
     )
 
 
-def _run_scipy(problem_data: dict[str, Any]) -> LargeBenchRow:
+def _run_scipy(problem_data: dict[str, Any]) -> CycleBenchRow:
     from scipy.optimize import linprog
 
     start = time.perf_counter()
@@ -175,17 +149,17 @@ def _run_scipy(problem_data: dict[str, Any]) -> LargeBenchRow:
     )
     seconds = time.perf_counter() - start
     objective = float(result.fun) if result.success else None
-    return LargeBenchRow(
+    return CycleBenchRow(
         solver="SciPy/HiGHS",
         status="optimal" if result.success else f"status_{result.status}",
         objective=objective,
-        objective_delta=None if objective is None else abs(objective - EXPECTED_DFL001_OBJECTIVE),
+        objective_delta=None if objective is None else abs(objective - EXPECTED_CYCLE_OBJECTIVE),
         seconds=seconds,
         notes=str(result.message).replace("|", "/"),
     )
 
 
-def _run_clarabel(problem_data: dict[str, Any]) -> LargeBenchRow:
+def _run_clarabel(problem_data: dict[str, Any]) -> CycleBenchRow:
     import clarabel
     import numpy as np
     from scipy import sparse
@@ -206,7 +180,6 @@ def _run_clarabel(problem_data: dict[str, Any]) -> LargeBenchRow:
     A = sparse.vstack(rows, format="csc")
     b = np.concatenate(rhs)
     P = sparse.csc_matrix((len(c), len(c)))
-    objective_scale = 100.0
     settings: Any = clarabel_api["DefaultSettings"]()
     settings.verbose = False
     settings.max_iter = 2000
@@ -215,40 +188,23 @@ def _run_clarabel(problem_data: dict[str, Any]) -> LargeBenchRow:
     settings.tol_feas = 1e-10
 
     start = time.perf_counter()
-    result: Any = clarabel_api["DefaultSolver"](
-        P, c / objective_scale, A, b, cones, settings
-    ).solve()
+    result: Any = clarabel_api["DefaultSolver"](P, c, A, b, cones, settings).solve()
     seconds = time.perf_counter() - start
     status = str(result.status)
     objective = None
-    notes = f"Clarabel status: {status}; objective_scale={objective_scale:g}"
+    notes = f"Clarabel status: {status}"
     if status in {"Solved", "AlmostSolved"}:
         x = np.array(result.x, dtype=float)
         objective = float(c @ x)
         max_eq_residual = float(np.max(np.abs(problem_data["A_scipy"] @ x - problem_data["b"])))
         notes = f"{notes}; max equality residual {max_eq_residual:.3e}"
-    return LargeBenchRow(
+    return CycleBenchRow(
         solver="Clarabel",
         status=_clarabel_status(status),
         objective=objective,
-        objective_delta=None if objective is None else abs(objective - EXPECTED_DFL001_OBJECTIVE),
+        objective_delta=None if objective is None else abs(objective - EXPECTED_CYCLE_OBJECTIVE),
         seconds=seconds,
         notes=notes,
-    )
-
-
-def _linprogx_skip(problem: LargeProblem) -> LargeBenchRow:
-    estimated_dense_entries = problem.rows * problem.cols
-    return LargeBenchRow(
-        solver="linprogx",
-        status="skipped",
-        objective=None,
-        objective_delta=None,
-        seconds=None,
-        notes=(
-            "Dense Python tableau skipped; raw A alone would materialize "
-            f"{estimated_dense_entries:,} coefficients before slacks/artificials."
-        ),
     )
 
 
@@ -275,7 +231,7 @@ def _clarabel_status(status: str) -> str:
     return normalized
 
 
-def _jsonable(result: LargeBenchResult) -> dict[str, Any]:
+def _jsonable(result: CycleBenchResult) -> dict[str, Any]:
     return {
         "problem": asdict(result.problem),
         "rows": [asdict(row) for row in result.rows],
