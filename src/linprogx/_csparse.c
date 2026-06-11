@@ -1444,8 +1444,23 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             }
             PyList_SET_ITEM(x_list, col, boxed);
         }
+        /* The dual in original units is row_scale * y_scaled. */
+        PyObject *y_list = PyList_New(self->rows);
+        if (y_list == NULL) {
+            Py_DECREF(x_list);
+            goto done;
+        }
+        for (Py_ssize_t row = 0; row < self->rows; row++) {
+            PyObject *boxed = PyFloat_FromDouble(y[row] * row_scale[row]);
+            if (boxed == NULL) {
+                Py_DECREF(x_list);
+                Py_DECREF(y_list);
+                goto done;
+            }
+            PyList_SET_ITEM(y_list, row, boxed);
+        }
         result = Py_BuildValue(
-            "{s:s,s:d,s:d,s:d,s:n,s:d,s:d,s:d,s:d,s:d,s:d,s:n,s:n,s:i,s:N}",
+            "{s:s,s:d,s:d,s:d,s:n,s:d,s:d,s:d,s:d,s:d,s:d,s:n,s:n,s:i,s:N,s:N}",
             "status",
             status,
             "objective",
@@ -1475,7 +1490,9 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             "plateau_exit",
             plateau_exit_flag,
             "x",
-            x_list);
+            x_list,
+            "y",
+            y_list);
     }
 
 done:

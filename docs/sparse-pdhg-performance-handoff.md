@@ -66,6 +66,43 @@ PDHG costs on CYCLE, and further gains need a different algorithm class
   after the singleton/doubleton cascade (the 13 raw duplicates get consumed
   by it) and only adds presolve time. Implemented, measured, removed.
 
+### Third round: a different algorithm class (June 10, continued)
+
+Tried and negative:
+
+- **Active-set crossover from the PDHG point** (3 prototype variants in
+  scipy/lsqr: primal-proximity faces, dual-reduced-cost faces, combined).
+  On these degenerate problems the predicted face never stabilizes
+  (CYCLE: free count < row count -> inconsistent least squares, pres ~1e1+;
+  DFL001: dual residual stuck ~0.6). Doing crossover properly requires
+  basis management (rank-revealing LU, pushes, ratio tests) — i.e. building
+  simplex itself. Not a quick add-on.
+- **Halpern anchoring** (blend accepted step toward the cycle anchor with
+  weight 1/(k+2), replacing within-cycle averaging): CYCLE infeasible at
+  50k, DFL001 +46% iterations. Reverted; averaging + restarts wins again.
+
+Validated and promising:
+
+- **The C result dict now exposes the dual vector `y`** (original units).
+- **Mehrotra predictor-corrector IPM prototype**
+  (`experiments/ipm_prototype.py`, scipy splu on the regularized normal
+  equations, Ruiz + cost scaling, native boxes, zero-width boxes pinned):
+  - CYCLE: **34 iterations, delta 1.7e-7, true residual 1.8e-11, 2.4s in
+    Python** — HiGHS-class accuracy; a C port should land ~0.2-0.5s.
+  - DFL001: normal equations fill badly (98s in Python, wobbly tail,
+    delta 2.6e4) — IPM is the wrong tool there, PDHG already beats HiGHS.
+  - Conclusion: portfolio architecture (IPM for small/degenerate, PDHG for
+    large sparse), which is standard practice, not overfitting.
+
+**Next planned build (multi-session): dependency-free C IPM**
+1. Sparse Cholesky module: minimum-degree ordering, elimination-tree
+   symbolic factorization, up-looking numeric factorization, triangular
+   solves, static + dynamic regularization. Test against scipy on the
+   benchmark ADA' matrices.
+2. Mehrotra driver in C mirroring the validated prototype exactly.
+3. `algorithm="ipm"` in SparseSolver plus size-based routing
+   (small/degenerate -> IPM, large -> PDHG), benchmarks, README.
+
 ## High-Level Status
 
 The sparse PDHG solver was rewritten from a hand-tuned fixed-step Chambolle-Pock
