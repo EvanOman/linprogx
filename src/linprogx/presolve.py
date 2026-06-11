@@ -8,6 +8,8 @@ Iterates three reductions to a fixpoint before the sparse PDHG solve:
 3. Doubleton rows ``a * x_p + d * x_q = b_i`` eliminate ``x_p`` via
    ``x_p = (b_i - d * x_q) / a``, folding the substitution into every other
    row containing ``x_p``, the objective, and the bounds on ``x_q``.
+Duplicate-row removal was tried and removed again: after the cascade above it
+finds nothing on the Netlib benchmarks and only adds presolve time.
 
 Doubleton elimination is what unlocks degenerate Netlib shapes such as CYCLE:
 it removes the dependent-row mass that stalls PDHG's duality gap. The fill

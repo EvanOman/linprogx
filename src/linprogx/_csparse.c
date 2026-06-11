@@ -1315,7 +1315,9 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                      * the KKT error is grossly lopsided, nudge omega toward
                      * the lagging side: a larger omega strengthens the dual
                      * ascent that enforces primal feasibility and vice
-                     * versa. */
+                     * versa. Replacing the movement update entirely in this
+                     * regime was tried and is worse on CYCLE: the early
+                     * descent of omega needs the movement signal. */
                     {
                         double rel_primal = ev_best.primal_res_l2 / (1.0 + b_l2);
                         double rel_dual = ev_best.dual_res_l2 / (1.0 + c_l2);

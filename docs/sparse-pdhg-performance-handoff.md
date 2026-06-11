@@ -36,8 +36,35 @@ Three experiments ran in parallel worktrees and were integrated:
 **Current committed results:** DFL001 5.34s delta 1.6e-1 (HiGHS 6.38s,
 Clarabel 8.06s — linprogx fastest); CYCLE 1.39s delta 2.8e-6 via full KKT
 (HiGHS 0.18s, Clarabel 0.22s — still ~7x slower, expected simplex territory).
-Remaining CYCLE ideas: plateau-aware budget trimming, joint retuning of
-restart constants on the presolved problems, or accepting the gap.
+
+### Second round: remaining CYCLE ideas, all exhausted
+
+A follow-up round swept every remaining identified idea on the PRESOLVED
+problems. Every knob is already at its optimum and every dynamics variant
+regressed; the conclusion is that ~36k iterations is what this restarted
+PDHG costs on CYCLE, and further gains need a different algorithm class
+(e.g. a simplex/crossover endgame), not more tuning.
+
+- Restart constant sweeps (sufficient 0.1-0.4, necessary 0.7-0.9,
+  artificial 0.2-0.55, eval_interval 48-128): the defaults
+  (0.2/0.8/0.36/64) are the optimum of a chaotic landscape; most neighbors
+  fail outright. rs=0.10 saves ~2% (noise).
+- max_fill sweep (3-12): 3-5 give identical reductions and the best result;
+  6+ degrade quality and can break convergence.
+- omega seeds (0.01-10): best non-default (0.1) saves ~6%, within noise.
+- The debug trajectory shows where CYCLE's iterations go: ~60% of the run
+  (iters ~3k-25k) is a second omega down-spiral to 3.5e-5 before omega
+  climbs back to its correct level ~2e-2, after which convergence is
+  explosive (KKT 3.8e-3 -> 8.4e-5 in ~500 iterations). Two targeted fixes
+  for that spiral BOTH regressed:
+  - replacing the movement update with residual-balance steps when the KKT
+    error is lopsided (CYCLE infeasible at 50k; the early omega descent
+    needs the movement signal),
+  - clamping the per-restart movement update to a factor 4 (CYCLE
+    infeasible at 50k, DFL001 +7% iterations).
+- Duplicate-row removal in presolve: finds ZERO rows on either benchmark
+  after the singleton/doubleton cascade (the 13 raw duplicates get consumed
+  by it) and only adds presolve time. Implemented, measured, removed.
 
 ## High-Level Status
 
