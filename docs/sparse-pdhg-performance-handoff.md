@@ -5,6 +5,40 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 10: Dual-Simplex Probe — Basis Identification Is the Bottleneck
+
+The warm-started dual simplex (`experiments/dual_simplex_prototype.py`)
+does NOT improve on the primal probe, and the negative result is more
+valuable than the hoped-for positive one. Setup: same pivoted-QR warm
+basis, every nonbasic column placed on its reduced-cost-sign-matching
+bound (dual feasible by construction), temporary expanded bounds where
+the matching side is infinite, dual ratio-test pivots. Warm-starting
+from the solver's actual stall dual (only ~59 violating reduced costs)
+instead of a min-norm least-squares dual improved the start (949 vs
+1,578 initial primal violations) but not the shape of the run: ~8,650
+pivots to reach zero primal violations at objective 2.3588e7 (3e-4
+relative from optimum), with 1,166 columns stuck on artificial expanded
+bounds that five 100x enlargements could not release.
+
+The lesson: the "59 violating reduced costs" intuition was misleading.
+Dual feasibility at a BASIC solution requires r_B = 0 exactly, and
+re-deriving y from a warm basis that is ~1,500 members wrong (cre_a's
+interior supplies only 931 of 3,516 basis columns; the rest must be
+picked from thousands of degenerate pinned columns with r ~ 0)
+scrambles the signs of ~1,600 columns no matter how good the stall dual
+was. Both probes converge to the optimum region in 5-20k pivots because
+both are paying for the same wrong basis.
+
+A competitive production crossover therefore needs, in order:
+1. **Better basis identification** — e.g. Tapia-style indicators
+   (x_j/z_j ratios) from the IPM's late iterates, which cleanly
+   separate basic from nonbasic in a way a PDHG stall point cannot.
+   This is the next cheap probe: cre_a routes through the IPM first, so
+   the iterates are already available.
+2. **Basis-update machinery** (product-form class) to amortize
+   factorizations — only worth building if (1) gets the pivot count
+   into the hundreds.
+
 ## June 12 Update 9: Crossover Probes — Repair Fails, Warm Simplex Works
 
 Two prototypes for the cre/greenbea endgame (the +3 coverage gap), both
