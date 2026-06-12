@@ -5,6 +5,19 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 11 Update 2: Cost-Based Routing
+
+Routing to the IPM is now decided by measured factorization cost, not row
+count: auto attempts the IPM for reduced problems up to 16k rows; the C
+side aborts via a minimum-degree work budget (1.5e9 scan ops, 4x for
+m <= 3000) or the 1e9 factor-flops cap, and falls back to PDHG. Suite
+moved from 17/24 to 20/24 (stocfor3 0.82s, cre_d 27s, cre_b 117s now
+solve; ken_11/ken_13/osa_14 flipped to the faster IPM route). Fastest-of-
+three on 4 instances; ties/beats Clarabel on 10 of 20 solves. Remaining
+misses and their named fixes: ken_18 (approximate-degree ordering),
+fit2p (dense-column splitting in the normal equations), osa_60 (certified
+first-order endgame or longer budget), greenbea (stalls on both paths).
+
 ## June 11 Update: LPnetlib Suite Round
 
 A 24-instance LPnetlib sweep (`experiments/suite_bench.py`, results in

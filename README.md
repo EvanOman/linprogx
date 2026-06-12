@@ -459,14 +459,16 @@ A larger sweep over the SuiteSparse LPnetlib collection — the same Netlib
 family used in the Clarabel and HiGHS benchmark papers, including the
 Kennington set — is recorded in [assets/lpnetlib_suite.md](assets/lpnetlib_suite.md)
 with the harness in `experiments/suite_bench.py`. Headline: linprogx solves
-17/24 with relative objective errors of 1.8e-12 to 2.2e-5 (HiGHS and
-Clarabel each solve 23/24), is fastest-of-three on 3 instances (qap15 in
-0.65s where HiGHS times out; qap12 in 4.6s vs HiGHS at 96.7s; truss 22x
-faster than HiGHS), and reports every miss honestly — including greenbea,
-where its explicit primal-dual gap test rejects a near-optimal point that
-Clarabel certifies despite a 1.3e-3 objective error. The seven unsolved
-instances are first-order tails just above the residual bar; closing them is
-the next frontier.
+20/24 with relative objective errors of 3.9e-12 to 2.2e-5 (HiGHS and
+Clarabel each solve 23/24), is fastest-of-three on 4 instances (qap15 in
+2.9s where HiGHS times out; qap12 in 2.1s vs HiGHS at 101s; truss 22x
+faster than HiGHS; d2q06c and stocfor3), ties or beats Clarabel on 10 of
+its 20 solves, and reports every miss honestly — including greenbea, where
+its explicit primal-dual gap test rejects a near-optimal point that
+Clarabel certifies despite a 1.3e-3 objective error. The four remaining
+misses (fit2p, ken_18, greenbea, osa_60) each name their own next piece of
+engineering: dense-column splitting, approximate-degree ordering, and a
+certified first-order endgame.
 
 ## License
 
