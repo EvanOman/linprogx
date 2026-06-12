@@ -5,6 +5,43 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 12: greenbea Fully Characterized — Dual Repair Is the Hard Core
+
+greenbea's IPM is not diverging; the pace watchdog kills it mid-flight.
+With the watchdog disabled (`debug=True` kwarg added to
+`solve_eq_box_ipm` for this work), the run converges beautifully:
+**rel 9.3e-7 objective, raw residual 1.2e-10, in 1.9 s / ~300
+iterations** — steps lengthen and mu accelerates right where iter-60
+used to bail. mu bottoms at 1.7e-9; running 500 or 1000 iterations
+returns the identical best iterate.
+
+What still blocks coverage is the certificate: 101 wrong-signed reduced
+costs (up to 2e-4 relative) on infinite-bound columns. Three repair
+approaches measured, all negative:
+1. **Union-set min-norm cleanup** (the stage that certifies cre_a/b):
+   diverges — zeroing 101 violations creates 213, then 467; the union
+   blows past the 512 cap in three rounds.
+2. **Protected least squares** (violators pinned to margin + 1,044
+   near-feasible inf-bound columns pinned to current values): union
+   grows slower (648 after 9 rounds) and the would-be gap falls to
+   1e-7, but ~100 fresh violations surface every round. The protection
+   is soft; LS residual spills onto protected columns.
+3. **Agmon-Motzkin-Schoenberg projection** (most-violated-constraint,
+   exact projections): stalls at violation 4e-4 within 5k projections
+   and stays there for 200k — near-antiparallel active constraints make
+   the geometric rate hopeless.
+
+Conclusion: greenbea's dual face requires a genuine linear-feasibility
+solve with curvature handling (the repair LP itself, or a dual-side
+active-set method). The watchdog is left unchanged — without a
+certificate at the end, letting the IPM run just adds ~2-6 s before the
+same PDHG fallback. If the dual repair is ever cracked, re-visit the
+watchdog with a progress-aware rule (e.g. bail at iter 60 only if
+mu_60 > 0.25 * mu_40), which is what greenbea needs to reach its
+converged point. Coverage stays 22/24; greenbea remains the one
+instance where honesty (no certificate, no claim) costs us vs Clarabel
+certifying a 1.3e-3-wrong point.
+
 ## June 12 Update 11: Min-Norm Dual Cleanup — cre_a and cre_b SOLVED
 
 The crossover line paid off, but not the way it was headed. The Tapia

@@ -141,3 +141,19 @@ def test_dual_cleanup_never_fakes_optimality_on_degenerate_lps(seed: int) -> Non
     assert reference.status == 0
     if result["status"] == "optimal":
         assert result["objective"] == pytest.approx(reference.fun, rel=1e-5, abs=1e-7)
+
+
+def test_ipm_debug_kwarg_accepted() -> None:
+    # debug=True streams per-iteration diagnostics to stderr; the call
+    # must succeed and produce the same result shape
+    rng = np.random.default_rng(3)
+    m, n = 10, 20
+    A = sp.random(m, n, density=0.5, random_state=rng).tocsr() + sp.eye(m, n) * 0.5
+    b = A @ rng.uniform(0.5, 1.5, n)
+    c = rng.uniform(0.5, 2.0, n)
+    matrix = from_scipy_sparse(sp.csr_matrix(A))
+    result = matrix.solve_eq_box_ipm(
+        c.tolist(), b.tolist(), [0.0] * n, [np.inf] * n, max_iter=50, tol=1e-9, debug=True
+    )
+    assert result["status"] == "optimal"
+    assert "dual_cleanup_rounds" in result

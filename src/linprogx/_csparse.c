@@ -2678,10 +2678,11 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     PyObject *hi_obj;
     Py_ssize_t max_iter = 60;
     double tol = 1e-9;
-    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", NULL};
+    int debug = 0;
+    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "debug", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "OOOO|nd", kwlist,
-            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter, &tol)) {
+            args, kwds, "OOOO|ndp", kwlist,
+            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter, &tol, &debug)) {
         return NULL;
     }
     if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
@@ -2872,6 +2873,10 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
 
     int factor_too_dense = 0;
     Py_ssize_t dual_cleanup_rounds = 0;
+    double last_ap = 0.0;
+    double last_ad = 0.0;
+    (void)last_ap;
+    (void)last_ad;
     /* Small problems get a generous ordering budget: even a slow exact
      * minimum-degree run is bounded there and the IPM usually repays it.
      * Larger problems abort quickly and fall back to the first-order path. */
@@ -3035,6 +3040,11 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         mu = mu_sum / (double)n_comp;
         pres = l2_norm(rp, m) / b_norm;
         dres = l2_norm(rd, n) / c_norm;
+        if (debug) {
+            fprintf(stderr,
+                    "ipm iter=%zd mu=%.3e pres=%.3e dres=%.3e ap=%.2e ad=%.2e\n",
+                    iter, mu, pres, dres, last_ap, last_ad);
+        }
         if (iter == 0) {
             mu_initial = mu;
         } else if (iter == 60 && mu > 1e-4 * mu_initial) {
@@ -3235,6 +3245,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         }
         ap *= 0.995;
         ad *= 0.995;
+        last_ap = ap;
+        last_ad = ad;
         for (Py_ssize_t j = 0; j < n; j++) {
             if (bound_kind[j] == 4) {
                 continue;
