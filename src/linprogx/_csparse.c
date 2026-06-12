@@ -2643,16 +2643,18 @@ static void ipm_newton_solve(
         nw->rhs_m[i] += rp[i];
     }
     chol_solve(nw->chol, nw->rhs_m, dy);
-    /* One step of iterative refinement: the regularized factor loses a few
-     * digits on ill-conditioned late-stage systems, and the refreshed
-     * residual solve recovers them. */
-    chol_matvec(nw->chol, dy, nw->res_m);
-    for (Py_ssize_t i = 0; i < m; i++) {
-        nw->res_m[i] = nw->rhs_m[i] - nw->res_m[i];
-    }
-    chol_solve(nw->chol, nw->res_m, nw->corr_m);
-    for (Py_ssize_t i = 0; i < m; i++) {
-        dy[i] += nw->corr_m[i];
+    /* Two steps of iterative refinement: the regularized factor loses a
+     * few digits on ill-conditioned late-stage systems, and the refreshed
+     * residual solves recover them. */
+    for (int refine = 0; refine < 2; refine++) {
+        chol_matvec(nw->chol, dy, nw->res_m);
+        for (Py_ssize_t i = 0; i < m; i++) {
+            nw->res_m[i] = nw->rhs_m[i] - nw->res_m[i];
+        }
+        chol_solve(nw->chol, nw->res_m, nw->corr_m);
+        for (Py_ssize_t i = 0; i < m; i++) {
+            dy[i] += nw->corr_m[i];
+        }
     }
     scaled_op_transpose_matvec(nw->op, dy, nw->aty);
     for (Py_ssize_t j = 0; j < n; j++) {
@@ -3101,8 +3103,13 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         if (delta_it > delta_reg) {
             delta_it = delta_reg;
         }
-        if (delta_it < 1e-10) {
-            delta_it = 1e-10;
+        /* Staged precision: near convergence the iterate is stable enough
+         * to shrink the regularization further (doubled refinement covers
+         * the worse conditioning), letting the dual residual fall through
+         * the 1e-10-floor barrier. */
+        double delta_floor = mu < 1e-7 ? 1e-12 : 1e-10;
+        if (delta_it < delta_floor) {
+            delta_it = delta_floor;
         }
         for (Py_ssize_t j = 0; j < n; j++) {
             unsigned char kind = bound_kind[j];
