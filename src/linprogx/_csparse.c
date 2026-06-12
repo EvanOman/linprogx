@@ -3252,6 +3252,56 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
          * infeasible dual, small mu alone can hide a real objective error. */
         if (pres <= 1e-6 && dres <= 5e-6 && mu <= 1e-6 && best_gap <= 1e-5) {
             status = "optimal";
+        } else if (pres <= 1e-6 && best_gap > 1e-5) {
+            /* Dual polish: the stored multipliers may fail to certify an
+             * excellent primal point. Recompute y by weighted least squares
+             * from the final factorization (one extra solve); ANY y yields
+             * a valid Lagrangian bound, so this can only gain certificates,
+             * never fake one. */
+            for (Py_ssize_t j = 0; j < n; j++) {
+                tmp_x[j] = D[j] * c[j];
+            }
+            scaled_op_matvec(&op, tmp_x, rhs_m);
+            chol_solve(chol, rhs_m, dy);
+            scaled_op_transpose_matvec(&op, dy, aty);
+            double pobj = 0.0;
+            double dobj = 0.0;
+            int certifiable = 1;
+            for (Py_ssize_t j = 0; j < n; j++) {
+                unsigned char kind = bound_kind[j];
+                double r = c[j] - aty[j];
+                pobj += c[j] * x[j];
+                if (kind == 4) {
+                    dobj += r * x[j];
+                    continue;
+                }
+                if (r > 0.0) {
+                    if (kind & 1) {
+                        dobj += r * lo[j];
+                    } else if (r > 1e-9 * (1.0 + fabs(c[j]))) {
+                        certifiable = 0;
+                        break;
+                    }
+                } else if (r < 0.0) {
+                    if (kind & 2) {
+                        dobj += r * hi[j];
+                    } else if (-r > 1e-9 * (1.0 + fabs(c[j]))) {
+                        certifiable = 0;
+                        break;
+                    }
+                }
+            }
+            if (certifiable) {
+                for (Py_ssize_t i = 0; i < m; i++) {
+                    dobj += b[i] * dy[i];
+                }
+                double polished_gap = fabs(pobj - dobj) / (1.0 + fabs(pobj) + fabs(dobj));
+                if (polished_gap <= 1e-5) {
+                    memcpy(y, dy, (size_t)m * sizeof(double));
+                    best_gap = polished_gap;
+                    status = "optimal";
+                }
+            }
         }
     }
     {
