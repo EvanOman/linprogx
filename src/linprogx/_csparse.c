@@ -2317,6 +2317,18 @@ static void chol_refactor(
     }
 }
 
+/* y = (A D A' + delta I) x using the assembled (permuted) matrix. */
+static void chol_matvec(const CholContext *ctx, const double *x, double *out) {
+    int32_t m = ctx->m;
+    for (int32_t k = 0; k < m; k++) {
+        double total = 0.0;
+        for (Py_ssize_t p = ctx->Cp[k]; p < ctx->Cp[k + 1]; p++) {
+            total += ctx->Cx[p] * x[ctx->perm[ctx->Ci[p]]];
+        }
+        out[ctx->perm[k]] = total;
+    }
+}
+
 /* Solve (A D A' + delta I) out = rhs using the current factor. */
 static void chol_solve(CholContext *ctx, const double *rhs, double *out) {
     int32_t m = ctx->m;
@@ -2415,6 +2427,8 @@ typedef struct {
     double *tmp_x;   /* cols scratch */
     double *rhs_m;   /* rows scratch */
     double *aty;     /* cols scratch */
+    double *res_m;   /* rows scratch for iterative refinement */
+    double *corr_m;  /* rows scratch for iterative refinement */
 } IpmNewton;
 
 static void ipm_newton_solve(
@@ -2445,6 +2459,17 @@ static void ipm_newton_solve(
         nw->rhs_m[i] += rp[i];
     }
     chol_solve(nw->chol, nw->rhs_m, dy);
+    /* One step of iterative refinement: the regularized factor loses a few
+     * digits on ill-conditioned late-stage systems, and the refreshed
+     * residual solve recovers them. */
+    chol_matvec(nw->chol, dy, nw->res_m);
+    for (Py_ssize_t i = 0; i < m; i++) {
+        nw->res_m[i] = nw->rhs_m[i] - nw->res_m[i];
+    }
+    chol_solve(nw->chol, nw->res_m, nw->corr_m);
+    for (Py_ssize_t i = 0; i < m; i++) {
+        dy[i] += nw->corr_m[i];
+    }
     scaled_op_transpose_matvec(nw->op, dy, nw->aty);
     for (Py_ssize_t j = 0; j < n; j++) {
         double step = nw->D[j] * (nw->aty[j] - nw->rhs_x[j]);
@@ -2488,6 +2513,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     double *dx_a = NULL, *dy_a = NULL, *dzl_a = NULL, *dzu_a = NULL;
     double *dx = NULL, *dy = NULL, *dzl = NULL, *dzu = NULL;
     double *rhs_x = NULL, *tmp_x = NULL, *rhs_m = NULL, *aty = NULL, *ax = NULL;
+    double *res_m = NULL, *corr_m = NULL;
     double *x_best = NULL, *y_best = NULL;
     unsigned char *bound_kind = NULL;
 
@@ -2521,6 +2547,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     dy = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     dzl = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     dzu = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    res_m = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    corr_m = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     x_best = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     y_best = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     rhs_x = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
@@ -2539,7 +2567,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         dx_a == NULL || dy_a == NULL || dzl_a == NULL || dzu_a == NULL ||
         dx == NULL || dy == NULL || dzl == NULL || dzu == NULL ||
         rhs_x == NULL || tmp_x == NULL || rhs_m == NULL || aty == NULL ||
-        ax == NULL || x_best == NULL || y_best == NULL || bound_kind == NULL) {
+        ax == NULL || res_m == NULL || corr_m == NULL ||
+        x_best == NULL || y_best == NULL || bound_kind == NULL) {
         PyErr_NoMemory();
         goto done;
     }
@@ -2654,7 +2683,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
      * minimum-degree run is bounded there and the IPM usually repays it.
      * Larger problems abort quickly and fall back to the first-order path. */
     int64_t md_budget = m <= 3000 ? 6000000000LL : 1500000000LL;
-    chol = chol_setup(self, 1e9, md_budget, &factor_too_dense);
+    chol = chol_setup(self, 7e8, md_budget, &factor_too_dense);
     if (chol == NULL) {
         if (factor_too_dense) {
             /* The factor would be too expensive per iteration; report a
@@ -2775,10 +2804,12 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     double best_dres = INFINITY;
     double best_mu = INFINITY;
     double best_gap = INFINITY;
+    double mu_initial = INFINITY;
     const char *status = "iteration_limit";
 
     Py_BEGIN_ALLOW_THREADS
-    IpmNewton nw = {chol, &op, D, sl, su, zl, zu, bound_kind, rhs_x, tmp_x, rhs_m, aty};
+    IpmNewton nw = {chol, &op, D, sl, su, zl, zu, bound_kind, rhs_x, tmp_x, rhs_m, aty,
+                    res_m, corr_m};
     for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
         iterations = iter;
         /* slacks, residuals, and the barrier parameter */
@@ -2811,6 +2842,14 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         mu = mu_sum / (double)n_comp;
         pres = l2_norm(rp, m) / b_norm;
         dres = l2_norm(rd, n) / c_norm;
+        if (iter == 0) {
+            mu_initial = mu;
+        } else if (iter == 60 && mu > 1e-4 * mu_initial) {
+            /* Pace watchdog: a healthy Mehrotra run shrinks mu by far more
+             * than four orders in 60 iterations; bail to the fallback
+             * instead of burning the rest of the budget. */
+            break;
+        }
         {
             double score = pres > dres ? pres : dres;
             if (mu > score) {
@@ -3116,6 +3155,8 @@ done:
     free(rhs_m);
     free(aty);
     free(ax);
+    free(res_m);
+    free(corr_m);
     free(x_best);
     free(y_best);
     free(bound_kind);
