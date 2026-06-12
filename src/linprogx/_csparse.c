@@ -1,6 +1,10 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <math.h>
+#include <pthread.h>
+#include <sched.h>
+#include <stdatomic.h>
+#include <unistd.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -89,11 +93,175 @@ typedef struct {
     const double *csc_data;
 } ScaledOp;
 
-static void scaled_op_matvec(const ScaledOp *op, const double *restrict x, double *restrict out) {
+/* ---- lightweight persistent thread pool -------------------------------
+ * Used only for embarrassingly parallel array kernels: every job writes
+ * a disjoint output range, and all scalar reductions happen afterwards
+ * on the main thread in canonical index order, so results are
+ * bit-identical to the single-threaded kernel for ANY thread count.
+ * Workers spin briefly then yield; jobs are a few hundred microseconds
+ * to milliseconds, so wakeup latency must stay in the microseconds. */
+#define POOL_MAX_THREADS 8
+
+typedef void (*pool_job_fn)(void *ctx, int tid, int nthreads);
+
+typedef struct {
+    pthread_t workers[POOL_MAX_THREADS - 1];
+    int nthreads;             /* total, including the calling thread */
+    int started;
+    pool_job_fn fn;
+    void *ctx;
+    _Atomic int generation;
+    _Atomic int done_count;
+    _Atomic int shutdown;
+} ThreadPool;
+
+static ThreadPool g_pool;
+/* number of threads array kernels should use; 1 = fully serial paths */
+static int g_kernel_threads = 1;
+
+typedef struct {
+    int tid;
+} PoolWorkerArg;
+
+static PoolWorkerArg g_pool_args[POOL_MAX_THREADS - 1];
+
+static void *pool_worker_main(void *arg) {
+    PoolWorkerArg *wa = (PoolWorkerArg *)arg;
+    int seen = 0;
+    for (;;) {
+        int spins = 0;
+        while (atomic_load_explicit(&g_pool.generation, memory_order_acquire) == seen) {
+            if (atomic_load_explicit(&g_pool.shutdown, memory_order_relaxed)) {
+                return NULL;
+            }
+            if (++spins > 4096) {
+                sched_yield();
+                spins = 0;
+            }
+        }
+        seen = atomic_load_explicit(&g_pool.generation, memory_order_acquire);
+        g_pool.fn(g_pool.ctx, wa->tid, g_pool.nthreads);
+        atomic_fetch_add_explicit(&g_pool.done_count, 1, memory_order_release);
+    }
+}
+
+static int pool_ensure(int nthreads) {
+    if (nthreads > POOL_MAX_THREADS) {
+        nthreads = POOL_MAX_THREADS;
+    }
+    if (nthreads < 2) {
+        return 1;
+    }
+    if (g_pool.started) {
+        return g_pool.nthreads < nthreads ? g_pool.nthreads : nthreads;
+    }
+    g_pool.nthreads = nthreads;
+    atomic_store(&g_pool.generation, 0);
+    atomic_store(&g_pool.shutdown, 0);
+    for (int t = 0; t < nthreads - 1; t++) {
+        g_pool_args[t].tid = t + 1;
+        if (pthread_create(&g_pool.workers[t], NULL, pool_worker_main, &g_pool_args[t]) != 0) {
+            /* failed mid-way: fall back to however many we got */
+            g_pool.nthreads = t + 1;
+            break;
+        }
+    }
+    g_pool.started = 1;
+    return g_pool.nthreads;
+}
+
+static void pool_run(pool_job_fn fn, void *ctx) {
+    int n = g_kernel_threads;
+    if (n < 2 || !g_pool.started) {
+        fn(ctx, 0, 1);
+        return;
+    }
+    if (n > g_pool.nthreads) {
+        n = g_pool.nthreads;
+    }
+    g_pool.fn = fn;
+    g_pool.ctx = ctx;
+    g_pool.nthreads = g_pool.nthreads; /* fixed at start */
+    atomic_store_explicit(&g_pool.done_count, 0, memory_order_relaxed);
+    atomic_fetch_add_explicit(&g_pool.generation, 1, memory_order_release);
+    fn(ctx, 0, g_pool.nthreads);
+    int spins = 0;
+    while (atomic_load_explicit(&g_pool.done_count, memory_order_acquire) <
+           g_pool.nthreads - 1) {
+        if (++spins > 4096) {
+            sched_yield();
+            spins = 0;
+        }
+    }
+}
+
+/* balanced contiguous range for tid over `count` items weighted by the
+ * prefix array `starts` (e.g. CSR row_start) so each thread gets about
+ * the same number of nonzeros; falls back to even split when starts is
+ * NULL. The partition depends only on nthreads, never on scheduling. */
+static void pool_range(const Py_ssize_t *starts, Py_ssize_t count, int tid, int nthreads,
+                       Py_ssize_t *begin, Py_ssize_t *end) {
+    if (nthreads <= 1) {
+        *begin = 0;
+        *end = count;
+        return;
+    }
+    if (starts == NULL) {
+        Py_ssize_t chunk = (count + nthreads - 1) / nthreads;
+        *begin = (Py_ssize_t)tid * chunk;
+        *end = *begin + chunk;
+        if (*begin > count) {
+            *begin = count;
+        }
+        if (*end > count) {
+            *end = count;
+        }
+        return;
+    }
+    Py_ssize_t total = starts[count];
+    Py_ssize_t lo_target = total * tid / nthreads;
+    Py_ssize_t hi_target = total * (tid + 1) / nthreads;
+    /* binary search for the first row whose prefix exceeds the target */
+    Py_ssize_t lo = 0, hi = count;
+    while (lo < hi) {
+        Py_ssize_t mid = (lo + hi) / 2;
+        if (starts[mid] < lo_target) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    *begin = lo;
+    lo = *begin;
+    hi = count;
+    while (lo < hi) {
+        Py_ssize_t mid = (lo + hi) / 2;
+        if (starts[mid] < hi_target) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    *end = lo;
+}
+
+typedef struct {
+    const ScaledOp *op;
+    const double *x;
+    double *out;
+} MatvecJob;
+
+static void matvec_job(void *vctx, int tid, int nthreads) {
+    MatvecJob *ctx = (MatvecJob *)vctx;
+    const ScaledOp *op = ctx->op;
     const Py_ssize_t *restrict row_start = op->row_start;
     const int32_t *restrict col_index = op->col_index;
     const double *restrict data = op->data;
-    for (Py_ssize_t row = 0; row < op->rows; row++) {
+    const double *restrict x = ctx->x;
+    double *restrict out = ctx->out;
+    Py_ssize_t begin, end_row;
+    pool_range(row_start, op->rows, tid, nthreads, &begin, &end_row);
+    for (Py_ssize_t row = begin; row < end_row; row++) {
         double total = 0.0;
         Py_ssize_t end = row_start[row + 1];
         for (Py_ssize_t offset = row_start[row]; offset < end; offset++) {
@@ -103,11 +271,22 @@ static void scaled_op_matvec(const ScaledOp *op, const double *restrict x, doubl
     }
 }
 
-static void scaled_op_transpose_matvec(const ScaledOp *op, const double *restrict y, double *restrict out) {
+static void scaled_op_matvec(const ScaledOp *op, const double *restrict x, double *restrict out) {
+    MatvecJob ctx = {op, x, out};
+    pool_run(matvec_job, &ctx);
+}
+
+static void transpose_matvec_job(void *vctx, int tid, int nthreads) {
+    MatvecJob *ctx = (MatvecJob *)vctx;
+    const ScaledOp *op = ctx->op;
     const Py_ssize_t *restrict col_start = op->col_start;
     const int32_t *restrict row_index = op->row_index;
     const double *restrict csc_data = op->csc_data;
-    for (Py_ssize_t col = 0; col < op->cols; col++) {
+    const double *restrict y = ctx->x;
+    double *restrict out = ctx->out;
+    Py_ssize_t begin, end_col;
+    pool_range(col_start, op->cols, tid, nthreads, &begin, &end_col);
+    for (Py_ssize_t col = begin; col < end_col; col++) {
         double total = 0.0;
         Py_ssize_t end = col_start[col + 1];
         for (Py_ssize_t offset = col_start[col]; offset < end; offset++) {
@@ -115,6 +294,11 @@ static void scaled_op_transpose_matvec(const ScaledOp *op, const double *restric
         }
         out[col] = total;
     }
+}
+
+static void scaled_op_transpose_matvec(const ScaledOp *op, const double *restrict y, double *restrict out) {
+    MatvecJob ctx = {op, (const double *)y, out};
+    pool_run(transpose_matvec_job, &ctx);
 }
 
 static double l2_norm(const double *values, Py_ssize_t count) {
@@ -729,6 +913,89 @@ static PyObject *CSRMatrix_to_dense(CSRMatrixObject *self, PyObject *Py_UNUSED(i
 #define PDHG_OMEGA_MIN 1e-8
 #define PDHG_OMEGA_MAX 1e8
 
+typedef struct {
+    Py_ssize_t cols;
+    double trial_tau;
+    const double *scaled_lo;
+    const double *scaled_hi;
+    const double *aty;
+    const double *scaled_c;
+    const double *x;
+    double *xbar;
+    double *dxsq_col;
+} PrimalTrialJob;
+
+static void primal_trial_job(void *vctx, int tid, int nthreads) {
+    PrimalTrialJob *ctx = (PrimalTrialJob *)vctx;
+    const double *restrict lo_v = ctx->scaled_lo;
+    const double *restrict hi_v = ctx->scaled_hi;
+    const double *restrict g_v = ctx->aty;
+    const double *restrict c_v = ctx->scaled_c;
+    const double *restrict x_v = ctx->x;
+    double *restrict out_v = ctx->xbar;
+    double *restrict dxsq = ctx->dxsq_col;
+    double trial_tau = ctx->trial_tau;
+    Py_ssize_t begin, end;
+    pool_range(NULL, ctx->cols, tid, nthreads, &begin, &end);
+    for (Py_ssize_t col = begin; col < end; col++) {
+        /* scaled_lo/scaled_hi hold +-INF when a bound is absent, so the
+         * clamp is branchless and vector friendly. */
+        double updated = x_v[col] - trial_tau * (g_v[col] + c_v[col]);
+        updated = fmax(updated, lo_v[col]);
+        updated = fmin(updated, hi_v[col]);
+        out_v[col] = updated;
+        double dx = updated - x_v[col];
+        dxsq[col] = dx * dx;
+    }
+}
+
+typedef struct {
+    Py_ssize_t rows;
+    double trial_sigma;
+    const ScaledOp *op;
+    const double *xbar;
+    const double *ax;
+    const double *scaled_b;
+    const double *y;
+    double *ax_trial;
+    double *y_trial;
+    double *dysq_row;
+    double *inter_row;
+} DualTrialJob;
+
+static void dual_trial_job(void *vctx, int tid, int nthreads) {
+    DualTrialJob *ctx = (DualTrialJob *)vctx;
+    const ScaledOp *op = ctx->op;
+    const Py_ssize_t *restrict row_start = op->row_start;
+    const int32_t *restrict col_index = op->col_index;
+    const double *restrict data = op->data;
+    const double *restrict xb = ctx->xbar;
+    const double *restrict ax = ctx->ax;
+    const double *restrict scaled_b = ctx->scaled_b;
+    const double *restrict y = ctx->y;
+    double *restrict ax_trial = ctx->ax_trial;
+    double *restrict y_trial = ctx->y_trial;
+    double *restrict dysq = ctx->dysq_row;
+    double *restrict inter = ctx->inter_row;
+    double trial_sigma = ctx->trial_sigma;
+    Py_ssize_t begin, end_row;
+    pool_range(row_start, ctx->rows, tid, nthreads, &begin, &end_row);
+    for (Py_ssize_t row = begin; row < end_row; row++) {
+        double axr = 0.0;
+        Py_ssize_t end = row_start[row + 1];
+        for (Py_ssize_t p = row_start[row]; p < end; p++) {
+            axr += data[p] * xb[col_index[p]];
+        }
+        ax_trial[row] = axr;
+        double gradient = 2.0 * axr - ax[row] - scaled_b[row];
+        double updated = y[row] + trial_sigma * gradient;
+        double dy = updated - y[row];
+        y_trial[row] = updated;
+        dysq[row] = dy * dy;
+        inter[row] = dy * (axr - ax[row]);
+    }
+}
+
 static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *args, PyObject *kwds) {
     PyObject *c_obj;
     PyObject *b_obj;
@@ -746,17 +1013,18 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     Py_ssize_t eval_interval_override = 0;
     Py_ssize_t plateau_window = 80;
     double plateau_threshold = 0.02;
+    Py_ssize_t threads = 1;
     static char *kwlist[] = {
         "c", "b", "lo", "hi", "max_iter", "tol", "check_interval", "objective_scale",
         "adaptive_weight", "debug", "restart_sufficient", "restart_necessary",
         "restart_artificial", "eval_interval_override", "plateau_window",
-        "plateau_threshold", NULL
+        "plateau_threshold", "threads", NULL
     };
 
     if (!PyArg_ParseTupleAndKeywords(
             args,
             kwds,
-            "OOOO|ndndiidddnnd",
+            "OOOO|ndndiidddnndn",
             kwlist,
             &c_obj,
             &b_obj,
@@ -773,7 +1041,8 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             &restart_artificial,
             &eval_interval_override,
             &plateau_window,
-            &plateau_threshold)) {
+            &plateau_threshold,
+            &threads)) {
         return NULL;
     }
     if (max_iter < 0 || check_interval <= 0) {
@@ -801,6 +1070,9 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     double *ax = NULL;
     double *aty = NULL;
     double *y_trial = NULL;
+    double *dxsq_col = NULL;
+    double *dysq_row = NULL;
+    double *inter_row = NULL;
     double *ax_trial = NULL;
     double *x_sum = NULL;
     double *y_sum = NULL;
@@ -847,9 +1119,13 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     op_col_index = calloc((size_t)self->nnz, sizeof(int32_t));
     op_row_index = calloc((size_t)self->nnz, sizeof(int32_t));
     bound_kind = calloc((size_t)self->cols, sizeof(unsigned char));
+    dxsq_col = calloc((size_t)self->cols, sizeof(double));
+    dysq_row = calloc((size_t)self->rows, sizeof(double));
+    inter_row = calloc((size_t)self->rows, sizeof(double));
     if (c == NULL || b == NULL || lo == NULL || hi == NULL ||
         col_scale == NULL || scaled_lo == NULL || scaled_hi == NULL || scaled_c == NULL ||
         row_scale == NULL || scaled_b == NULL ||
+        dxsq_col == NULL || dysq_row == NULL || inter_row == NULL ||
         x == NULL || xbar == NULL || y == NULL || ax == NULL || aty == NULL ||
         y_trial == NULL || ax_trial == NULL ||
         x_sum == NULL || y_sum == NULL || avg_x == NULL || avg_y == NULL ||
@@ -1078,6 +1354,21 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         if (eval_interval_override > 0) {
             eval_interval = eval_interval_override;
         }
+        {
+            /* threads: 1 = serial (default), 0 = auto, N = N capped at
+             * the pool maximum. The kernels are bit-identical at any
+             * thread count, so this only affects wall clock. */
+            int want = (int)threads;
+            if (want == 0) {
+                long cores = sysconf(_SC_NPROCESSORS_ONLN);
+                want = cores >= 4 ? 4 : (cores > 1 ? (int)cores : 1);
+            }
+            if (want > 1) {
+                g_kernel_threads = pool_ensure(want);
+            } else {
+                g_kernel_threads = 1;
+            }
+        }
         Py_BEGIN_ALLOW_THREADS
         double mu_start = final_ev.kkt;
         double mu_last = final_ev.kkt;
@@ -1094,8 +1385,33 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 step_trials++;
                 double trial_tau = eta / omega;
                 double trial_sigma = eta * omega;
+                /* Threaded: both passes run as disjoint-output jobs and
+                 * the scalar reductions are summed afterwards in
+                 * canonical index order from scratch arrays — bit
+                 * identical to the serial path at any thread count.
+                 * Serial: direct accumulation, no scratch traffic. */
                 double dx_sq = 0.0;
-                {
+                double dy_sq = 0.0;
+                double interaction = 0.0;
+                if (g_kernel_threads > 1) {
+                    PrimalTrialJob pjob = {self->cols, trial_tau, scaled_lo, scaled_hi,
+                                           aty, scaled_c, x, xbar, dxsq_col};
+                    pool_run(primal_trial_job, &pjob);
+                    const double *restrict dxsq = dxsq_col;
+                    for (Py_ssize_t col = 0; col < self->cols; col++) {
+                        dx_sq += dxsq[col];
+                    }
+                    DualTrialJob djob = {self->rows, trial_sigma, &op, xbar, ax,
+                                         scaled_b, y, ax_trial, y_trial, dysq_row,
+                                         inter_row};
+                    pool_run(dual_trial_job, &djob);
+                    const double *restrict dysq = dysq_row;
+                    const double *restrict inter = inter_row;
+                    for (Py_ssize_t row = 0; row < self->rows; row++) {
+                        dy_sq += dysq[row];
+                        interaction += inter[row];
+                    }
+                } else {
                     const double *restrict lo_v = scaled_lo;
                     const double *restrict hi_v = scaled_hi;
                     const double *restrict g_v = aty;
@@ -1113,11 +1429,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                         double dx = updated - x_v[col];
                         dx_sq += dx * dx;
                     }
-                }
-                /* fused matvec + dual trial pass: one sweep over the rows */
-                double dy_sq = 0.0;
-                double interaction = 0.0;
-                {
+                    /* fused matvec + dual trial pass: one row sweep */
                     const Py_ssize_t *restrict row_start = op.row_start;
                     const int32_t *restrict col_index = op.col_index;
                     const double *restrict data = op.data;
@@ -1519,6 +1831,10 @@ done:
     free(ax);
     free(aty);
     free(y_trial);
+    free(dxsq_col);
+    free(dysq_row);
+    free(inter_row);
+    g_kernel_threads = 1;
     free(ax_trial);
     free(x_sum);
     free(y_sum);
@@ -1663,9 +1979,11 @@ static int min_degree_impl(
     const Py_ssize_t *indptr,
     const Py_ssize_t *indices,
     int32_t *order,
-    int64_t max_ops) {
+    int64_t max_ops,
+    double flops_abort) {
     int status = -1;
     int64_t ops = 0;
+    double predicted_flops = 0.0;
     IntVec *adj = calloc((size_t)m, sizeof(IntVec));
     IntVec *var_elems = calloc((size_t)m, sizeof(IntVec));
     IntVec *elements = NULL;
@@ -1742,6 +2060,18 @@ static int min_degree_impl(
         }
         int32_t nbhd_stamp = stamp;
         if (max_ops > 0 && ops > max_ops) {
+            status = -2;
+            goto cleanup;
+        }
+        /* Early fill abort: the pivot's external degree d adds ~d^2 to
+         * the numeric factor cost, so the running sum predicts the
+         * final factor flops as the ordering proceeds. Approximate
+         * degrees overestimate, so only abort when the prediction is
+         * far past the cap (the exact post-ordering check does the
+         * fine gating); fill-explosive graphs abort in milliseconds
+         * instead of burning the whole ordering budget. */
+        predicted_flops += (double)nbhd_len * (double)nbhd_len;
+        if (flops_abort > 0.0 && predicted_flops > flops_abort) {
             status = -2;
             goto cleanup;
         }
@@ -2139,7 +2469,8 @@ static CholContext *chol_setup(
         for (Py_ssize_t p = 0; p < Bp[m]; p++) {
             Bi_ss[p] = Bi[p];
         }
-        int status = min_degree_impl(m, Bp_ss, Bi_ss, ctx->perm, md_ops_cap);
+        int status = min_degree_impl(m, Bp_ss, Bi_ss, ctx->perm, md_ops_cap,
+                                     factor_flops_cap > 0.0 ? 4.0 * factor_flops_cap : 0.0);
         free(Bi_ss);
         if (status == -2 && too_dense != NULL) {
             *too_dense = 1;
@@ -2282,6 +2613,9 @@ static CholContext *chol_setup(
         double flops = 0.0;
         for (int32_t k = 0; k < m; k++) {
             flops += (double)count[k] * (double)count[k];
+        }
+        if (getenv("LINPROGX_CHOL_DEBUG") != NULL) {
+            fprintf(stderr, "chol_setup: factor flops %.3e (cap %.3e)\n", flops, factor_flops_cap);
         }
         if (flops > factor_flops_cap) {
             if (too_dense != NULL) {
@@ -2880,7 +3214,12 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     /* Small problems get a generous ordering budget: even a slow exact
      * minimum-degree run is bounded there and the IPM usually repays it.
      * Larger problems abort quickly and fall back to the first-order path. */
-    int64_t md_budget = m <= 3000 ? 6000000000LL : 1500000000LL;
+    /* The ordering budget is now purely a time guard (~20 s of MD work
+     * at this machine's throughput): graphs whose factor would blow the
+     * flops cap abort early inside the ordering via the predicted-fill
+     * check, so a generous budget no longer risks burning the solve
+     * budget on hopeless instances. */
+    int64_t md_budget = 10000000000LL;
     chol = chol_setup(self, 7e8, md_budget, &factor_too_dense);
     if (chol == NULL) {
         if (factor_too_dense) {
@@ -3644,7 +3983,7 @@ static PyObject *csparse_min_degree(PyObject *self, PyObject *args) {
     }
     int status;
     Py_BEGIN_ALLOW_THREADS
-    status = min_degree_impl((int32_t)m, indptr, indices, order, (int64_t)max_ops);
+    status = min_degree_impl((int32_t)m, indptr, indices, order, (int64_t)max_ops, 0.0);
     Py_END_ALLOW_THREADS
     free(indptr);
     free(indices);

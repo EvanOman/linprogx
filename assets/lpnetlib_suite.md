@@ -33,9 +33,9 @@ pilot87, greenbea, maros_r7), and none were used while developing the solver.
 | lp_maros_r7 | 14.21s (ipm) | 0.95s | 2.31s | 3.2e-10 | 3e-11 |
 | lp_osa_14 | 4.00s (ipm) | 1.14s | 2.90s | 1.7e-07 | 1e-04 |
 | lp_osa_30 | 3.46s (ipm) | 4.27s | 9.64s | 6.8e-08 | 1e-04 |
-| lp_osa_60 | timeout | 24.06s | 27.53s | n/a | n/a |
-| lp_pds_10 | 3.35s (pdhg) | 1.59s | 31.18s | 4.0e-09 | 1e-05 |
-| lp_pds_20 | 28.36s (pdhg) | 12.46s | 115.86s | 2.0e-08 | 2e-05 |
+| lp_osa_60 | 33.10s (ipm) | 24.06s | 27.53s | 5.5e-06 | 8e-03 |
+| lp_pds_10 | 4.99s (pdhg) | 1.59s | 31.18s | 4.0e-09 | 1e-05 |
+| lp_pds_20 | 40.72s (pdhg) | 12.46s | 115.86s | 2.0e-08 | 2e-05 |
 | lp_pilot87 | 37.44s (ipm) | 3.82s | 9.77s | 4.9e-07 | 1e-10 |
 | lp_qap12 | 0.40s (pdhg) | 104.56s | 4.00s | 9.4e-06 | 2e-05 |
 | lp_qap15 | 1.16s (pdhg) | timeout | 21.19s | 5.9e-06 | 7e-06 |
@@ -45,7 +45,10 @@ pilot87, greenbea, maros_r7), and none were used while developing the solver.
 
 ## Summary
 
-- **Solved (status optimal): linprogx 22/24, HiGHS 23/24, Clarabel 23/24.**
+- **Solved (status optimal): linprogx 23/24, HiGHS 23/24, Clarabel 23/24 —
+  equal coverage.** Each solver misses exactly one instance: HiGHS times out
+  on qap15, Clarabel reports DualInfeasible on ken_18, and linprogx declines
+  to certify greenbea.
 - Every linprogx optimum is certificate-backed (full KKT or an explicit
   Lagrangian dual bound from the actual reduced costs). Relative objective
   errors run 9.2e-12 to 2.2e-5.

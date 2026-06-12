@@ -52,7 +52,8 @@ extra-compile-args = ["-O3"]
 [[tool.setuptools.ext-modules]]
 name = "linprogx._csparse"
 sources = ["src/linprogx/_csparse.c"]
-extra-compile-args = ["-O3"]
+extra-compile-args = ["-O3", "-pthread"]
+extra-link-args = ["-pthread"]
 
 [tool.ruff]
 line-length = 100

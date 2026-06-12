@@ -42,7 +42,7 @@
 {"instance": "lp_ken_11", "solver": "linprogx", "status": "optimal", "objective": -6972381737.913357, "seconds": 0.9311902914196253, "residual": 0.000844222982848919, "backend": "ipm", "iterations": 199}
 {"instance": "lp_pds_10", "solver": "highs", "status": "optimal", "objective": 26727094976.0, "seconds": 1.5851363046094775, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_pds_10", "solver": "clarabel", "status": "optimal", "objective": 26727094980.040276, "seconds": 31.17798263579607, "residual": 3.3263047013104086e-10, "backend": "clarabel", "iterations": null}
-{"instance": "lp_pds_10", "solver": "linprogx", "status": "optimal", "objective": 26727095083.27369, "seconds": 3.35343499481678, "residual": 1.3227028375695227e-05, "backend": "pdhg", "iterations": 8576}
+{"instance": "lp_pds_10", "solver": "linprogx", "status": "optimal", "objective": 26727095083.27369, "seconds": 4.9936715783551335, "residual": 1.3227028375695227e-05, "backend": "pdhg", "iterations": 8576}
 {"instance": "lp_cre_d", "solver": "highs", "status": "optimal", "objective": 24454969.764549237, "seconds": 1.1736366227269173, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_cre_d", "solver": "clarabel", "status": "optimal", "objective": 24454969.791175954, "seconds": 16.696960096247494, "residual": 2.093414311852069e-08, "backend": "clarabel", "iterations": null}
 {"instance": "lp_cre_d", "solver": "linprogx", "status": "optimal", "objective": 24454970.235201687, "seconds": 31.541836976073682, "residual": 5.644384108113115e-08, "backend": "ipm", "iterations": 77}
@@ -57,7 +57,7 @@
 {"instance": "lp_pilot87", "solver": "linprogx", "status": "optimal", "objective": 301.7104939899049, "seconds": 37.44097511842847, "residual": 1.1544898370630108e-10, "backend": "ipm", "iterations": 150}
 {"instance": "lp_pds_20", "solver": "highs", "status": "optimal", "objective": 23821658640.0, "seconds": 12.455783428624272, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_pds_20", "solver": "clarabel", "status": "optimal", "objective": 23821658640.613922, "seconds": 115.86495773401111, "residual": 6.707693805049899e-10, "backend": "clarabel", "iterations": null}
-{"instance": "lp_pds_20", "solver": "linprogx", "status": "optimal", "objective": 23821658161.130054, "seconds": 28.362272017635405, "residual": 1.806465775189281e-05, "backend": "pdhg", "iterations": 21696}
+{"instance": "lp_pds_20", "solver": "linprogx", "status": "optimal", "objective": 23821658161.130054, "seconds": 40.722040282562375, "residual": 1.806465775189281e-05, "backend": "pdhg", "iterations": 21696}
 {"instance": "lp_osa_14", "solver": "highs", "status": "optimal", "objective": 1106462.8447362536, "seconds": 1.142064182087779, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_osa_14", "solver": "clarabel", "status": "optimal", "objective": 1106462.9763350524, "seconds": 2.903475713916123, "residual": 5.056790541857481e-10, "backend": "clarabel", "iterations": null}
 {"instance": "lp_osa_14", "solver": "linprogx", "status": "optimal", "objective": 1106463.0331687385, "seconds": 4.0043867556378245, "residual": 0.00010840477261808701, "backend": "ipm", "iterations": 199}
@@ -69,4 +69,4 @@
 {"instance": "lp_osa_30", "solver": "linprogx", "status": "optimal", "objective": 2142140.018731334, "seconds": 3.4600696451961994, "residual": 0.00012339663589955308, "backend": "ipm", "iterations": 46}
 {"instance": "lp_osa_60", "solver": "highs", "status": "optimal", "objective": 4044072.503157441, "seconds": 24.05613201111555, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_osa_60", "solver": "clarabel", "status": "optimal", "objective": 4044018.449910796, "seconds": 27.527924459427595, "residual": 6.490154191851616e-09, "backend": "clarabel", "iterations": null}
-{"instance": "lp_osa_60", "solver": "linprogx", "status": "timeout", "seconds": 180.0}
+{"instance": "lp_osa_60", "solver": "linprogx", "status": "optimal", "seconds": 33.099535409361124, "objective": 4044094.9444025015, "residual": 0.007833943739569804, "backend": "ipm", "iterations": 199}

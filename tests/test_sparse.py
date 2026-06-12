@@ -340,3 +340,34 @@ def test_pdhg_experiment_knobs_are_accepted() -> None:
 
     assert result["status"] == "optimal"
     assert result["objective"] == pytest.approx(4.0, abs=1e-3)
+
+
+def test_pdhg_threads_kwarg_bit_identical() -> None:
+    # the threaded kernels write disjoint output ranges and sum
+    # reductions in canonical order, so any thread count must produce
+    # bit-identical iterates to the serial path
+    m, n = 30, 60
+    indptr = [0]
+    indices: list[int] = []
+    data: list[float] = []
+    state = 12345
+    for row in range(m):
+        cols = sorted({(state := (state * 1103515245 + 12345) % 2**31) % n for _ in range(5)} | {row})
+        for col in cols:
+            state = (state * 1103515245 + 12345) % 2**31
+            indices.append(col)
+            data.append(0.5 + (state % 1000) / 500.0)
+        indptr.append(len(indices))
+    matrix = csr_matrix(m, n, indptr, indices, data)
+    x_feas = [0.5 + (j % 7) / 7.0 for j in range(n)]
+    b = [
+        sum(data[p] * x_feas[indices[p]] for p in range(indptr[i], indptr[i + 1]))
+        for i in range(m)
+    ]
+    c = [1.0 + (j % 5) / 3.0 for j in range(n)]
+    kwargs = dict(max_iter=300, tol=1e-12, check_interval=10**6)
+    r1 = matrix.solve_eq_box_pdhg(c, b, [0.0] * n, [float("inf")] * n, **kwargs, threads=1)
+    r4 = matrix.solve_eq_box_pdhg(c, b, [0.0] * n, [float("inf")] * n, **kwargs, threads=4)
+    assert r1["iterations"] == r4["iterations"]
+    assert r1["x"] == r4["x"]
+    assert r1["y"] == r4["y"]

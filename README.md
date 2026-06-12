@@ -108,7 +108,7 @@ result = SparseSolver(algorithm="auto", eps=2e-5).solve(problem)
 print(result.backend)  # native-c-sparse-ipm or native-c-sparse-pdhg
 ```
 
-`algorithm="auto"` presolves the problem (empty/singleton/doubleton row elimination), then routes small reduced problems (<= 4,000 rows) to a native Mehrotra interior point method backed by a sparse Cholesky factorization, and larger ones to a restarted adaptive PDHG. `algorithm="ipm"` and `algorithm="pdhg"` select an algorithm explicitly, and `presolve=False` disables the reductions.
+`algorithm="auto"` presolves the problem (empty/singleton/doubleton row elimination), then routes reduced problems of up to 50,000 rows to a native Mehrotra interior point method backed by a sparse Cholesky factorization, and larger ones to a restarted adaptive PDHG. `algorithm="ipm"` and `algorithm="pdhg"` select an algorithm explicitly, and `presolve=False` disables the reductions.
 
 ## Modeling API
 
@@ -458,20 +458,23 @@ STOCFOR2, and PDS-06 all solve to optimal with residuals between 1.9e-5 and
 A larger sweep over the SuiteSparse LPnetlib collection — the same Netlib
 family used in the Clarabel and HiGHS benchmark papers, including the
 Kennington set — is recorded in [assets/lpnetlib_suite.md](assets/lpnetlib_suite.md)
-with the harness in `experiments/suite_bench.py`. Headline: linprogx solves
-22/24 with every optimum certificate-backed (full KKT or an explicit
-Lagrangian dual bound) at relative objective errors of 9.2e-12 to 2.2e-5;
-HiGHS and Clarabel each solve 23/24. linprogx is fastest-of-three on 5
-instances: fit2p in 0.11s (HiGHS 1.24s, Clarabel 0.29s), qap12 in 0.40s
-(HiGHS 104s), qap15 in 1.2s (HiGHS times out), osa_30, and truss (23x
-HiGHS). ken_18 solves where Clarabel reports DualInfeasible, and on
-greenbea the certificate provably cannot endorse the wrong point that
-Clarabel certifies. The degenerate cre_a/cre_b instances are closed by a
-min-norm dual cleanup at the IPM exit (a small least-squares correction
-over the few wrong-signed reduced costs — it can gain certificates but
-never fake one). The remaining misses (greenbea, osa_60) need IPM
-convergence work and raw PDHG throughput respectively -- documented as
-open research items.
+with the harness in `experiments/suite_bench.py`. Headline: **linprogx,
+HiGHS, and Clarabel each solve 23/24 — equal coverage** — and every
+linprogx optimum is certificate-backed (full KKT or an explicit
+Lagrangian dual bound) at relative objective errors of 9.2e-12 to 2.2e-5.
+Each solver misses exactly one instance: HiGHS times out on qap15,
+Clarabel reports DualInfeasible on ken_18, and linprogx declines to
+certify greenbea (where Clarabel certifies a point that is wrong by
+1.3e-3 — the honesty guarantee is the difference). linprogx is
+fastest-of-three on 5 instances: fit2p in 0.11s (HiGHS 1.24s, Clarabel
+0.29s), qap12 in 0.40s (HiGHS 104s), qap15 in 1.2s (HiGHS times out),
+osa_30, and truss (23x HiGHS). The degenerate cre_a/cre_b instances are
+closed by a min-norm dual cleanup at the IPM exit (a small least-squares
+correction over the few wrong-signed reduced costs — it can gain
+certificates but never fake one), and osa_60 by a predicted-fill early
+abort inside the minimum-degree ordering that lets cheap-factor
+instances through to the IPM regardless of how expensive their ordering
+looks.
 
 ## License
 

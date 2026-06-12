@@ -5,6 +5,45 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 13: osa_60 SOLVED — Predicted-Fill Early Abort (23/24, Coverage Tie)
+
+osa_60 was never a throughput problem. Threading the PDHG kernels was
+built and measured first (persistent pthread pool, disjoint-output jobs
+with canonical-order reductions — bit-identical at any thread count,
+verified): ~14% at 2 threads on the loaded 12-core box, saturated by
+memory bandwidth, nowhere near the 2.3x needed. The `threads` kwarg is
+kept (default 1, 0 = auto), with a bit-identity test; the serial path
+keeps the direct fused loops so it pays no scratch-array tax.
+
+The real finding: osa_60's IPM factor costs only **2.8e7 flops** — 25x
+UNDER the 7e8 cap — but the minimum-degree ordering on its dense-ish
+graph (nnz(AAT)/m^2 ~ 1%, same as qap15) exceeded the 1.5e9-op ordering
+budget, so the IPM never got to measure the factor. nnz(AAT) density
+does NOT discriminate filling from non-filling graphs (osa_60 0.0096 vs
+qap15 0.0094); only the ordering itself reveals fill.
+
+Fix: **abort the ordering on predicted factor cost, not ordering
+effort**. Each eliminated pivot with external degree d adds ~d^2 to the
+factor flops; min_degree_impl now accumulates that running prediction
+and aborts once it passes 4x the flops cap (margin because approximate
+degrees overestimate; the exact post-ordering check still does the fine
+gating). Fill-explosive graphs (qap) now abort in milliseconds instead
+of burning the budget; low-fill graphs (osa) complete no matter how
+much ordering work they take. The ordering ops budget becomes a pure
+time guard, raised to 1e10 (~20 s at this machine's throughput).
+
+Official results: **osa_60 optimal 33.1 s** (ipm, 199 iters, one dual
+cleanup round, rel delta 5.5e-6, rel residual 8.7e-8) — was timeout;
+HiGHS 24.1 s, Clarabel 27.5 s. qap12/qap15 unchanged (0.44 s / 1.07 s
+— early abort). pds_10 4.99 s and pds_20 40.7 s (identical iteration
+counts; the deltas are one completed-then-rejected ordering attempt
+plus machine load).
+
+**Coverage: 23/24 — equal with HiGHS and Clarabel.** Each solver misses
+exactly one instance: HiGHS times out on qap15, Clarabel reports
+DualInfeasible on ken_18, linprogx declines to certify greenbea (where
+Clarabel certifies a point that is wrong by 1.3e-3).
+
 ## June 12 Update 12: greenbea Fully Characterized — Dual Repair Is the Hard Core
 
 greenbea's IPM is not diverging; the pace watchdog kills it mid-flight.
