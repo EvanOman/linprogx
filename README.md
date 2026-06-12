@@ -459,16 +459,19 @@ A larger sweep over the SuiteSparse LPnetlib collection — the same Netlib
 family used in the Clarabel and HiGHS benchmark papers, including the
 Kennington set — is recorded in [assets/lpnetlib_suite.md](assets/lpnetlib_suite.md)
 with the harness in `experiments/suite_bench.py`. Headline: linprogx solves
-20/24 with every optimum certificate-backed (full KKT or an explicit
+22/24 with every optimum certificate-backed (full KKT or an explicit
 Lagrangian dual bound) at relative objective errors of 9.2e-12 to 2.2e-5;
 HiGHS and Clarabel each solve 23/24. linprogx is fastest-of-three on 5
 instances: fit2p in 0.11s (HiGHS 1.24s, Clarabel 0.29s), qap12 in 0.40s
 (HiGHS 104s), qap15 in 1.2s (HiGHS times out), osa_30, and truss (23x
 HiGHS). ken_18 solves where Clarabel reports DualInfeasible, and on
 greenbea the certificate provably cannot endorse the wrong point that
-Clarabel certifies. The remaining misses (cre_a, cre_b, greenbea, osa_60)
-need genuinely deeper endgame convergence or a certified first-order
-finish -- documented as open research items.
+Clarabel certifies. The degenerate cre_a/cre_b instances are closed by a
+min-norm dual cleanup at the IPM exit (a small least-squares correction
+over the few wrong-signed reduced costs — it can gain certificates but
+never fake one). The remaining misses (greenbea, osa_60) need IPM
+convergence work and raw PDHG throughput respectively -- documented as
+open research items.
 
 ## License
 

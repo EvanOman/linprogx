@@ -2871,6 +2871,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     }
 
     int factor_too_dense = 0;
+    Py_ssize_t dual_cleanup_rounds = 0;
     /* Small problems get a generous ordering budget: even a slow exact
      * minimum-degree run is bounded there and the IPM usually repays it.
      * Larger problems abort quickly and fall back to the first-order path. */
@@ -3316,6 +3317,168 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 }
             }
         }
+        if (strcmp(status, "optimal") != 0 && pres <= 1e-6) {
+            /* Min-norm dual cleanup: degenerate instances exit with an
+             * excellent primal point whose certificate fails on a small
+             * set S of wrong-signed reduced costs. Because |S| is small,
+             * the min-norm correction delta solving A_S' delta = r_S - goal
+             * (Gram system A_S'A_S, dense Cholesky) zeroes the violations
+             * while barely moving the other reduced costs. Any y yields a
+             * valid Lagrangian bound, so this can gain certificates but
+             * never fake one; if the certificate still fails after five
+             * rounds, y is restored untouched. */
+            enum { CLEANUP_CAP = 512 };
+            double *y_save = malloc((size_t)m * sizeof(double));
+            unsigned char *in_union = calloc((size_t)n, 1);
+            Py_ssize_t *S = malloc(CLEANUP_CAP * sizeof(Py_ssize_t));
+            double *w = malloc(CLEANUP_CAP * sizeof(double));
+            double *G = NULL;
+            if (y_save != NULL && in_union != NULL && S != NULL && w != NULL) {
+                memcpy(y_save, y, (size_t)m * sizeof(double));
+                Py_ssize_t s_count = 0;
+                for (int round = 0; round < 5; round++) {
+                    scaled_op_transpose_matvec(&op, y, aty);
+                    int overflow = 0;
+                    int new_viol = 0;
+                    for (Py_ssize_t j = 0; j < n; j++) {
+                        unsigned char kind = bound_kind[j];
+                        if (kind == 4 || in_union[j]) {
+                            continue;
+                        }
+                        double r = c[j] - aty[j];
+                        double tolj = 1e-9 * (1.0 + fabs(c[j]));
+                        int viol = (r > tolj && !(kind & 1)) ||
+                                   (-r > tolj && !(kind & 2));
+                        if (viol) {
+                            if (s_count >= CLEANUP_CAP) {
+                                overflow = 1;
+                                break;
+                            }
+                            in_union[j] = 1;
+                            S[s_count++] = j;
+                            new_viol = 1;
+                        }
+                    }
+                    if (overflow || s_count == 0 || (!new_viol && round > 0)) {
+                        break;
+                    }
+                    if (new_viol) {
+                        free(G);
+                        G = calloc((size_t)(s_count * s_count), sizeof(double));
+                        if (G == NULL) {
+                            break;
+                        }
+                        /* Gram matrix of the violating columns (CSC rows
+                         * ascending: merge join) */
+                        for (Py_ssize_t a = 0; a < s_count; a++) {
+                            for (Py_ssize_t bcol = a; bcol < s_count; bcol++) {
+                                Py_ssize_t ja = S[a];
+                                Py_ssize_t jb = S[bcol];
+                                Py_ssize_t pa = op.col_start[ja];
+                                Py_ssize_t pb = op.col_start[jb];
+                                Py_ssize_t ea = op.col_start[ja + 1];
+                                Py_ssize_t eb = op.col_start[jb + 1];
+                                double dot = 0.0;
+                                while (pa < ea && pb < eb) {
+                                    int32_t ra = op.row_index[pa];
+                                    int32_t rb = op.row_index[pb];
+                                    if (ra == rb) {
+                                        dot += op.csc_data[pa] * op.csc_data[pb];
+                                        pa++;
+                                        pb++;
+                                    } else if (ra < rb) {
+                                        pa++;
+                                    } else {
+                                        pb++;
+                                    }
+                                }
+                                G[a * s_count + bcol] = dot;
+                                G[bcol * s_count + a] = dot;
+                            }
+                        }
+                        for (Py_ssize_t a = 0; a < s_count; a++) {
+                            G[a * s_count + a] += 1e-12 * (1.0 + G[a * s_count + a]);
+                        }
+                        if (dense_chol_factor(G, s_count) != 0) {
+                            break;
+                        }
+                    }
+                    for (Py_ssize_t a = 0; a < s_count; a++) {
+                        Py_ssize_t j = S[a];
+                        unsigned char kind = bound_kind[j];
+                        double r = c[j] - aty[j];
+                        double margin = 1e-8 * (1.0 + fabs(c[j]));
+                        double goal;
+                        if (!(kind & 1) && !(kind & 2)) {
+                            goal = 0.0;
+                        } else if (!(kind & 1)) {
+                            goal = -margin;
+                        } else {
+                            goal = margin;
+                        }
+                        w[a] = r - goal;
+                    }
+                    dense_chol_solve(G, s_count, w);
+                    for (Py_ssize_t a = 0; a < s_count; a++) {
+                        Py_ssize_t j = S[a];
+                        double wa = w[a];
+                        for (Py_ssize_t p = op.col_start[j]; p < op.col_start[j + 1]; p++) {
+                            y[op.row_index[p]] += op.csc_data[p] * wa;
+                        }
+                    }
+                    dual_cleanup_rounds = round + 1;
+                    /* full certificate at the corrected y */
+                    scaled_op_transpose_matvec(&op, y, aty);
+                    double pobj2 = 0.0;
+                    double dobj2 = 0.0;
+                    int cert2 = 1;
+                    for (Py_ssize_t j = 0; j < n; j++) {
+                        unsigned char kind = bound_kind[j];
+                        double r = c[j] - aty[j];
+                        pobj2 += c[j] * x[j];
+                        if (kind == 4) {
+                            dobj2 += r * x[j];
+                            continue;
+                        }
+                        if (r > 0.0) {
+                            if (kind & 1) {
+                                dobj2 += r * lo[j];
+                            } else if (r > 1e-9 * (1.0 + fabs(c[j]))) {
+                                cert2 = 0;
+                                break;
+                            }
+                        } else if (r < 0.0) {
+                            if (kind & 2) {
+                                dobj2 += r * hi[j];
+                            } else if (-r > 1e-9 * (1.0 + fabs(c[j]))) {
+                                cert2 = 0;
+                                break;
+                            }
+                        }
+                    }
+                    if (cert2) {
+                        for (Py_ssize_t i = 0; i < m; i++) {
+                            dobj2 += b[i] * y[i];
+                        }
+                        double cleaned_gap =
+                            fabs(pobj2 - dobj2) / (1.0 + fabs(pobj2) + fabs(dobj2));
+                        if (cleaned_gap <= 1e-5) {
+                            best_gap = cleaned_gap;
+                            status = "optimal";
+                            break;
+                        }
+                    }
+                }
+                if (strcmp(status, "optimal") != 0) {
+                    memcpy(y, y_save, (size_t)m * sizeof(double));
+                }
+            }
+            free(y_save);
+            free(in_union);
+            free(S);
+            free(w);
+            free(G);
+        }
     }
     {
         int finite = 1;
@@ -3376,7 +3539,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             PyList_SET_ITEM(y_list, i, PyFloat_FromDouble(y[i]));
         }
         result = Py_BuildValue(
-            "{s:s,s:d,s:d,s:d,s:d,s:d,s:n,s:N,s:N}",
+            "{s:s,s:d,s:d,s:d,s:d,s:d,s:n,s:n,s:N,s:N}",
             "status", status,
             "objective", objective,
             "max_primal_residual", max_residual,
@@ -3384,6 +3547,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             "rel_dual_residual", dres,
             "mu", mu,
             "iterations", iterations,
+            "dual_cleanup_rounds", dual_cleanup_rounds,
             "x", x_list,
             "y", y_list);
     }

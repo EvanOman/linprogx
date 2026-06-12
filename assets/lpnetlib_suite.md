@@ -19,8 +19,8 @@ pilot87, greenbea, maros_r7), and none were used while developing the solver.
 | Instance | linprogx | HiGHS | Clarabel | rel delta | residual |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | lp_80bau3b | 0.67s (ipm) | 0.21s | 0.37s | 9.2e-12 | 2e-11 |
-| lp_cre_a | iteration_limit | 0.10s | 0.15s | n/a | n/a |
-| lp_cre_b | iteration_limit | 2.11s | 18.66s | n/a | n/a |
+| lp_cre_a | 0.42s (ipm) | 0.10s | 0.15s | 1.9e-07 | 3e-05 |
+| lp_cre_b | 136.01s (ipm) | 2.11s | 18.66s | 2.7e-06 | 4e-06 |
 | lp_cre_d | 31.54s (ipm) | 1.17s | 16.70s | 1.9e-08 | 6e-08 |
 | lp_d2q06c | 1.52s (ipm) | 0.95s | 2.36s | 2.7e-09 | 3e-10 |
 | lp_degen3 | 2.10s (ipm) | 0.21s | 0.47s | 4.3e-07 | 9e-08 |
@@ -45,10 +45,16 @@ pilot87, greenbea, maros_r7), and none were used while developing the solver.
 
 ## Summary
 
-- **Solved (status optimal): linprogx 20/24, HiGHS 23/24, Clarabel 23/24.**
+- **Solved (status optimal): linprogx 22/24, HiGHS 23/24, Clarabel 23/24.**
 - Every linprogx optimum is certificate-backed (full KKT or an explicit
   Lagrangian dual bound from the actual reduced costs). Relative objective
   errors run 9.2e-12 to 2.2e-5.
+- cre_a and cre_b are solved by a min-norm dual cleanup at the IPM exit:
+  their degenerate stall points fail certification on only ~40-60
+  wrong-signed reduced costs, and a small least-squares correction
+  (Gram system over the violating columns) repairs the dual without
+  touching the primal. The stage can gain certificates but never fake
+  one; it is gated on the same 1e-5 certified-gap acceptance.
 - Fastest of the three on 5 instances: fit2p (0.11s vs HiGHS 1.24s and
   Clarabel 0.29s -- dense-column splitting plus staged-precision endgame),
   osa_30, qap12 (0.40s vs HiGHS 104s), qap15 (1.2s; HiGHS times out), and
@@ -56,14 +62,12 @@ pilot87, greenbea, maros_r7), and none were used while developing the solver.
   reports DualInfeasible.
 - Honesty note: on greenbea, Clarabel certifies a point with a 1.3e-3
   objective error; linprogx's Lagrangian certificate provably cannot
-  certify a false optimum and reports the instance unsolved. cre_a and
-  cre_b reach roughly 4e-6-relative objectives but their stall points
-  admit no sound dual certificate and are reported as iteration_limit.
+  certify a false optimum and reports the instance unsolved.
 - The engine: presolve, cost-based routing between a Mehrotra IPM and a
   restarted adaptive PDHG, approximate-minimum-degree ordering,
   dense-column splitting via Sherman-Morrison-Woodbury, staged-precision
-  regularization with doubled iterative refinement, dual polish, and
-  certificate-gated acceptance.
+  regularization with doubled iterative refinement, dual polish,
+  min-norm dual cleanup, and certificate-gated acceptance.
 
 Mature solvers still win on breadth -- that is the honest headline for a
 hand-built solver against HiGHS. The portfolio is competitive on the

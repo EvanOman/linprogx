@@ -9,7 +9,7 @@
 {"instance": "lp_truss", "solver": "linprogx", "status": "optimal", "objective": 458815.8472017595, "seconds": 0.13353639096021652, "residual": 2.8677693685190218e-12, "backend": "ipm", "iterations": 23}
 {"instance": "lp_cre_a", "solver": "highs", "status": "optimal", "objective": 23595407.060971618, "seconds": 0.09812917374074459, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_cre_a", "solver": "clarabel", "status": "optimal", "objective": 23595407.911347948, "seconds": 0.1536331456154585, "residual": 3.3941262816155814e-08, "backend": "clarabel", "iterations": null}
-{"instance": "lp_cre_a", "solver": "linprogx", "status": "iteration_limit", "objective": 23595496.54698105, "seconds": 3.0762141505256295, "residual": 4.570750981885703e-05, "backend": "pdhg", "iterations": 49344}
+{"instance": "lp_cre_a", "solver": "linprogx", "status": "optimal", "objective": 23595411.46291265, "seconds": 0.42006091121584177, "residual": 3.129378874189255e-05, "backend": "ipm", "iterations": 199}
 {"instance": "lp_woodw", "solver": "highs", "status": "optimal", "objective": 1.3044763330842293, "seconds": 0.10564838536083698, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_woodw", "solver": "clarabel", "status": "optimal", "objective": 1.3044763344099919, "seconds": 0.247058036737144, "residual": 2.8421709430404007e-13, "backend": "clarabel", "iterations": null}
 {"instance": "lp_woodw", "solver": "linprogx", "status": "optimal", "objective": 1.3045050929879118, "seconds": 0.2703673392534256, "residual": 5.503672159023141e-09, "backend": "ipm", "iterations": 36}
@@ -48,7 +48,7 @@
 {"instance": "lp_cre_d", "solver": "linprogx", "status": "optimal", "objective": 24454970.235201687, "seconds": 31.541836976073682, "residual": 5.644384108113115e-08, "backend": "ipm", "iterations": 77}
 {"instance": "lp_cre_b", "solver": "highs", "status": "optimal", "objective": 23129639.88683238, "seconds": 2.1132777528837323, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_cre_b", "solver": "clarabel", "status": "optimal", "objective": 23129640.33530753, "seconds": 18.657004582695663, "residual": 3.4229854211307942e-09, "backend": "clarabel", "iterations": null}
-{"instance": "lp_cre_b", "solver": "linprogx", "status": "iteration_limit", "objective": 23129733.767333202, "seconds": 159.5275666033849, "residual": 9.270828792463224e-05, "backend": "pdhg", "iterations": 30400}
+{"instance": "lp_cre_b", "solver": "linprogx", "status": "optimal", "objective": 23129702.17058627, "seconds": 136.00547248777002, "residual": 3.74994186911308e-06, "backend": "ipm", "iterations": 199}
 {"instance": "lp_ken_13", "solver": "highs", "status": "optimal", "objective": -10257394789.48247, "seconds": 1.0084921447560191, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_ken_13", "solver": "clarabel", "status": "optimal", "objective": -10257394791.359547, "seconds": 2.1272928649559617, "residual": 1.1647998121588898e-09, "backend": "clarabel", "iterations": null}
 {"instance": "lp_ken_13", "solver": "linprogx", "status": "optimal", "objective": -10257394486.465239, "seconds": 4.594791200943291, "residual": 5.652953145565095e-06, "backend": "ipm", "iterations": 199}

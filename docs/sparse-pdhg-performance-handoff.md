@@ -5,6 +5,49 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 11: Min-Norm Dual Cleanup — cre_a and cre_b SOLVED
+
+The crossover line paid off, but not the way it was headed. The Tapia
+probe (`experiments/tapia_probe.py`) was a clean no-go — the IPM exit
+point identifies only 974 basic columns (vs 931 from the PDHG stall;
+singular-basis abort at pivot 623), confirming no point-based indicator
+can identify cre_a's ~2,500 degenerate basis members. But measuring the
+IPM exit directly revealed the real opening: at max_iter=200 the IPM
+reaches rel 1.4e-6 / pres 4.3e-6 on cre_a in 0.4 s with only **42**
+violating reduced costs (and 56 on cre_b after a 138 s run).
+
+With |S| that small, a min-norm dual correction solving
+`A_S' delta = r_S - margin` (Gram matrix A_S'A_S, dense Cholesky,
+min-norm via delta = A_S w) zeroes the violations while barely moving
+the other reduced costs. Iterating with a cumulative union set (zeroed
+columns can push neighbors slightly negative; the union with a +margin
+target converges where one-shot flip-flops) certifies cre_a in 2 rounds
+and cre_b in 3.
+
+Production: implemented at the IPM exit in `_csparse.c` as a third
+stage after relaxed acceptance and dual polish, gated on pres <= 1e-6,
+|S| <= 512, <= 5 rounds. Soundness: any y yields a valid Lagrangian
+bound, so the stage can gain certificates but never fake one; if the
+certificate still fails, y is restored untouched. Result key
+`dual_cleanup_rounds` exposes the stage for tests.
+
+Results (official suite worker, eps=2e-5 untuned):
+- **cre_a: optimal 0.42 s** (ipm, rel delta 1.9e-7) — was
+  iteration_limit. HiGHS 0.10 s, Clarabel 0.15 s.
+- **cre_b: optimal ~139 s** (ipm, rel 2.7e-6, residual 3.75e-6) — was
+  iteration_limit. HiGHS 2.11 s, Clarabel 18.66 s. The time is almost
+  entirely the 200-iteration IPM run; the cleanup itself is ~0.1 s.
+- greenbea unchanged: its IPM exits via the pace watchdog at iter 60
+  with pres ~1e+2 — an IPM convergence problem upstream of any
+  certificate work, still open.
+- Coverage: **22/24** (HiGHS and Clarabel 23/24).
+
+Tests: `tests/test_dual_cleanup.py` (6 new; 128 total) — cre_a vendored
+as a 47 KB fixture (`tests/data/lp_cre_a.mat`, public LPnetlib data)
+asserting the cleanup fires and an independent raw-space audit of the
+returned dual; idle-on-clean-problem check; degenerate-LP
+never-fake-optimality property vs scipy.
+
 ## June 12 Update 10: Dual-Simplex Probe — Basis Identification Is the Bottleneck
 
 The warm-started dual simplex (`experiments/dual_simplex_prototype.py`)
