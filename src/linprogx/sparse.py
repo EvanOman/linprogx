@@ -86,7 +86,7 @@ class SparseSolver:
     #: whenever the Cholesky factor is affordable, and the C side aborts
     #: back to PDHG if the ordering or the factor turns out too expensive
     #: (minimum-degree work budget and a factor-flops cap).
-    AUTO_IPM_MAX_ROWS = 16_000
+    AUTO_IPM_MAX_ROWS = 50_000
 
     def __init__(
         self,

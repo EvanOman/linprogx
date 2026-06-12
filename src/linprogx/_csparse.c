@@ -1669,6 +1669,7 @@ static int min_degree_impl(
     int32_t *degree = calloc((size_t)m, sizeof(int32_t));
     int32_t *mark = calloc((size_t)m, sizeof(int32_t));
     int32_t *elem_mark = NULL;
+    int32_t *elem_residual = NULL;
     Py_ssize_t elem_mark_cap = 0;
     int32_t *nbhd = calloc((size_t)m, sizeof(int32_t));
     MinHeap heap = {NULL, 0, 0};
@@ -1759,6 +1760,13 @@ static int min_degree_impl(
             memset(grown + elem_mark_cap, 0,
                    (size_t)(elements_cap - elem_mark_cap) * sizeof(int32_t));
             elem_mark = grown;
+            int32_t *grown_res = realloc(elem_residual, (size_t)elements_cap * sizeof(int32_t));
+            if (grown_res == NULL) {
+                goto cleanup;
+            }
+            memset(grown_res + elem_mark_cap, 0,
+                   (size_t)(elements_cap - elem_mark_cap) * sizeof(int32_t));
+            elem_residual = grown_res;
             elem_mark_cap = elements_cap;
         }
         IntVec *new_elem = &elements[eid];
@@ -1806,34 +1814,43 @@ static int min_degree_impl(
             }
         }
 
-        /* Exact degree recomputation for the neighborhood. */
-        for (int32_t k = 0; k < nbhd_len; k++) {
-            int32_t u = nbhd[k];
-            stamp++;
-            mark[u] = stamp;
-            int32_t deg = 0;
-            ops += adj[u].len;
-            for (int32_t t = 0; t < adj[u].len; t++) {
-                int32_t w = adj[u].data[t];
-                if (alive[w] && mark[w] != stamp) {
-                    mark[w] = stamp;
-                    deg++;
-                }
-            }
-            for (int32_t t = 0; t < var_elems[u].len; t++) {
-                IntVec *e = &elements[var_elems[u].data[t]];
-                ops += e->len;
-                for (int32_t s = 0; s < e->len; s++) {
-                    int32_t w = e->data[s];
-                    if (alive[w] && mark[w] != stamp) {
-                        mark[w] = stamp;
-                        deg++;
+        /* Approximate degree update in the spirit of approximate minimum
+         * degree: d(u) <= |alive adjacency outside L_p| + |L_p \ {u}| +
+         * sum over u's other elements e of |L_e \ L_p|, where each element
+         * residual is computed ONCE per elimination instead of once per
+         * neighbor. Elements shared across the neighborhood are the
+         * dominant cost in exact degree updates; this removes it. */
+        stamp++;
+        {
+            int32_t residual_stamp = stamp;
+            for (int32_t k = 0; k < nbhd_len; k++) {
+                int32_t u = nbhd[k];
+                int32_t deg = adj[u].len + nbhd_len - 1;
+                ops += var_elems[u].len;
+                for (int32_t t = 0; t < var_elems[u].len; t++) {
+                    int32_t e = var_elems[u].data[t];
+                    if (e == eid) {
+                        continue; /* covered by the nbhd_len - 1 term */
                     }
+                    if (elem_mark[e] != residual_stamp) {
+                        elem_mark[e] = residual_stamp;
+                        IntVec *ev = &elements[e];
+                        int32_t live = 0;
+                        ops += ev->len;
+                        for (int32_t t2 = 0; t2 < ev->len; t2++) {
+                            int32_t w = ev->data[t2];
+                            if (alive[w] && mark[w] != nbhd_stamp) {
+                                live++;
+                            }
+                        }
+                        elem_residual[e] = live;
+                    }
+                    deg += elem_residual[e];
                 }
-            }
-            degree[u] = deg;
-            if (heap_push(&heap, deg, u) != 0) {
-                goto cleanup;
+                degree[u] = deg;
+                if (heap_push(&heap, deg, u) != 0) {
+                    goto cleanup;
+                }
             }
         }
         if (max_ops > 0 && ops > max_ops) {
@@ -1866,6 +1883,7 @@ cleanup:
     free(degree);
     free(mark);
     free(elem_mark);
+    free(elem_residual);
     free(nbhd);
     free(heap.keys);
     return status;
