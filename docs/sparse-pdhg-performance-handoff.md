@@ -5,6 +5,40 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 8: PDHG Kernel — Fused Dual Pass, Branchless Clamp
+
+Per-iteration cost baselined (presolved instances, 2000 iterations,
+checks disabled): pds_20 2.292 ms/iter, osa_60 10.206 ms/iter. Three
+candidates were implemented and measured:
+
+- **Fused matvec + dual trial pass** (one sweep over the rows computes
+  ax_trial, gradient, y_trial, dy_sq, interaction): kept.
+- **Branchless primal clamp** — fmax/fmin against the ±INF-filled scaled
+  bounds replaces the bound_kind switch, letting the trial loop
+  vectorize: kept.
+- **2-way unrolled accumulators** in both matvecs: measured *slower* on
+  osa_60 (8.843 vs 8.710 ms/iter without) and the changed summation
+  order perturbed FP trajectories enough to knock CYCLE off its
+  convergence path (plateau-exit at residual 3.3e-5 instead of
+  converging) — the CYCLE guardrail test caught it. Reverted.
+
+The two kept changes preserve summation order exactly, so all
+trajectories are bit-identical to the previous kernel; the full test
+suite (122) passes unchanged. Result: pds_20 2.115 ms/iter (-7.7%),
+osa_60 8.710 ms/iter (-14.7%). Commit `c422f4e`. This is the realistic
+ceiling for single-threaded kernel micro-optimization — the loops are
+memory-bound gathers; the remaining ~2.3x osa_60 needs would require
+threading or an algorithmic change.
+
+A suite re-run on the four PDHG-routed instances reproduced every
+objective, residual, and iteration count to the last digit (confirming
+bit-identity end to end), but wall clocks came out 25-35% slower than
+the recorded table because the machine was under load (loadavg ~5.8,
+tailscaled + headless Chrome). The kernel win is paired-measured
+(back-to-back on identical load), so the official table runtimes are
+retained from the prior quiet-machine run; refresh them with the next
+full suite run.
+
 ## June 12 Update 7: osa_60 Characterized — Solvable, Budget-Bound
 
 With an unconstrained budget, osa_60 solves: optimal in 486s at residual
