@@ -355,3 +355,53 @@ class TestAlgorithmEquivalence:
 
         assert objectives["ipm"] == pytest.approx(objectives["simplex"], abs=1e-5)
         assert objectives["pdhg"] == pytest.approx(objectives["simplex"], abs=1e-4)
+
+
+class TestOrderingBudget:
+    def test_min_degree_budget_abort_returns_none(self) -> None:
+        # complete graph on 60 nodes with a 100-op budget: must abort
+        size = 60
+        indptr = [size * i for i in range(size + 1)]
+        indices = [j for _ in range(size) for j in range(size)]
+
+        assert _csparse.min_degree(indptr, indices, 100) is None
+
+    def test_min_degree_unlimited_budget_completes(self) -> None:
+        size = 60
+        indptr = [size * i for i in range(size + 1)]
+        indices = [j for _ in range(size) for j in range(size)]
+
+        order = _csparse.min_degree(indptr, indices, 0)
+
+        assert order is not None
+        assert sorted(order) == list(range(size))
+
+
+def test_auto_routes_medium_sparse_problems_to_ipm() -> None:
+    # 5000-row staircase: above the old 4000-row cap, trivially cheap factor.
+    size = 5_000
+    indptr = [0]
+    indices: list[int] = []
+    data: list[float] = []
+    for i in range(size):
+        if i == 0:
+            indices.append(0)
+            data.append(1.0)
+        else:
+            indices.extend([i - 1, i])
+            data.extend([0.5, 1.0])
+        indptr.append(len(indices))
+    matrix = csr_matrix(size, size, indptr, indices, data)
+
+    result = SparseSolver(algorithm="auto", eps=1e-9, max_iterations=2_000, presolve=False).solve(
+        SparseLPProblem(
+            [1.0] * size,
+            A_eq=matrix,
+            b_eq=[1.0] * size,
+            objective="min",
+            bounds=[(0.0, None)] * size,
+        )
+    )
+
+    assert result.backend == "native-c-sparse-ipm"
+    assert result.solution.status == Status.OPTIMAL

@@ -81,10 +81,12 @@ class _SparseTableau:
 class SparseSolver:
     """Dependency-free sparse two-phase simplex over linprogx's C CSR type."""
 
-    #: reduced problems at or below this many rows route to the interior
+    #: reduced problems at or below this many rows attempt the interior
     #: point method under ``algorithm="auto"``; direct factorization wins
-    #: on small or degenerate systems while first-order PDHG scales better.
-    AUTO_IPM_MAX_ROWS = 4000
+    #: whenever the Cholesky factor is affordable, and the C side aborts
+    #: back to PDHG if the ordering or the factor turns out too expensive
+    #: (minimum-degree work budget and a factor-flops cap).
+    AUTO_IPM_MAX_ROWS = 16_000
 
     def __init__(
         self,

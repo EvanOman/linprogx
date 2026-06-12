@@ -1648,13 +1648,18 @@ static int64_t heap_pop(MinHeap *h) {
 
 /* Compute an exact minimum-degree elimination order for the symmetric
  * pattern given by (indptr, indices) over m nodes. Writes the order
- * (a permutation of 0..m-1) into `order`. Returns 0 on success. */
+ * (a permutation of 0..m-1) into `order`. Returns 0 on success, -1 on
+ * allocation failure, and -2 if max_ops > 0 and the work budget is
+ * exhausted (orderings on dense-ish graphs can cost minutes; callers use
+ * the budget to abort early and route the problem elsewhere). */
 static int min_degree_impl(
     int32_t m,
     const Py_ssize_t *indptr,
     const Py_ssize_t *indices,
-    int32_t *order) {
+    int32_t *order,
+    int64_t max_ops) {
     int status = -1;
+    int64_t ops = 0;
     IntVec *adj = calloc((size_t)m, sizeof(IntVec));
     IntVec *var_elems = calloc((size_t)m, sizeof(IntVec));
     IntVec *elements = NULL;
@@ -1709,6 +1714,7 @@ static int min_degree_impl(
         stamp++;
         mark[v] = stamp;
         int32_t nbhd_len = 0;
+        ops += adj[v].len;
         for (int32_t k = 0; k < adj[v].len; k++) {
             int32_t u = adj[v].data[k];
             if (alive[u] && mark[u] != stamp) {
@@ -1718,6 +1724,7 @@ static int min_degree_impl(
         }
         for (int32_t k = 0; k < var_elems[v].len; k++) {
             IntVec *e = &elements[var_elems[v].data[k]];
+            ops += e->len;
             for (int32_t t = 0; t < e->len; t++) {
                 int32_t u = e->data[t];
                 if (alive[u] && mark[u] != stamp) {
@@ -1727,6 +1734,10 @@ static int min_degree_impl(
             }
         }
         int32_t nbhd_stamp = stamp;
+        if (max_ops > 0 && ops > max_ops) {
+            status = -2;
+            goto cleanup;
+        }
 
         /* New element holding the neighborhood; absorb v's old elements. */
         if (elements_len == elements_cap) {
@@ -1801,6 +1812,7 @@ static int min_degree_impl(
             stamp++;
             mark[u] = stamp;
             int32_t deg = 0;
+            ops += adj[u].len;
             for (int32_t t = 0; t < adj[u].len; t++) {
                 int32_t w = adj[u].data[t];
                 if (alive[w] && mark[w] != stamp) {
@@ -1810,6 +1822,7 @@ static int min_degree_impl(
             }
             for (int32_t t = 0; t < var_elems[u].len; t++) {
                 IntVec *e = &elements[var_elems[u].data[t]];
+                ops += e->len;
                 for (int32_t s = 0; s < e->len; s++) {
                     int32_t w = e->data[s];
                     if (alive[w] && mark[w] != stamp) {
@@ -1822,6 +1835,10 @@ static int min_degree_impl(
             if (heap_push(&heap, deg, u) != 0) {
                 goto cleanup;
             }
+        }
+        if (max_ops > 0 && ops > max_ops) {
+            status = -2;
+            goto cleanup;
         }
     }
     status = 0;
@@ -1957,7 +1974,8 @@ static int32_t chol_ereach(const CholContext *ctx, int32_t k) {
  * If factor_flops_cap > 0 and the estimated numeric factorization cost
  * (sum of squared column counts of L) exceeds it, setup aborts and sets
  * *too_dense so callers can route the problem elsewhere. */
-static CholContext *chol_setup(CSRMatrixObject *A, double factor_flops_cap, int *too_dense) {
+static CholContext *chol_setup(
+    CSRMatrixObject *A, double factor_flops_cap, int64_t md_ops_cap, int *too_dense) {
     int32_t m = (int32_t)A->rows;
     CholContext *ctx = calloc(1, sizeof(CholContext));
     int32_t *head = NULL;
@@ -2033,8 +2051,11 @@ static CholContext *chol_setup(CSRMatrixObject *A, double factor_flops_cap, int 
         for (Py_ssize_t p = 0; p < Bp[m]; p++) {
             Bi_ss[p] = Bi[p];
         }
-        int status = min_degree_impl(m, Bp_ss, Bi_ss, ctx->perm);
+        int status = min_degree_impl(m, Bp_ss, Bi_ss, ctx->perm, md_ops_cap);
         free(Bi_ss);
+        if (status == -2 && too_dense != NULL) {
+            *too_dense = 1;
+        }
         if (status != 0) {
             goto fail;
         }
@@ -2329,7 +2350,7 @@ static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObjec
     }
     CholContext *ctx;
     Py_BEGIN_ALLOW_THREADS
-    ctx = chol_setup(self, 0.0, NULL);
+    ctx = chol_setup(self, 0.0, 0, NULL);
     if (ctx != NULL) {
         chol_refactor(ctx, self, self->csc_data, d, delta);
         chol_solve(ctx, rhs, out);
@@ -2611,7 +2632,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     }
 
     int factor_too_dense = 0;
-    chol = chol_setup(self, 1e9, &factor_too_dense);
+    chol = chol_setup(self, 1e9, 1500000000LL, &factor_too_dense);
     if (chol == NULL) {
         if (factor_too_dense) {
             /* The factor would be too expensive per iteration; report a
@@ -3083,7 +3104,8 @@ static PyObject *csparse_min_degree(PyObject *self, PyObject *args) {
     (void)self;
     PyObject *indptr_obj;
     PyObject *indices_obj;
-    if (!PyArg_ParseTuple(args, "OO", &indptr_obj, &indices_obj)) {
+    long long max_ops = 0;
+    if (!PyArg_ParseTuple(args, "OO|L", &indptr_obj, &indices_obj, &max_ops)) {
         return NULL;
     }
     PyObject *indptr_seq = PySequence_Fast(indptr_obj, "indptr must be a sequence");
@@ -3113,10 +3135,14 @@ static PyObject *csparse_min_degree(PyObject *self, PyObject *args) {
     }
     int status;
     Py_BEGIN_ALLOW_THREADS
-    status = min_degree_impl((int32_t)m, indptr, indices, order);
+    status = min_degree_impl((int32_t)m, indptr, indices, order, (int64_t)max_ops);
     Py_END_ALLOW_THREADS
     free(indptr);
     free(indices);
+    if (status == -2) {
+        free(order);
+        Py_RETURN_NONE;
+    }
     if (status != 0) {
         free(order);
         PyErr_NoMemory();
