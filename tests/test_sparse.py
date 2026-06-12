@@ -352,7 +352,9 @@ def test_pdhg_threads_kwarg_bit_identical() -> None:
     data: list[float] = []
     state = 12345
     for row in range(m):
-        cols = sorted({(state := (state * 1103515245 + 12345) % 2**31) % n for _ in range(5)} | {row})
+        cols = sorted(
+            {(state := (state * 1103515245 + 12345) % 2**31) % n for _ in range(5)} | {row}
+        )
         for col in cols:
             state = (state * 1103515245 + 12345) % 2**31
             indices.append(col)
@@ -361,8 +363,7 @@ def test_pdhg_threads_kwarg_bit_identical() -> None:
     matrix = csr_matrix(m, n, indptr, indices, data)
     x_feas = [0.5 + (j % 7) / 7.0 for j in range(n)]
     b = [
-        sum(data[p] * x_feas[indices[p]] for p in range(indptr[i], indptr[i + 1]))
-        for i in range(m)
+        sum(data[p] * x_feas[indices[p]] for p in range(indptr[i], indptr[i + 1])) for i in range(m)
     ]
     c = [1.0 + (j % 5) / 3.0 for j in range(n)]
     kwargs = dict(max_iter=300, tol=1e-12, check_interval=10**6)
