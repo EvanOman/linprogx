@@ -5,6 +5,17 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 6: Compensated Summation — Killed by Measurement
+
+Before implementing double-double residual accumulation for the cre
+endgame, the certificate violations were measured directly: cre_a has 59
+violating reduced costs with worst relative magnitude 8.3e-5, cre_b has
+34 at 3.9e-4 -- four to five orders above the 1e-9 certificate tolerance.
+Extra floating-point digits cannot close that; the duals genuinely have
+not converged on a few dozen degenerate coordinates. The cre/greenbea
+endgame is finite-termination / crossover territory, recorded as the
+open research item it is.
+
 ## June 12 Update 5: Staged Precision (final round of this push)
 
 Once mu < 1e-7 the regularization floor drops 1e-10 -> 1e-12 with a
