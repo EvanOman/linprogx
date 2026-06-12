@@ -5,6 +5,30 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update: Approximate Degrees, Refinement, Calibrated Caps
+
+- Approximate-degree ordering (element residuals computed once per
+  elimination): 10-60x faster than exact MD at equal or better fill
+  (ken_18 49s -> 1.7s, DFL001 0.14s with 9% better fill). Routing ceiling
+  raised to 50k rows; ken_18 now solves via the IPM (~148s) where Clarabel
+  fails (DualInfeasible).
+- One step of iterative refinement on every Newton solve (residual via the
+  assembled permuted matrix). Residuals on long solves improve up to six
+  orders of magnitude.
+- Pace watchdog (bail at iteration 60 if mu has not dropped 1e4x) and a
+  throughput-calibrated factor-flops cap (7e8): tractable-but-slow factors
+  (pds_10, 9.5e8 flops) go to PDHG where they solve in seconds.
+- Official suite: 20/24 solved. osa_30 flipped to the IPM and now beats
+  HiGHS (4.7s vs 7.1s). 80bau3b regressed into an IPM trajectory stall
+  under the new ordering (refinement did not save it) and its PDHG
+  fallback also fails: a robustness target alongside greenbea. The
+  IPM-trajectory fragility on these two instances is the clearest signal
+  that the endgame needs higher-order correctors (Gondzio) or adaptive
+  step safeguards.
+- Remaining named fixes: fit2p (dense-column splitting), osa_60
+  (certified first-order endgame; ends at residual 4.9e-5 vs the 2e-5
+  bar), greenbea/80bau3b (IPM endgame robustness).
+
 ## June 11 Update 2: Cost-Based Routing
 
 Routing to the IPM is now decided by measured factorization cost, not row
