@@ -1921,6 +1921,16 @@ typedef struct {
     int32_t *emark;
     double *work;      /* dense accumulator for the factorization */
     double *work2;     /* dense buffer for triangular solves */
+    /* Dense-column splitting (Sherman-Morrison-Woodbury): columns whose
+     * normal-equations clique would be ruinous are excluded from the
+     * sparse factor and handled as a low-rank correction. */
+    Py_ssize_t n_dense;
+    int32_t *dense_cols;          /* A column indices */
+    unsigned char *col_is_dense;  /* size A->cols */
+    double *Umat;                 /* m x k, column-major */
+    double *Wmat;                 /* m x k, column-major: M_s^-1 U */
+    double *cap;                  /* k x k dense Cholesky factor of I + U'W */
+    double *cap_rhs;              /* k scratch */
 } CholContext;
 
 static void chol_free(CholContext *ctx) {
@@ -1944,6 +1954,12 @@ static void chol_free(CholContext *ctx) {
     free(ctx->emark);
     free(ctx->work);
     free(ctx->work2);
+    free(ctx->dense_cols);
+    free(ctx->col_is_dense);
+    free(ctx->Umat);
+    free(ctx->Wmat);
+    free(ctx->cap);
+    free(ctx->cap_rhs);
     free(ctx);
 }
 
@@ -2008,6 +2024,51 @@ static CholContext *chol_setup(
     }
     ctx->m = m;
 
+    /* --- dense-column detection: exclude clique-forming columns from the
+     * sparse factor and treat them as a low-rank correction --- */
+    ctx->col_is_dense = calloc((size_t)(A->cols > 0 ? A->cols : 1), sizeof(unsigned char));
+    if (ctx->col_is_dense == NULL) {
+        goto fail;
+    }
+    {
+        Py_ssize_t threshold = m / 8;
+        if (threshold < 64) {
+            threshold = 64;
+        }
+        Py_ssize_t k = 0;
+        for (Py_ssize_t t = 0; t < A->cols; t++) {
+            if (A->csc_indptr[t + 1] - A->csc_indptr[t] > threshold) {
+                ctx->col_is_dense[t] = 1;
+                k++;
+            }
+        }
+        if (k > 256) {
+            /* too many dense columns for the low-rank treatment */
+            if (too_dense != NULL) {
+                *too_dense = 1;
+            }
+            goto fail;
+        }
+        ctx->n_dense = k;
+        if (k > 0) {
+            ctx->dense_cols = calloc((size_t)k, sizeof(int32_t));
+            ctx->Umat = calloc((size_t)(k * m), sizeof(double));
+            ctx->Wmat = calloc((size_t)(k * m), sizeof(double));
+            ctx->cap = calloc((size_t)(k * k), sizeof(double));
+            ctx->cap_rhs = calloc((size_t)k, sizeof(double));
+            if (ctx->dense_cols == NULL || ctx->Umat == NULL || ctx->Wmat == NULL ||
+                ctx->cap == NULL || ctx->cap_rhs == NULL) {
+                goto fail;
+            }
+            Py_ssize_t at = 0;
+            for (Py_ssize_t t = 0; t < A->cols; t++) {
+                if (ctx->col_is_dense[t]) {
+                    ctx->dense_cols[at++] = (int32_t)t;
+                }
+            }
+        }
+    }
+
     /* --- unpermuted ADA' pattern (full symmetric, CSC) --- */
     mark = calloc((size_t)m, sizeof(int32_t));
     colbuf = calloc((size_t)m, sizeof(int32_t));
@@ -2028,6 +2089,9 @@ static CholContext *chol_setup(
             colbuf[len++] = i;
             for (Py_ssize_t p = A->indptr[i]; p < A->indptr[i + 1]; p++) {
                 Py_ssize_t t = A->indices[p];
+                if (ctx->col_is_dense[t]) {
+                    continue;
+                }
                 for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
                     int32_t j = (int32_t)A->csc_rows[q];
                     if (mark[j] != i + 1) {
@@ -2122,6 +2186,9 @@ static CholContext *chol_setup(
     /* --- assembly map --- */
     Py_ssize_t n_pairs = 0;
     for (Py_ssize_t t = 0; t < A->cols; t++) {
+        if (ctx->col_is_dense[t]) {
+            continue;
+        }
         Py_ssize_t nz = A->csc_indptr[t + 1] - A->csc_indptr[t];
         n_pairs += nz * nz;
     }
@@ -2138,6 +2205,9 @@ static CholContext *chol_setup(
     {
         Py_ssize_t at = 0;
         for (Py_ssize_t t = 0; t < A->cols; t++) {
+            if (ctx->col_is_dense[t]) {
+                continue;
+            }
             for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
                 int32_t r1 = ctx->pinv[A->csc_rows[p]];
                 for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
@@ -2257,6 +2327,9 @@ fail:
     return NULL;
 }
 
+static void chol_solve_sparse(CholContext *ctx, const double *rhs, double *out);
+static int dense_chol_factor(double *M, Py_ssize_t k);
+
 /* Numeric refactorization with diagonal D and regularization delta, using
  * the provided CSC value array (so callers can factor a rescaled operator
  * over the same pattern). Tiny or negative pivots are boosted (dynamic
@@ -2269,6 +2342,9 @@ static void chol_refactor(
     {
         Py_ssize_t at = 0;
         for (Py_ssize_t t = 0; t < A->cols; t++) {
+            if (ctx->col_is_dense[t]) {
+                continue;
+            }
             double dt = D[t];
             for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
                 double vp = csc_values[p] * dt;
@@ -2315,6 +2391,35 @@ static void chol_refactor(
         }
         ctx->Lx[ctx->Lp[k]] = sqrt(d);
     }
+
+    /* Dense-column low-rank data: U = A_dense sqrt(D_dense),
+     * W = M_s^-1 U, capacitance C = I + U'W (dense Cholesky). */
+    if (ctx->n_dense > 0) {
+        Py_ssize_t kd = ctx->n_dense;
+        for (Py_ssize_t j = 0; j < kd; j++) {
+            int32_t t = ctx->dense_cols[j];
+            double scale = sqrt(D[t] > 0.0 ? D[t] : 0.0);
+            double *u = ctx->Umat + j * m;
+            memset(u, 0, (size_t)m * sizeof(double));
+            for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
+                u[A->csc_rows[p]] = csc_values[p] * scale;
+            }
+            chol_solve_sparse(ctx, u, ctx->Wmat + j * m);
+        }
+        for (Py_ssize_t j = 0; j < kd; j++) {
+            const double *uj = ctx->Umat + j * m;
+            for (Py_ssize_t i2 = j; i2 < kd; i2++) {
+                const double *wi = ctx->Wmat + i2 * m;
+                double total = 0.0;
+                for (int32_t r = 0; r < m; r++) {
+                    total += uj[r] * wi[r];
+                }
+                /* column-major lower triangle: entry (i2, j) */
+                ctx->cap[j * kd + i2] = total + (i2 == j ? 1.0 : 0.0);
+            }
+        }
+        dense_chol_factor(ctx->cap, kd);
+    }
 }
 
 /* y = (A D A' + delta I) x using the assembled (permuted) matrix. */
@@ -2327,10 +2432,20 @@ static void chol_matvec(const CholContext *ctx, const double *x, double *out) {
         }
         out[ctx->perm[k]] = total;
     }
+    for (Py_ssize_t j = 0; j < ctx->n_dense; j++) {
+        const double *u = ctx->Umat + j * m;
+        double total = 0.0;
+        for (int32_t i = 0; i < m; i++) {
+            total += u[i] * x[i];
+        }
+        for (int32_t i = 0; i < m; i++) {
+            out[i] += u[i] * total;
+        }
+    }
 }
 
-/* Solve (A D A' + delta I) out = rhs using the current factor. */
-static void chol_solve(CholContext *ctx, const double *rhs, double *out) {
+/* Solve with the SPARSE part of the factor only (no dense correction). */
+static void chol_solve_sparse(CholContext *ctx, const double *rhs, double *out) {
     int32_t m = ctx->m;
     double *y = ctx->work2;
     for (int32_t k = 0; k < m; k++) {
@@ -2352,6 +2467,75 @@ static void chol_solve(CholContext *ctx, const double *rhs, double *out) {
     }
     for (int32_t k = 0; k < m; k++) {
         out[ctx->perm[k]] = y[k];
+    }
+}
+
+/* Dense k x k Cholesky factorization / solve for the capacitance system. */
+static int dense_chol_factor(double *M, Py_ssize_t k) {
+    for (Py_ssize_t j = 0; j < k; j++) {
+        double d = M[j * k + j];
+        for (Py_ssize_t t = 0; t < j; t++) {
+            double l = M[t * k + j];
+            d -= l * l;
+        }
+        if (d < 1e-14) {
+            d = 1e-14;
+        }
+        d = sqrt(d);
+        M[j * k + j] = d;
+        for (Py_ssize_t i = j + 1; i < k; i++) {
+            double v = M[j * k + i];
+            for (Py_ssize_t t = 0; t < j; t++) {
+                v -= M[t * k + i] * M[t * k + j];
+            }
+            M[j * k + i] = v / d;
+        }
+    }
+    return 0;
+}
+
+static void dense_chol_solve(const double *M, Py_ssize_t k, double *rhs) {
+    for (Py_ssize_t j = 0; j < k; j++) {
+        double v = rhs[j];
+        for (Py_ssize_t t = 0; t < j; t++) {
+            v -= M[t * k + j] * rhs[t];
+        }
+        rhs[j] = v / M[j * k + j];
+    }
+    for (Py_ssize_t j = k - 1; j >= 0; j--) {
+        double v = rhs[j];
+        for (Py_ssize_t t = j + 1; t < k; t++) {
+            v -= M[j * k + t] * rhs[t];
+        }
+        rhs[j] = v / M[j * k + j];
+    }
+}
+
+/* Solve (A D A' + delta I) out = rhs including the dense-column part via
+ * Sherman-Morrison-Woodbury: x = t - W (I + U'W)^-1 U' t with t the
+ * sparse-part solve. */
+static void chol_solve(CholContext *ctx, const double *rhs, double *out) {
+    chol_solve_sparse(ctx, rhs, out);
+    Py_ssize_t kd = ctx->n_dense;
+    if (kd == 0) {
+        return;
+    }
+    int32_t m = ctx->m;
+    for (Py_ssize_t j = 0; j < kd; j++) {
+        const double *u = ctx->Umat + j * m;
+        double total = 0.0;
+        for (int32_t i = 0; i < m; i++) {
+            total += u[i] * out[i];
+        }
+        ctx->cap_rhs[j] = total;
+    }
+    dense_chol_solve(ctx->cap, kd, ctx->cap_rhs);
+    for (Py_ssize_t j = 0; j < kd; j++) {
+        const double *w = ctx->Wmat + j * m;
+        double scale = ctx->cap_rhs[j];
+        for (int32_t i = 0; i < m; i++) {
+            out[i] -= w[i] * scale;
+        }
     }
 }
 

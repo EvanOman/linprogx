@@ -405,3 +405,30 @@ def test_auto_routes_medium_sparse_problems_to_ipm() -> None:
 
     assert result.backend == "native-c-sparse-ipm"
     assert result.solution.status == Status.OPTIMAL
+
+
+def test_normal_equations_solve_with_dense_column() -> None:
+    # 80 rows; one column touching every row triggers the dense-column
+    # splitting path; verify against the plain dense reference.
+    m = 80
+    indptr = [0]
+    indices: list[int] = []
+    data: list[float] = []
+    for i in range(m):
+        # diagonal sparse column i, plus the shared dense column m
+        indices.extend([i, m])
+        data.extend([1.0 + 0.01 * i, 0.5 + 0.001 * i])
+        indptr.append(len(indices))
+    matrix = csr_matrix(m, m + 1, indptr, indices, data)
+    d = [1.0 + 0.005 * j for j in range(m + 1)]
+    rhs = [((j * 7919) % 13) - 6.0 for j in range(m)]
+    delta = 1e-8
+
+    x = matrix.normal_equations_solve(d, rhs, delta)
+
+    dense = [[0.0] * (m + 1) for _ in range(m)]
+    for i in range(m):
+        for p in range(indptr[i], indptr[i + 1]):
+            dense[i][indices[p]] = data[p]
+    reference = _dense_solve(_normal_matrix(m, m + 1, indptr, indices, data, d, delta), rhs)
+    assert x == pytest.approx(reference, rel=1e-9, abs=1e-9)
