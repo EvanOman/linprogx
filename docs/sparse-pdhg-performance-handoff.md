@@ -5,6 +5,23 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 4: Lagrangian-Certified Acceptance
+
+The relaxed-acceptance gap is now a true Lagrangian bound built from the
+actual reduced costs r = c - A'y split onto bounds (pinned zero-width-box
+columns absorb r; a reduced cost pointing at an infinite bound makes the
+iterate uncertifiable). Found via 80bau3b: its IPM was fully converged but
+blocked by a phantom gap (pinned columns omitted from the dual objective);
+the naive pinned fix then wrongly certified greenbea's 1.3e-3-off point
+(which Clarabel also certifies). The sound certificate keeps 80bau3b
+(0.59s, 7.5e-9 relative) and rejects greenbea; cre_a/cre_b lose their
+certificates (slightly negative reduced costs on unbounded variables at
+their stall points) and are reported honestly. Official suite: 20/24, all
+optima certificate-backed. Next idea for cre_a/cre_b: dual polish at the
+best iterate (recompute y from the final factorization via weighted least
+squares; any y yields a valid bound, so trying a better y is sound and
+costs one solve).
+
 ## June 12 Update 3: Dense-Column Splitting (fit2p solved)
 
 Sherman-Morrison-Woodbury treatment of dense columns in the normal
