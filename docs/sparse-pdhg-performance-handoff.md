@@ -5,6 +5,19 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 7: osa_60 Characterized — Solvable, Budget-Bound
+
+With an unconstrained budget, osa_60 solves: optimal in 486s at residual
+1.9e-5 (under the 2e-5 bar) and relative objective error 2.1e-7, after
+82,304 PDHG iterations. It is a throughput question, not a capability
+gap: the suite's 180s protocol budget is what it misses. A ~2.7x PDHG
+kernel speedup would bring it inside; kernel throughput (currently
+~1-2 Gflop/s on the matvec pair) is the one remaining broad,
+non-problem-specific lever and also benefits pds_10/pds_20/qap
+instances. All four remaining misses are now fully measured and
+characterized: three structural-dual research items plus one
+throughput item.
+
 ## June 12 Update 6: Compensated Summation — Killed by Measurement
 
 Before implementing double-double residual accumulation for the cre
