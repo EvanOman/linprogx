@@ -5,6 +5,31 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 14: NaN Bail-Out — cre_b 2.8x, ken_18 3.9x Faster
+
+Profiling the slow IPM instances with the debug trace found pure waste:
+on cre_b the iterate goes **NaN at iteration ~75** (late Newton
+overflow on the ill-conditioned endgame, exactly what the best-iterate
+snapshot exists for) and the IPM then spins on NaN for 120+ more
+iterations — ~65% of its runtime doing literally nothing. ken_18 had
+the same pattern. The fix is one guard: if mu/pres/dres goes
+non-finite, break immediately; the exit path (best iterate, relaxed
+acceptance, dual polish, min-norm cleanup) takes over as before.
+
+Official rows (identical objectives and residuals to the last digit —
+the returned point is the same best iterate):
+- cre_b: 136.0 s / 199 iters -> **48.2 s / 67 iters**
+- ken_18: 100.1 s / ~120 iters -> **25.4 s / 40 iters**
+- pilot87: 37.4 -> 36.6 s (no NaN spin; genuinely iteration-bound)
+- maros_r7: unchanged 14.2 s (no NaN; factor-bound — 5.7e8 flops x ~45
+  iterations on a scalar up-looking factor. The remaining runtime gaps
+  vs HiGHS on maros_r7/pilot87/cre_b-class instances need either a
+  supernodal/blocked numeric factorization (the big subsystem) or
+  fewer IPM iterations.)
+
+Tests: finite-iterates property test on ill-conditioned random LPs
+(the user-visible contract the bail protects); 132 total.
+
 ## June 12 Update 13: osa_60 SOLVED — Predicted-Fill Early Abort (23/24, Coverage Tie)
 
 osa_60 was never a throughput problem. Threading the PDHG kernels was

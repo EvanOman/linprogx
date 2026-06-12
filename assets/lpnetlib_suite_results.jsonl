@@ -48,13 +48,13 @@
 {"instance": "lp_cre_d", "solver": "linprogx", "status": "optimal", "objective": 24454970.235201687, "seconds": 31.541836976073682, "residual": 5.644384108113115e-08, "backend": "ipm", "iterations": 77}
 {"instance": "lp_cre_b", "solver": "highs", "status": "optimal", "objective": 23129639.88683238, "seconds": 2.1132777528837323, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_cre_b", "solver": "clarabel", "status": "optimal", "objective": 23129640.33530753, "seconds": 18.657004582695663, "residual": 3.4229854211307942e-09, "backend": "clarabel", "iterations": null}
-{"instance": "lp_cre_b", "solver": "linprogx", "status": "optimal", "objective": 23129702.17058627, "seconds": 136.00547248777002, "residual": 3.74994186911308e-06, "backend": "ipm", "iterations": 199}
+{"instance": "lp_cre_b", "solver": "linprogx", "status": "optimal", "objective": 23129702.17058627, "seconds": 48.16055282112211, "residual": 3.74994186911308e-06, "backend": "ipm", "iterations": 67}
 {"instance": "lp_ken_13", "solver": "highs", "status": "optimal", "objective": -10257394789.48247, "seconds": 1.0084921447560191, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_ken_13", "solver": "clarabel", "status": "optimal", "objective": -10257394791.359547, "seconds": 2.1272928649559617, "residual": 1.1647998121588898e-09, "backend": "clarabel", "iterations": null}
 {"instance": "lp_ken_13", "solver": "linprogx", "status": "optimal", "objective": -10257394486.465239, "seconds": 4.594791200943291, "residual": 5.652953145565095e-06, "backend": "ipm", "iterations": 199}
 {"instance": "lp_pilot87", "solver": "highs", "status": "optimal", "objective": 301.71034733316753, "seconds": 3.81540147960186, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_pilot87", "solver": "clarabel", "status": "optimal", "objective": 301.72493413786015, "seconds": 9.768788539804518, "residual": 3.792983007801512e-09, "backend": "clarabel", "iterations": null}
-{"instance": "lp_pilot87", "solver": "linprogx", "status": "optimal", "objective": 301.7104939899049, "seconds": 37.44097511842847, "residual": 1.1544898370630108e-10, "backend": "ipm", "iterations": 150}
+{"instance": "lp_pilot87", "solver": "linprogx", "status": "optimal", "objective": 301.7104939899049, "seconds": 36.61605886183679, "residual": 1.1544898370630108e-10, "backend": "ipm", "iterations": 150}
 {"instance": "lp_pds_20", "solver": "highs", "status": "optimal", "objective": 23821658640.0, "seconds": 12.455783428624272, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_pds_20", "solver": "clarabel", "status": "optimal", "objective": 23821658640.613922, "seconds": 115.86495773401111, "residual": 6.707693805049899e-10, "backend": "clarabel", "iterations": null}
 {"instance": "lp_pds_20", "solver": "linprogx", "status": "optimal", "objective": 23821658161.130054, "seconds": 40.722040282562375, "residual": 1.806465775189281e-05, "backend": "pdhg", "iterations": 21696}
@@ -63,7 +63,7 @@
 {"instance": "lp_osa_14", "solver": "linprogx", "status": "optimal", "objective": 1106463.0331687385, "seconds": 4.0043867556378245, "residual": 0.00010840477261808701, "backend": "ipm", "iterations": 199}
 {"instance": "lp_ken_18", "solver": "highs", "status": "optimal", "objective": -52217025287.396805, "seconds": 10.42093776538968, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_ken_18", "solver": "clarabel", "status": "DualInfeasible", "objective": null, "seconds": 5.088201087899506, "residual": null, "backend": "clarabel", "iterations": null}
-{"instance": "lp_ken_18", "solver": "linprogx", "status": "optimal", "objective": -52217024497.18733, "seconds": 100.07744776271284, "residual": 5.129550117999315e-10, "backend": "ipm", "iterations": 199}
+{"instance": "lp_ken_18", "solver": "linprogx", "status": "optimal", "objective": -52217024497.18733, "seconds": 25.355229625478387, "residual": 5.129550117999315e-10, "backend": "ipm", "iterations": 40}
 {"instance": "lp_osa_30", "solver": "highs", "status": "optimal", "objective": 2142139.8732097656, "seconds": 4.269681137986481, "residual": null, "backend": "highs", "iterations": null}
 {"instance": "lp_osa_30", "solver": "clarabel", "status": "optimal", "objective": 2142129.0872023306, "seconds": 9.640081144869328, "residual": 2.9596982642488e-09, "backend": "clarabel", "iterations": null}
 {"instance": "lp_osa_30", "solver": "linprogx", "status": "optimal", "objective": 2142140.018731334, "seconds": 3.4600696451961994, "residual": 0.00012339663589955308, "backend": "ipm", "iterations": 46}

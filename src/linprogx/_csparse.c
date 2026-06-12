@@ -3384,6 +3384,13 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                     "ipm iter=%zd mu=%.3e pres=%.3e dres=%.3e ap=%.2e ad=%.2e\n",
                     iter, mu, pres, dres, last_ap, last_ad);
         }
+        if (!isfinite(mu) || !isfinite(pres) || !isfinite(dres)) {
+            /* The iterate is destroyed (late Newton steps on
+             * ill-conditioned instances can overflow); nothing after
+             * this point can recover, and the best-iterate snapshot
+             * already holds the usable point. Stop burning budget. */
+            break;
+        }
         if (iter == 0) {
             mu_initial = mu;
         } else if (iter == 60 && mu > 1e-4 * mu_initial) {

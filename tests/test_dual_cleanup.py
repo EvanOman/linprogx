@@ -157,3 +157,25 @@ def test_ipm_debug_kwarg_accepted() -> None:
     )
     assert result["status"] == "optimal"
     assert "dual_cleanup_rounds" in result
+
+
+@pytest.mark.parametrize("seed", [2, 17])
+def test_ipm_returns_finite_iterates_on_ill_conditioned_lps(seed: int) -> None:
+    # late Newton steps can overflow on ill-conditioned instances; the
+    # solver must bail to its best iterate and never return NaN/inf
+    rng = np.random.default_rng(seed)
+    m, n = 30, 60
+    A = (
+        sp.random(
+            m, n, density=0.3, random_state=rng, data_rvs=lambda s: rng.uniform(1e-6, 1e6, s)
+        ).tocsr()
+        + sp.hstack([sp.identity(m) * 1e-4, sp.csr_matrix((m, n - m))]).tocsr()
+    )
+    b = A @ rng.uniform(0.5, 1.5, n)
+    c = rng.uniform(1e-3, 1e3, n)
+    matrix = from_scipy_sparse(sp.csr_matrix(A))
+    result = matrix.solve_eq_box_ipm(
+        c.tolist(), b.tolist(), [0.0] * n, [np.inf] * n, max_iter=200, tol=1e-9
+    )
+    assert np.all(np.isfinite(result["x"]))
+    assert np.all(np.isfinite(result["y"]))
