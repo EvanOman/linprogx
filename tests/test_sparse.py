@@ -352,10 +352,11 @@ def test_pdhg_threads_kwarg_bit_identical() -> None:
     data: list[float] = []
     state = 12345
     for row in range(m):
-        cols = sorted(
-            {(state := (state * 1103515245 + 12345) % 2**31) % n for _ in range(5)} | {row}
-        )
-        for col in cols:
+        col_set = {row}
+        for _ in range(5):
+            state = (state * 1103515245 + 12345) % 2**31
+            col_set.add(state % n)
+        for col in sorted(col_set):
             state = (state * 1103515245 + 12345) % 2**31
             indices.append(col)
             data.append(0.5 + (state % 1000) / 500.0)
