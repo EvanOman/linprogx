@@ -5,6 +5,21 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 3: Dense-Column Splitting (fit2p solved)
+
+Sherman-Morrison-Woodbury treatment of dense columns in the normal
+equations: columns with nnz > max(64, m/8) are excluded from the sparse
+factor and handled as U = A_d sqrt(D_d), W = M_s^-1 U, and a dense
+Cholesky of I + U'W (k <= 256). fit2p (25 dense columns, previously a
+fully dense 9-Gflop factor) moved from unsolved to optimal in 0.59s,
+faster than HiGHS. Official suite: 21/24, fastest-of-three on 5,
+ties/beats Clarabel on 11 of 21.
+
+Process lesson recorded: a silent patch no-op plus a grep that masked a
+compile error let several validations run against a stale .so (caught by
+profiling: the hotspots matched the old code path). All bulk edits now
+assert their replacements, and rebuilds are verified by .so mtime.
+
 ## June 12 Update 2: Gondzio Correctors — Tried and Reverted
 
 Multiple centrality corrections (enlarged-step trial products clamped into
