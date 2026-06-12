@@ -1095,41 +1095,47 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 double trial_tau = eta / omega;
                 double trial_sigma = eta * omega;
                 double dx_sq = 0.0;
-                for (Py_ssize_t col = 0; col < self->cols; col++) {
-                    double updated = x[col] - trial_tau * (aty[col] + scaled_c[col]);
-                    switch (bound_kind[col]) {
-                        case 1:
-                            if (updated < scaled_lo[col]) {
-                                updated = scaled_lo[col];
-                            }
-                            break;
-                        case 2:
-                            if (updated > scaled_hi[col]) {
-                                updated = scaled_hi[col];
-                            }
-                            break;
-                        case 3:
-                            if (updated < scaled_lo[col]) {
-                                updated = scaled_lo[col];
-                            } else if (updated > scaled_hi[col]) {
-                                updated = scaled_hi[col];
-                            }
-                            break;
+                {
+                    const double *restrict lo_v = scaled_lo;
+                    const double *restrict hi_v = scaled_hi;
+                    const double *restrict g_v = aty;
+                    const double *restrict c_v = scaled_c;
+                    const double *restrict x_v = x;
+                    double *restrict out_v = xbar;
+                    for (Py_ssize_t col = 0; col < self->cols; col++) {
+                        /* scaled_lo/scaled_hi hold +-INF when a bound is
+                         * absent, so the clamp is branchless and vector
+                         * friendly. */
+                        double updated = x_v[col] - trial_tau * (g_v[col] + c_v[col]);
+                        updated = fmax(updated, lo_v[col]);
+                        updated = fmin(updated, hi_v[col]);
+                        out_v[col] = updated;
+                        double dx = updated - x_v[col];
+                        dx_sq += dx * dx;
                     }
-                    xbar[col] = updated;
-                    double dx = updated - x[col];
-                    dx_sq += dx * dx;
                 }
-                scaled_op_matvec(&op, xbar, ax_trial);
+                /* fused matvec + dual trial pass: one sweep over the rows */
                 double dy_sq = 0.0;
                 double interaction = 0.0;
-                for (Py_ssize_t row = 0; row < self->rows; row++) {
-                    double gradient = 2.0 * ax_trial[row] - ax[row] - scaled_b[row];
-                    double updated = y[row] + trial_sigma * gradient;
-                    double dy = updated - y[row];
-                    y_trial[row] = updated;
-                    dy_sq += dy * dy;
-                    interaction += dy * (ax_trial[row] - ax[row]);
+                {
+                    const Py_ssize_t *restrict row_start = op.row_start;
+                    const int32_t *restrict col_index = op.col_index;
+                    const double *restrict data = op.data;
+                    const double *restrict xb = xbar;
+                    for (Py_ssize_t row = 0; row < self->rows; row++) {
+                        double axr = 0.0;
+                        Py_ssize_t end = row_start[row + 1];
+                        for (Py_ssize_t p = row_start[row]; p < end; p++) {
+                            axr += data[p] * xb[col_index[p]];
+                        }
+                        ax_trial[row] = axr;
+                        double gradient = 2.0 * axr - ax[row] - scaled_b[row];
+                        double updated = y[row] + trial_sigma * gradient;
+                        double dy = updated - y[row];
+                        y_trial[row] = updated;
+                        dy_sq += dy * dy;
+                        interaction += dy * (axr - ax[row]);
+                    }
                 }
                 double movement = 0.5 * omega * dx_sq + 0.5 * dy_sq / omega;
                 double inter_abs = fabs(interaction);
