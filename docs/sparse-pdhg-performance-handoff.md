@@ -5,6 +5,39 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 9: Crossover Probes — Repair Fails, Warm Simplex Works
+
+Two prototypes for the cre/greenbea endgame (the +3 coverage gap), both
+in `experiments/` (`crossover_prototype.py`,
+`revised_simplex_prototype.py`):
+
+1. **Naive basis repair** (alternate exact least-squares solves with
+   violation-driven partition swaps): does not converge. cre_a's stall
+   point pins 6,337 columns but the vertex needs 3,516 basic — 2,605
+   basis members sit exactly at bounds (degenerate), the min-norm dual
+   then shows ~1,700 spurious sign violations, and both bulk and capped
+   paired swaps oscillate. The earlier "34-59 violating coordinates"
+   measured certificate violations at the polished y; the *partition*
+   ambiguity is far wider.
+2. **Warm-started revised simplex** (bounded-variable, scipy splu
+   refactored per pivot, pivoted-QR warm basis + Big-M artificials):
+   **reaches the published cre_a optimum** — violations 1,804 → 1, zero
+   active artificials, objective matching to 7 digits. Cost at
+   prototype quality: ~20k pivots, ~8 ms/pivot (~230 s). The warm basis
+   is dual-informed but primal-infeasible, causing a Big-M excursion
+   (objective spikes to 1e16 before descending), which is where most of
+   the pivot count goes.
+
+Conclusion: the endgame is reachable with basis machinery we can build
+dependency-free (the C Cholesky solves square basis systems via
+B B^T u = rhs, x = B^T u — no LU needed). The promising production
+shape is a **warm-started dual simplex**: the stall point is nearly
+dual-feasible (only ~59 violating reduced costs at small magnitude), so
+dual pivots repairing those should number in the hundreds, not 20k.
+That probe is next. Also fixed en route: the existing tableau simplex
+times out (>300 s) on cre_a cold — it cannot serve as the crossover
+engine at this scale.
+
 ## June 12 Update 8: PDHG Kernel — Fused Dual Pass, Branchless Clamp
 
 Per-iteration cost baselined (presolved instances, 2000 iterations,
