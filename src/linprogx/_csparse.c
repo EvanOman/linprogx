@@ -2632,7 +2632,11 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     }
 
     int factor_too_dense = 0;
-    chol = chol_setup(self, 1e9, 1500000000LL, &factor_too_dense);
+    /* Small problems get a generous ordering budget: even a slow exact
+     * minimum-degree run is bounded there and the IPM usually repays it.
+     * Larger problems abort quickly and fall back to the first-order path. */
+    int64_t md_budget = m <= 3000 ? 6000000000LL : 1500000000LL;
+    chol = chol_setup(self, 1e9, md_budget, &factor_too_dense);
     if (chol == NULL) {
         if (factor_too_dense) {
             /* The factor would be too expensive per iteration; report a
