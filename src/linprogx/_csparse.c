@@ -3044,25 +3044,48 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 best_pres = pres;
                 best_dres = dres;
                 best_mu = mu;
-                /* Explicit primal-dual gap at this iterate: with an
-                 * infeasible dual, small mu alone does not bound the true
-                 * objective error. */
+                /* Certified primal-dual gap: build the TRUE Lagrangian
+                 * bound from the actual reduced costs r = c - A'y, splitting
+                 * each onto its bound. Unlike the z-based dual objective,
+                 * this is valid regardless of how far z has drifted; if a
+                 * reduced cost points at an infinite bound, the iterate is
+                 * not certifiable and the gap stays infinite. */
                 double pobj = 0.0;
                 double dobj = 0.0;
+                int certifiable = 1;
                 for (Py_ssize_t j = 0; j < n; j++) {
                     unsigned char kind = bound_kind[j];
+                    double r = c[j] - aty[j];
                     pobj += c[j] * x[j];
-                    if (kind & 1) {
-                        dobj += lo[j] * zl[j];
+                    if (kind == 4) {
+                        /* pinned (zero-width box): multiplier absorbs r */
+                        dobj += r * x[j];
+                        continue;
                     }
-                    if (kind & 2) {
-                        dobj -= hi[j] * zu[j];
+                    if (r > 0.0) {
+                        if (kind & 1) {
+                            dobj += r * lo[j];
+                        } else if (r > 1e-9 * (1.0 + fabs(c[j]))) {
+                            certifiable = 0;
+                            break;
+                        }
+                    } else if (r < 0.0) {
+                        if (kind & 2) {
+                            dobj += r * hi[j];
+                        } else if (-r > 1e-9 * (1.0 + fabs(c[j]))) {
+                            certifiable = 0;
+                            break;
+                        }
                     }
                 }
-                for (Py_ssize_t i = 0; i < m; i++) {
-                    dobj += b[i] * y[i];
+                if (certifiable) {
+                    for (Py_ssize_t i = 0; i < m; i++) {
+                        dobj += b[i] * y[i];
+                    }
+                    best_gap = fabs(pobj - dobj) / (1.0 + fabs(pobj) + fabs(dobj));
+                } else {
+                    best_gap = INFINITY;
                 }
-                best_gap = fabs(pobj - dobj) / (1.0 + fabs(pobj) + fabs(dobj));
                 memcpy(x_best, x, (size_t)n * sizeof(double));
                 memcpy(y_best, y, (size_t)m * sizeof(double));
             }
