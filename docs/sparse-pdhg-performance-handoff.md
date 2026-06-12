@@ -5,6 +5,42 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 15: Stall-Gated Early Acceptance — Suite-Wide IPM Speedups
+
+Component timers (debug-only, behind the debug kwarg) settled the
+factorization question: **refactorization is 87-94% of IPM runtime** on
+every slow instance, running at ~0.93 Gflop/s scalar. A blocked dense
+Cholesky benchmark (`/tmp/chol_bench.c`-style, register-tiled 4x4
+GEMM update) measured 4.2 vs 1.8 Gflop/s on this machine — so a
+supernodal rebuild is worth ~3-4x on factor time and remains the big
+open subsystem.
+
+But the cheaper lever landed first: the debug traces showed instances
+satisfying the exit path's relaxed acceptance bars long before the
+strict tolerance — pilot87 met them at iteration ~50 of 149, osa_60 at
+~57 of 199. The IPM now checks the SAME relaxed acceptance
+(pres <= 1e-6, dres <= 5e-6, mu <= 1e-6, certified gap <= 1e-5) inside
+the loop, gated on a mu-stall test (mu shrinking less than 4x per 10
+iterations — a healthy Mehrotra run does far better, so fast convergers
+keep polishing to strict tolerance and lose nothing). When the raw
+certificate fails, the min-norm dual cleanup (now extracted into
+ipm_dual_cleanup, shared with the exit path) is attempted in-flight,
+rate-limited to once per 16 iterations.
+
+Full official suite re-run (loaded machine; all rows refreshed):
+- osa_60 33.1 -> **15.6 s** (57 iters) — now FASTEST of three (HiGHS
+  24.1, Clarabel 27.5).
+- osa_14 4.0 -> 1.7 s; cre_d 31.5 -> 27.6 s (77 iters); cre_a 0.42 ->
+  0.17 s (45 iters); 80bau3b 0.67 -> 0.23 s; d2q06c 1.5 -> 0.97 s.
+- pilot87 unchanged (its mid-run cleanup attempts fail — the dual face
+  is greenbea-like; it still needs the full 150-iteration tail).
+- Quality: all rel deltas <= 1.2e-5, every optimum certificate-backed.
+- **Fastest-of-three count: 5 -> 8** (fit2p, ken_07, ken_11, osa_30,
+  osa_60, qap12, qap15, truss).
+
+Tests: cre_a fixture now asserts the early exit (45 iterations vs 199);
+132 tests green.
+
 ## June 12 Update 14: NaN Bail-Out — cre_b 2.8x, ken_18 3.9x Faster
 
 Profiling the slow IPM instances with the debug trace found pure waste:

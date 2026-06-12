@@ -466,9 +466,9 @@ Each solver misses exactly one instance: HiGHS times out on qap15,
 Clarabel reports DualInfeasible on ken_18, and linprogx declines to
 certify greenbea (where Clarabel certifies a point that is wrong by
 1.3e-3 — the honesty guarantee is the difference). linprogx is
-fastest-of-three on 5 instances: fit2p in 0.11s (HiGHS 1.24s, Clarabel
-0.29s), qap12 in 0.40s (HiGHS 104s), qap15 in 1.2s (HiGHS times out),
-osa_30, and truss (23x HiGHS). The degenerate cre_a/cre_b instances are
+fastest-of-three on 8 instances: fit2p (0.15s vs HiGHS 1.24s), ken_07,
+ken_11, osa_30, osa_60 (15.6s vs HiGHS 24.1s), qap12 (0.52s vs HiGHS
+104s), qap15 (1.2s; HiGHS times out), and truss (23x HiGHS). The degenerate cre_a/cre_b instances are
 closed by a min-norm dual cleanup at the IPM exit (a small least-squares
 correction over the few wrong-signed reduced costs — it can gain
 certificates but never fake one), and osa_60 by a predicted-fill early

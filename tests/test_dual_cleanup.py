@@ -44,6 +44,9 @@ def test_dual_cleanup_certifies_cre_a_ipm() -> None:
 
     assert result["status"] == "optimal"
     assert result["dual_cleanup_rounds"] >= 1
+    # the stall-gated early acceptance certifies mid-run instead of
+    # crawling to the iteration limit
+    assert result["iterations"] < 150
     rel_err = abs(result["objective"] - CRE_A_PUBLISHED_OBJECTIVE) / (
         1.0 + abs(CRE_A_PUBLISHED_OBJECTIVE)
     )
