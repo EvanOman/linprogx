@@ -460,15 +460,15 @@ family used in the Clarabel and HiGHS benchmark papers, including the
 Kennington set — is recorded in [assets/lpnetlib_suite.md](assets/lpnetlib_suite.md)
 with the harness in `experiments/suite_bench.py`. Headline: linprogx solves
 20/24 with every optimum certificate-backed (full KKT or an explicit
-Lagrangian dual bound) at relative objective errors of 3.8e-12 to 2.2e-5;
-HiGHS and Clarabel each solve 23/24. Signature results: qap12 in 0.44s and
-qap15 in 1.3s where HiGHS needs 107s and times out respectively; fit2p in
-0.55s vs HiGHS 1.20s via dense-column splitting; ken_18 solves where
-Clarabel reports DualInfeasible; and on greenbea the certificate provably
-cannot endorse the near-optimal-but-wrong point that Clarabel certifies
-despite a 1.3e-3 objective error. The remaining misses (cre_a, cre_b,
-greenbea, osa_60) are dual-certification at stall points and a certified
-first-order finish.
+Lagrangian dual bound) at relative objective errors of 9.2e-12 to 2.2e-5;
+HiGHS and Clarabel each solve 23/24. linprogx is fastest-of-three on 5
+instances: fit2p in 0.11s (HiGHS 1.24s, Clarabel 0.29s), qap12 in 0.40s
+(HiGHS 104s), qap15 in 1.2s (HiGHS times out), osa_30, and truss (23x
+HiGHS). ken_18 solves where Clarabel reports DualInfeasible, and on
+greenbea the certificate provably cannot endorse the wrong point that
+Clarabel certifies. The remaining misses (cre_a, cre_b, greenbea, osa_60)
+need genuinely deeper endgame convergence or a certified first-order
+finish -- documented as open research items.
 
 ## License
 

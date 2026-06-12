@@ -18,54 +18,52 @@ pilot87, greenbea, maros_r7), and none were used while developing the solver.
 
 | Instance | linprogx | HiGHS | Clarabel | rel delta | residual |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| lp_80bau3b | 0.59s (ipm) | 0.20s | 0.36s | 7.5e-09 | 1e-11 |
-| lp_cre_a | iteration_limit | 0.10s | 0.16s | n/a | n/a |
-| lp_cre_b | iteration_limit | 2.11s | 19.12s | n/a | n/a |
-| lp_cre_d | 28.62s (ipm) | 1.17s | 16.72s | 1.9e-08 | 5e-07 |
-| lp_d2q06c | 1.62s (ipm) | 0.94s | 2.33s | 1.4e-10 | 7e-10 |
-| lp_degen3 | 2.26s (ipm) | 0.22s | 0.48s | 5.5e-07 | 1e-07 |
-| lp_fit2p | 0.55s (ipm) | 1.20s | 0.30s | 7.0e-07 | 3e-08 |
-| lp_greenbea | iteration_limit | 0.27s | 2.43s | n/a | n/a |
-| lp_ken_07 | 0.07s (ipm) | 0.04s | 0.06s | 1.6e-09 | 3e-05 |
-| lp_ken_11 | 0.86s (ipm) | 0.35s | 0.75s | 7.5e-08 | 7e-04 |
-| lp_ken_13 | 4.36s (ipm) | 1.09s | 2.22s | 3.0e-08 | 7e-06 |
-| lp_ken_18 | 85.47s (ipm) | 10.55s | DualInfeasible | 1.5e-08 | 6e-05 |
-| lp_maros_r7 | 13.58s (ipm) | 0.85s | 2.07s | 3.2e-10 | 3e-11 |
-| lp_osa_14 | 3.51s (ipm) | 0.99s | 2.51s | 1.7e-07 | 1e-04 |
-| lp_osa_30 | 3.45s (ipm) | 4.31s | 7.50s | 6.8e-08 | 1e-04 |
-| lp_osa_60 | timeout | 23.41s | 29.28s | n/a | n/a |
-| lp_pds_10 | 3.56s (pdhg) | 1.71s | 29.90s | 4.0e-09 | 1e-05 |
-| lp_pds_20 | 29.86s (pdhg) | 12.46s | 118.34s | 2.0e-08 | 2e-05 |
-| lp_pilot87 | 26.45s (ipm) | 4.49s | 9.83s | 1.4e-07 | 6e-11 |
-| lp_qap12 | 0.44s (pdhg) | 107.52s | 3.92s | 9.4e-06 | 2e-05 |
-| lp_qap15 | 1.28s (pdhg) | timeout | 18.94s | 5.9e-06 | 7e-06 |
-| lp_stocfor3 | 1.31s (ipm) | 0.64s | 1.20s | 4.7e-08 | 7e-11 |
-| lp_truss | 0.13s (ipm) | 2.95s | 0.19s | 3.8e-12 | 2e-12 |
-| lp_woodw | 0.17s (ipm) | 0.09s | 0.25s | 2.2e-05 | 6e-09 |
+| lp_80bau3b | 0.67s (ipm) | 0.21s | 0.37s | 9.2e-12 | 2e-11 |
+| lp_cre_a | iteration_limit | 0.10s | 0.15s | n/a | n/a |
+| lp_cre_b | iteration_limit | 2.11s | 18.66s | n/a | n/a |
+| lp_cre_d | 31.54s (ipm) | 1.17s | 16.70s | 1.9e-08 | 6e-08 |
+| lp_d2q06c | 1.52s (ipm) | 0.95s | 2.36s | 2.7e-09 | 3e-10 |
+| lp_degen3 | 2.10s (ipm) | 0.21s | 0.47s | 4.3e-07 | 9e-08 |
+| lp_fit2p | 0.11s (ipm) | 1.24s | 0.29s | 2.1e-07 | 2e-08 |
+| lp_greenbea | iteration_limit | 0.28s | 2.44s | n/a | n/a |
+| lp_ken_07 | 0.08s (ipm) | 0.04s | 0.06s | 2.6e-09 | 2e-04 |
+| lp_ken_11 | 0.93s (ipm) | 0.33s | 0.74s | 7.5e-08 | 8e-04 |
+| lp_ken_13 | 4.59s (ipm) | 1.01s | 2.13s | 2.9e-08 | 6e-06 |
+| lp_ken_18 | 100.08s (ipm) | 10.42s | DualInfeasible | 1.5e-08 | 5e-10 |
+| lp_maros_r7 | 14.21s (ipm) | 0.95s | 2.31s | 3.2e-10 | 3e-11 |
+| lp_osa_14 | 4.00s (ipm) | 1.14s | 2.90s | 1.7e-07 | 1e-04 |
+| lp_osa_30 | 3.46s (ipm) | 4.27s | 9.64s | 6.8e-08 | 1e-04 |
+| lp_osa_60 | timeout | 24.06s | 27.53s | n/a | n/a |
+| lp_pds_10 | 3.35s (pdhg) | 1.59s | 31.18s | 4.0e-09 | 1e-05 |
+| lp_pds_20 | 28.36s (pdhg) | 12.46s | 115.86s | 2.0e-08 | 2e-05 |
+| lp_pilot87 | 37.44s (ipm) | 3.82s | 9.77s | 4.9e-07 | 1e-10 |
+| lp_qap12 | 0.40s (pdhg) | 104.56s | 4.00s | 9.4e-06 | 2e-05 |
+| lp_qap15 | 1.16s (pdhg) | timeout | 21.19s | 5.9e-06 | 7e-06 |
+| lp_stocfor3 | 1.12s (ipm) | 0.70s | 1.12s | 4.7e-08 | 5e-11 |
+| lp_truss | 0.13s (ipm) | 2.98s | 0.18s | 3.8e-12 | 3e-12 |
+| lp_woodw | 0.27s (ipm) | 0.11s | 0.25s | 2.2e-05 | 6e-09 |
 
 ## Summary
 
 - **Solved (status optimal): linprogx 20/24, HiGHS 23/24, Clarabel 23/24.**
-- Every linprogx optimum is certificate-backed: either the full KKT test or
-  an explicit Lagrangian dual bound built from the actual reduced costs.
-  Relative objective errors run 3.8e-12 to 2.2e-5.
-- Fastest of the three on 4 instances; ties or beats Clarabel on 9 of its
-  20 solves. Highlights: qap12 in 0.44s and qap15 in 1.3s where HiGHS needs
-  107s and times out respectively; fit2p in 0.55s vs HiGHS 1.20s
-  (dense-column splitting); 80bau3b certified at 7.5e-9 relative error;
-  osa_30 beats HiGHS; truss 23x faster than HiGHS; ken_18 solves where
-  Clarabel reports DualInfeasible.
+- Every linprogx optimum is certificate-backed (full KKT or an explicit
+  Lagrangian dual bound from the actual reduced costs). Relative objective
+  errors run 9.2e-12 to 2.2e-5.
+- Fastest of the three on 5 instances: fit2p (0.11s vs HiGHS 1.24s and
+  Clarabel 0.29s -- dense-column splitting plus staged-precision endgame),
+  osa_30, qap12 (0.40s vs HiGHS 104s), qap15 (1.2s; HiGHS times out), and
+  truss (23x faster than HiGHS). ken_18 solves in 100s where Clarabel
+  reports DualInfeasible.
 - Honesty note: on greenbea, Clarabel certifies a point with a 1.3e-3
   objective error; linprogx's Lagrangian certificate provably cannot
-  certify a false optimum and reports the instance unsolved instead.
-  cre_a and cre_b reach excellent objectives (about 4e-7 and 4e-7
-  relative in earlier rounds) but their stall points carry slightly
-  negative reduced costs on unbounded variables, so no sound certificate
-  exists and they are reported as iteration_limit.
+  certify a false optimum and reports the instance unsolved. cre_a and
+  cre_b reach roughly 4e-6-relative objectives but their stall points
+  admit no sound dual certificate and are reported as iteration_limit.
 - The engine: presolve, cost-based routing between a Mehrotra IPM and a
   restarted adaptive PDHG, approximate-minimum-degree ordering,
-  dense-column splitting via Sherman-Morrison-Woodbury, iterative
-  refinement on the Newton solves, and certificate-gated acceptance.
+  dense-column splitting via Sherman-Morrison-Woodbury, staged-precision
+  regularization with doubled iterative refinement, dual polish, and
+  certificate-gated acceptance.
 
 Mature solvers still win on breadth -- that is the honest headline for a
 hand-built solver against HiGHS. The portfolio is competitive on the

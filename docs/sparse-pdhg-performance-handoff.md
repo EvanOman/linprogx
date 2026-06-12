@@ -5,6 +5,21 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 5: Staged Precision (final round of this push)
+
+Once mu < 1e-7 the regularization floor drops 1e-10 -> 1e-12 with a
+second refinement pass covering the conditioning: fit2p converges to the
+strict KKT test in 21 iterations (0.55s -> 0.11s, faster than BOTH HiGHS
+and Clarabel), 80bau3b reaches 9.2e-12 relative. The sound dual polish
+(weighted-least-squares y from the final factor on the uncertified exit
+path) is in place but does not recover cre_a/cre_b: their stalls are
+structural. FINAL official scoreboard of this push: 20/24 all
+certificate-backed, fastest-of-three on 5, vs HiGHS/Clarabel 23/24.
+Remaining open research items: cre_a/cre_b/greenbea IPM endgame (needs
+genuinely deeper dual convergence -- candidates: quad-precision residual
+accumulation, neighborhood-following with separate step lengths done
+right), and osa_60 (certified first-order finish beyond 180s).
+
 ## June 12 Update 4: Lagrangian-Certified Acceptance
 
 The relaxed-acceptance gap is now a true Lagrangian bound built from the
