@@ -5,6 +5,42 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 16: Dense-Tail Factorization — Designed and Sized
+
+Measured flop concentration in the factor (numeric Cholesky of the
+AMD-permuted normal equations, pattern thresholded):
+- cre_b: the trailing **10% of columns hold 57% of factor flops at 99%
+  density** (tail-20%: 97% of flops at 47% density).
+- pilot87: tail-30% holds 46% at 100% density; tail-50%: 95% at 69%.
+- maros_r7: flatter — tail-20% holds 14% at 100%; tail-30%: 29% at 79%.
+
+With the blocked dense kernel's measured 4.2 Gflop/s vs the sparse
+scalar up-looking path's 0.93 (4.5x), the expected wins are ~2x cre_b,
+~1.5x pilot87, ~1.2x maros_r7. Design (classic dense-tail, no public
+solver source consulted):
+
+1. **Tail selection (symbolic)**: from the column counts, pick the
+   largest tail size t whose predicted block density
+   sum(colnnz[s:]) / (t(t+1)/2) >= 0.25 (dense processing at 4.5x
+   breaks even at ~22% density), capped at t <= 2048 for memory
+   (t^2 doubles).
+2. **Numeric**: up-looking unchanged for rows < s. For tail rows,
+   compute only the prefix part L[i, :s] sparsely (ereach pattern,
+   skip cols >= s). Then T = G[s:, s:] + delta*I minus Lp Lp^T
+   accumulated by column: transpose the tail rows' prefix parts to
+   CSC, rank-1 scatter per prefix column (same flops as today, scalar)
+   — then blocked dense Cholesky of T (4x4 register-tiled GEMM update,
+   NB=96, as benchmarked in Update 15).
+3. **Solves**: forward/backward split at s — sparse prefix as today,
+   dense triangular solves on the tail (t^2, negligible).
+4. chol_matvec (refinement) and the SMW dense-column path are
+   unaffected (they sit above chol_solve).
+
+Validation plan: factor correctness vs the existing path on small
+random SPD systems (bitwise is NOT expected — different summation
+order — so compare residuals); IPM end-to-end on the fixture + suite
+quality sweep; per-instance refactor timers before/after.
+
 ## June 12 Update 15: Stall-Gated Early Acceptance — Suite-Wide IPM Speedups
 
 Component timers (debug-only, behind the debug kwarg) settled the
