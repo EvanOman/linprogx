@@ -5,6 +5,23 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 2: Gondzio Correctors — Tried and Reverted
+
+Multiple centrality corrections (enlarged-step trial products clamped into
+[0.1, 10] x sigma mu, corrector solve reusing the factorization, accept on
+step improvement) were implemented and benchmarked. Per-instance iteration
+counts improved where trajectories were already healthy (pilot87 164->125,
+cre_d 78->53, maros_r7 18->13, CYCLE 28->22) but the suite NET was
+negative: cre_b tipped from a 152s solve into timeout (corrector overhead
+without iteration gains there), and several endgames lost 2-4 digits of
+final residual quality (osa_30 1e-4 -> 6e-3) because corrections perturb
+the delicate late trajectory that the relaxed acceptance then snapshots.
+Gating corrections by mu and tightening acceptance made things worse, not
+better. REVERTED in full. Lesson: with the current single-step-length
+formulation, the correctors' benefit is not separable from their endgame
+noise; revisit only together with separate primal/dual step scaling and a
+fully gap-certified acceptance path.
+
 ## June 12 Update: Approximate Degrees, Refinement, Calibrated Caps
 
 - Approximate-degree ordering (element residuals computed once per

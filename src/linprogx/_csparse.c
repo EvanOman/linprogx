@@ -2514,7 +2514,6 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     double *dx = NULL, *dy = NULL, *dzl = NULL, *dzu = NULL;
     double *rhs_x = NULL, *tmp_x = NULL, *rhs_m = NULL, *aty = NULL, *ax = NULL;
     double *res_m = NULL, *corr_m = NULL;
-    double *zero_m = NULL, *zero_n = NULL;
     double *x_best = NULL, *y_best = NULL;
     unsigned char *bound_kind = NULL;
 
@@ -2550,8 +2549,6 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     dzu = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     res_m = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     corr_m = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
-    zero_m = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
-    zero_n = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     x_best = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     y_best = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     rhs_x = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
@@ -2571,7 +2568,6 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         dx == NULL || dy == NULL || dzl == NULL || dzu == NULL ||
         rhs_x == NULL || tmp_x == NULL || rhs_m == NULL || aty == NULL ||
         ax == NULL || res_m == NULL || corr_m == NULL ||
-        zero_m == NULL || zero_n == NULL ||
         x_best == NULL || y_best == NULL || bound_kind == NULL) {
         PyErr_NoMemory();
         goto done;
@@ -3016,95 +3012,6 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 }
             }
         }
-
-        /* Multiple centrality corrections in the spirit of Gondzio: aim for
-         * an enlarged step, clamp the trial complementarity products into a
-         * symmetric neighborhood of the target mu, solve for a correction
-         * with the same factorization (affine buffers are dead and reused),
-         * and keep it only if the step lengths actually improve. */
-        {
-            double mu_target = sigma * mu;
-            if (mu_target < 1e-300) {
-                mu_target = 1e-300;
-            }
-            for (int correction = 0; correction < 2; correction++) {
-                double ap_t = ap + 0.3 > 1.0 ? 1.0 : ap + 0.3;
-                double ad_t = ad + 0.3 > 1.0 ? 1.0 : ad + 0.3;
-                for (Py_ssize_t j = 0; j < n; j++) {
-                    unsigned char kind = bound_kind[j];
-                    double target_l = 0.0;
-                    double target_u = 0.0;
-                    if (kind & 1) {
-                        double v = (sl[j] + ap_t * dx[j]) * (zl[j] + ad_t * dzl[j]);
-                        double clamped = v;
-                        if (clamped < 0.1 * mu_target) {
-                            clamped = 0.1 * mu_target;
-                        } else if (clamped > 10.0 * mu_target) {
-                            clamped = 10.0 * mu_target;
-                        }
-                        target_l = clamped - v;
-                    }
-                    if (kind & 2) {
-                        double v = (su[j] - ap_t * dx[j]) * (zu[j] + ad_t * dzu[j]);
-                        double clamped = v;
-                        if (clamped < 0.1 * mu_target) {
-                            clamped = 0.1 * mu_target;
-                        } else if (clamped > 10.0 * mu_target) {
-                            clamped = 10.0 * mu_target;
-                        }
-                        target_u = clamped - v;
-                    }
-                    rcl[j] = target_l;
-                    rcu[j] = target_u;
-                }
-                ipm_newton_solve(&nw, zero_m, zero_n, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
-                double ap2 = 1.0;
-                double ad2 = 1.0;
-                for (Py_ssize_t j = 0; j < n; j++) {
-                    unsigned char kind = bound_kind[j];
-                    double cand_dx = dx[j] + dx_a[j];
-                    double cand_dzl = dzl[j] + dzl_a[j];
-                    double cand_dzu = dzu[j] + dzu_a[j];
-                    if ((kind & 1) && cand_dx < 0.0) {
-                        double step = -sl[j] / cand_dx;
-                        if (step < ap2) {
-                            ap2 = step;
-                        }
-                    }
-                    if ((kind & 2) && cand_dx > 0.0) {
-                        double step = su[j] / cand_dx;
-                        if (step < ap2) {
-                            ap2 = step;
-                        }
-                    }
-                    if ((kind & 1) && cand_dzl < 0.0) {
-                        double step = -zl[j] / cand_dzl;
-                        if (step < ad2) {
-                            ad2 = step;
-                        }
-                    }
-                    if ((kind & 2) && cand_dzu < 0.0) {
-                        double step = -zu[j] / cand_dzu;
-                        if (step < ad2) {
-                            ad2 = step;
-                        }
-                    }
-                }
-                if (ap2 + ad2 < ap + ad + 0.03 || ap2 < 0.98 * ap || ad2 < 0.98 * ad) {
-                    break;
-                }
-                for (Py_ssize_t j = 0; j < n; j++) {
-                    dx[j] += dx_a[j];
-                    dzl[j] += dzl_a[j];
-                    dzu[j] += dzu_a[j];
-                }
-                for (Py_ssize_t i = 0; i < m; i++) {
-                    dy[i] += dy_a[i];
-                }
-                ap = ap2;
-                ad = ad2;
-            }
-        }
         ap *= 0.995;
         ad *= 0.995;
         for (Py_ssize_t j = 0; j < n; j++) {
@@ -3250,8 +3157,6 @@ done:
     free(ax);
     free(res_m);
     free(corr_m);
-    free(zero_m);
-    free(zero_n);
     free(x_best);
     free(y_best);
     free(bound_kind);
