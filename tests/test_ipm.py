@@ -459,3 +459,27 @@ def test_normal_equations_dense_tail_matches_dense_reference(
     G = (A @ scipy.sparse.diags(d) @ A.T).toarray() + delta * np.eye(m)
     residual = np.max(np.abs(G @ out - rhs))
     assert residual <= 1e-10
+
+
+def test_ipm_threads_kwarg_bit_identical() -> None:
+    # the threaded tail GEMM partitions rows in 4-aligned chunks so each
+    # output element is computed wholly by one thread in the same order
+    rng = np.random.default_rng(21)
+    m, n = 220, 440
+    A = (
+        scipy.sparse.random(
+            m, n, density=0.2, random_state=rng, data_rvs=lambda s: rng.uniform(-2, 2, s)
+        ).tocsr()
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    )
+    matrix = from_scipy_sparse(scipy.sparse.csr_matrix(A))
+    b = (A @ rng.uniform(0.5, 1.5, n)).tolist()
+    c = rng.uniform(0.5, 2.0, n).tolist()
+    lo = [0.0] * n
+    hi = [float("inf")] * n
+    r1 = matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=60, tol=1e-9, threads=1)
+    r4 = matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=60, tol=1e-9, threads=4)
+    assert r1["x"] == r4["x"]
+    assert r1["y"] == r4["y"]

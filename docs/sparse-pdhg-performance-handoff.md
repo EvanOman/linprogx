@@ -5,6 +5,23 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 18: Threaded Tail GEMM — pilot87 1.8x, cre_b 1.8x More
+
+The dense-tail trailing update now runs on the existing thread pool
+(rows partitioned in 4-aligned chunks, so every output element is
+computed wholly by one thread in the same loop order — bit-identical
+at any thread count, verified by test and by byte-identical suite
+objectives). solve_eq_box_ipm gains a threads kwarg (default 0 = auto
+= min(4, cores)); the auto default is safe precisely because the
+kernel is deterministic.
+
+Official suite v3 (timings only — results byte-identical to v2):
+cre_b 27.6 -> **15.3 s** (now beats Clarabel's 18.7), cre_d 38.1 ->
+24.0 s, pilot87 23.8 -> **13.2 s**, maros_r7 9.9 -> 7.4 s, ken_18
+23.7 -> 20.6 s, osa_60 -> 14.5 s. Worst suite row is now pds_20 at
+34.6 s (PDHG-iteration-bound). Coverage 23/24, 8 fastest-of-three,
+every optimum certificate-backed. 135 tests.
+
 ## June 12 Update 17: Dense-Tail Factorization LANDED — maros 1.4x, pilot87 1.6x, cre_b 1.5x
 
 Implemented per Update 16, with two lessons the measurements forced:

@@ -2726,10 +2726,48 @@ static int dense_chol_factor(double *M, Py_ssize_t k);
  * same 1e-12 floor as the sparse path. */
 #define TAIL_NB 96
 
+typedef struct {
+    double *C;
+    const double *A;
+    const double *B;
+    Py_ssize_t mC, nC, kk, ld;
+} TailGemmJob;
+
+static void tail_gemm_rows(double *C, const double *A, const double *B,
+                           Py_ssize_t mC, Py_ssize_t nC, Py_ssize_t kk,
+                           Py_ssize_t ld);
+
+static void tail_gemm_job(void *vctx, int tid, int nthreads) {
+    TailGemmJob *ctx = (TailGemmJob *)vctx;
+    /* partition rows in 4-aligned chunks so every C element is computed
+     * wholly by one thread in the same loop order — bit-identical at
+     * any thread count */
+    Py_ssize_t blocks = (ctx->mC + 3) / 4;
+    Py_ssize_t b0 = blocks * tid / nthreads;
+    Py_ssize_t b1 = blocks * (tid + 1) / nthreads;
+    Py_ssize_t r0 = b0 * 4;
+    Py_ssize_t r1 = b1 * 4;
+    if (r1 > ctx->mC) {
+        r1 = ctx->mC;
+    }
+    if (r0 >= r1) {
+        return;
+    }
+    tail_gemm_rows(ctx->C + r0 * ctx->ld, ctx->A + r0 * ctx->ld, ctx->B,
+                   r1 - r0, ctx->nC, ctx->kk, ctx->ld);
+}
+
+static void tail_gemm_update(double *C, const double *A, const double *B,
+                             Py_ssize_t mC, Py_ssize_t nC, Py_ssize_t kk,
+                             Py_ssize_t ld) {
+    TailGemmJob job = {C, A, B, mC, nC, kk, ld};
+    pool_run(tail_gemm_job, &job);
+}
+
 #if defined(__x86_64__) || defined(_M_X64)
 __attribute__((target("avx2,fma")))
 #endif
-static void tail_gemm_update(double *C, const double *A, const double *B,
+static void tail_gemm_rows(double *C, const double *A, const double *B,
                              Py_ssize_t mC, Py_ssize_t nC, Py_ssize_t kk,
                              Py_ssize_t ld) {
     Py_ssize_t i = 0;
@@ -3364,10 +3402,12 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     Py_ssize_t max_iter = 60;
     double tol = 1e-9;
     int debug = 0;
-    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "debug", NULL};
+    Py_ssize_t threads = 0; /* 0 = auto; the threaded kernels are
+                             * bit-identical at any thread count */
+    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "debug", "threads", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "OOOO|ndp", kwlist,
-            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter, &tol, &debug)) {
+            args, kwds, "OOOO|ndpn", kwlist,
+            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter, &tol, &debug, &threads)) {
         return NULL;
     }
     if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
@@ -3578,6 +3618,18 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
      * check, so a generous budget no longer risks burning the solve
      * budget on hopeless instances. */
     int64_t md_budget = 10000000000LL;
+    {
+        int want = (int)threads;
+        if (want == 0) {
+            long cores = sysconf(_SC_NPROCESSORS_ONLN);
+            want = cores >= 4 ? 4 : (cores > 1 ? (int)cores : 1);
+        }
+        if (want > 1) {
+            g_kernel_threads = pool_ensure(want);
+        } else {
+            g_kernel_threads = 1;
+        }
+    }
     chol = chol_setup(self, 7e8, md_budget, &factor_too_dense);
     if (chol == NULL) {
         if (factor_too_dense) {
@@ -4214,6 +4266,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     }
 
 done:
+    g_kernel_threads = 1;
     chol_free(chol);
     free(c);
     free(b);
