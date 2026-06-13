@@ -18,30 +18,30 @@ pilot87, greenbea, maros_r7), and none were used while developing the solver.
 
 | Instance | linprogx | HiGHS | Clarabel | rel delta | residual |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| lp_80bau3b | 0.23s (ipm) | 0.21s | 0.37s | 9.1e-08 | 8e-10 |
-| lp_cre_a | 0.17s (ipm) | 0.10s | 0.15s | 1.9e-07 | 3e-05 |
-| lp_cre_b | 41.58s (ipm) | 2.11s | 18.66s | 2.7e-06 | 4e-06 |
-| lp_cre_d | 27.61s (ipm) | 1.17s | 16.70s | 1.9e-08 | 6e-08 |
-| lp_d2q06c | 0.97s (ipm) | 0.95s | 2.36s | 2.7e-09 | 3e-10 |
-| lp_degen3 | 0.35s (ipm) | 0.21s | 0.47s | 4.3e-07 | 9e-08 |
-| lp_fit2p | 0.15s (ipm) | 1.24s | 0.29s | 2.1e-07 | 2e-08 |
+| lp_80bau3b | 0.25s (ipm) | 0.21s | 0.37s | 2.9e-08 | 1e-09 |
+| lp_cre_a | 0.14s (ipm) | 0.10s | 0.15s | 2.4e-06 | 4e-05 |
+| lp_cre_b | 27.63s (ipm) | 2.11s | 18.66s | 4.6e-06 | 2e-07 |
+| lp_cre_d | 38.13s (ipm) | 1.17s | 16.70s | 7.3e-06 | 7e-09 |
+| lp_d2q06c | 1.13s (ipm) | 0.95s | 2.36s | 2.7e-09 | 4e-10 |
+| lp_degen3 | 0.34s (ipm) | 0.21s | 0.47s | 4.3e-07 | 9e-08 |
+| lp_fit2p | 0.11s (ipm) | 1.24s | 0.29s | 2.1e-07 | 2e-08 |
 | lp_greenbea | iteration_limit | 0.28s | 2.44s | n/a | n/a |
 | lp_ken_07 | 0.03s (ipm) | 0.04s | 0.06s | 2.6e-09 | 2e-04 |
-| lp_ken_11 | 0.32s (ipm) | 0.33s | 0.74s | 7.5e-08 | 1e-03 |
-| lp_ken_13 | 1.08s (ipm) | 1.01s | 2.13s | 3.0e-08 | 6e-06 |
-| lp_ken_18 | 25.76s (ipm) | 10.42s | DualInfeasible | 1.5e-08 | 5e-10 |
-| lp_maros_r7 | 13.89s (ipm) | 0.95s | 2.31s | 3.2e-10 | 3e-11 |
-| lp_osa_14 | 1.69s (ipm) | 1.14s | 2.90s | 1.7e-07 | 1e-04 |
-| lp_osa_30 | 3.77s (ipm) | 4.27s | 9.64s | 6.8e-08 | 1e-04 |
-| lp_osa_60 | 15.64s (ipm) | 24.06s | 27.53s | 5.5e-06 | 8e-03 |
-| lp_pds_10 | 4.94s (pdhg) | 1.59s | 31.18s | 4.0e-09 | 1e-05 |
-| lp_pds_20 | 36.93s (pdhg) | 12.46s | 115.86s | 2.0e-08 | 2e-05 |
-| lp_pilot87 | 37.70s (ipm) | 3.82s | 9.77s | 4.8e-07 | 1e-10 |
-| lp_qap12 | 0.52s (pdhg) | 104.56s | 4.00s | 9.4e-06 | 2e-05 |
-| lp_qap15 | 1.22s (pdhg) | timeout | 21.19s | 5.9e-06 | 7e-06 |
-| lp_stocfor3 | 1.24s (ipm) | 0.70s | 1.12s | 4.7e-08 | 5e-11 |
-| lp_truss | 0.13s (ipm) | 2.98s | 0.18s | 3.8e-12 | 3e-12 |
-| lp_woodw | 0.26s (ipm) | 0.11s | 0.25s | 1.2e-05 | 6e-09 |
+| lp_ken_11 | 0.36s (ipm) | 0.33s | 0.74s | 7.6e-08 | 9e-04 |
+| lp_ken_13 | 1.16s (ipm) | 1.01s | 2.13s | 3.0e-08 | 1e-05 |
+| lp_ken_18 | 23.67s (ipm) | 10.42s | DualInfeasible | 1.5e-08 | 5e-10 |
+| lp_maros_r7 | 9.87s (ipm) | 0.95s | 2.31s | 3.2e-10 | 3e-11 |
+| lp_osa_14 | 1.67s (ipm) | 1.14s | 2.90s | 1.7e-07 | 1e-04 |
+| lp_osa_30 | 3.78s (ipm) | 4.27s | 9.64s | 6.8e-08 | 1e-04 |
+| lp_osa_60 | 16.18s (ipm) | 24.06s | 27.53s | 5.5e-06 | 8e-03 |
+| lp_pds_10 | 4.78s (pdhg) | 1.59s | 31.18s | 4.0e-09 | 1e-05 |
+| lp_pds_20 | 41.51s (pdhg) | 12.46s | 115.86s | 2.0e-08 | 2e-05 |
+| lp_pilot87 | 23.80s (ipm) | 3.82s | 9.77s | 4.8e-07 | 9e-11 |
+| lp_qap12 | 0.51s (pdhg) | 104.56s | 4.00s | 9.4e-06 | 2e-05 |
+| lp_qap15 | 1.15s (pdhg) | timeout | 21.19s | 5.9e-06 | 7e-06 |
+| lp_stocfor3 | 1.13s (ipm) | 0.70s | 1.12s | 4.7e-08 | 6e-11 |
+| lp_truss | 0.15s (ipm) | 2.98s | 0.18s | 3.8e-12 | 3e-12 |
+| lp_woodw | 0.21s (ipm) | 0.11s | 0.25s | 1.2e-05 | 6e-09 |
 
 ## Summary
 

@@ -2268,6 +2268,14 @@ typedef struct {
     double *Wmat;                 /* m x k, column-major: M_s^-1 U */
     double *cap;                  /* k x k dense Cholesky factor of I + U'W */
     double *cap_rhs;              /* k scratch */
+    /* Dense tail: the trailing tail_len columns of L are nearly dense
+     * (top of the elimination tree), so their Schur complement is
+     * accumulated into a row-major tail_len x tail_len buffer and
+     * factored with a blocked dense kernel; results are copied back
+     * into the same CSC storage, so the solves are untouched. */
+    int32_t tail_start;           /* first tail column; == m disables */
+    int32_t tail_len;
+    double *Tdense;               /* tail_len x tail_len, row-major */
 } CholContext;
 
 static void chol_free(CholContext *ctx) {
@@ -2297,6 +2305,7 @@ static void chol_free(CholContext *ctx) {
     free(ctx->Wmat);
     free(ctx->cap);
     free(ctx->cap_rhs);
+    free(ctx->Tdense);
     free(ctx);
 }
 
@@ -2647,6 +2656,47 @@ static CholContext *chol_setup(
     }
     memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
 
+    /* --- dense-tail selection: the largest trailing block (capped for
+     * memory) where the dense kernel's flop count t^3/3 stays within 3x
+     * the sparse path's sum of squared column counts — flop inflation
+     * is what matters, not entry density (the blocked kernel's measured
+     * 4.5x speed advantage breaks even at ~4.5x inflation; 3x leaves
+     * margin). Tail columns only reference tail rows, so the block
+     * stands alone. Small tails are not worth the bookkeeping. --- */
+    ctx->tail_start = m;
+    ctx->tail_len = 0;
+    {
+        int32_t cap_t = 2048;
+        int32_t s_min = m > cap_t ? m - cap_t : 0;
+        double suffix_sq = 0.0;
+        for (int32_t j = m - 1; j >= s_min; j--) {
+            /* accumulate from the end so each candidate st sees the
+             * full suffix sum when reached in the descending pass */
+            double cj = (double)(ctx->Lp[j + 1] - ctx->Lp[j]);
+            suffix_sq += cj * cj;
+            int32_t st = j;
+            Py_ssize_t t = m - st;
+            if (t < 64) {
+                continue;
+            }
+            double dense_flops = (double)t * (double)t * (double)t / 3.0;
+            if (dense_flops <= 3.0 * suffix_sq) {
+                ctx->tail_start = st;
+                ctx->tail_len = (int32_t)t;
+                /* keep extending while the bound still holds */
+            }
+        }
+        if (ctx->tail_len > 0) {
+            ctx->Tdense = calloc((size_t)ctx->tail_len * (size_t)ctx->tail_len,
+                                 sizeof(double));
+            if (ctx->Tdense == NULL) {
+                /* fall back to the fully sparse path */
+                ctx->tail_start = m;
+                ctx->tail_len = 0;
+            }
+        }
+    }
+
     free(head);
     free(mark);
     free(colbuf);
@@ -2670,6 +2720,100 @@ fail:
 
 static void chol_solve_sparse(CholContext *ctx, const double *rhs, double *out);
 static int dense_chol_factor(double *M, Py_ssize_t k);
+
+/* Blocked dense Cholesky (row-major, lower), NB-wide panels with a
+ * register-tiled 4x4 GEMM trailing update. Pivots are boosted to the
+ * same 1e-12 floor as the sparse path. */
+#define TAIL_NB 96
+
+#if defined(__x86_64__) || defined(_M_X64)
+__attribute__((target("avx2,fma")))
+#endif
+static void tail_gemm_update(double *C, const double *A, const double *B,
+                             Py_ssize_t mC, Py_ssize_t nC, Py_ssize_t kk,
+                             Py_ssize_t ld) {
+    Py_ssize_t i = 0;
+    for (; i + 4 <= mC; i += 4) {
+        Py_ssize_t j = 0;
+        for (; j + 4 <= nC; j += 4) {
+            double acc[16] = {0};
+            for (Py_ssize_t p = 0; p < kk; p++) {
+                double a0 = A[(i + 0) * ld + p], a1 = A[(i + 1) * ld + p];
+                double a2 = A[(i + 2) * ld + p], a3 = A[(i + 3) * ld + p];
+                double b0 = B[(j + 0) * ld + p], b1 = B[(j + 1) * ld + p];
+                double b2 = B[(j + 2) * ld + p], b3 = B[(j + 3) * ld + p];
+                acc[0] += a0 * b0; acc[1] += a0 * b1; acc[2] += a0 * b2; acc[3] += a0 * b3;
+                acc[4] += a1 * b0; acc[5] += a1 * b1; acc[6] += a1 * b2; acc[7] += a1 * b3;
+                acc[8] += a2 * b0; acc[9] += a2 * b1; acc[10] += a2 * b2; acc[11] += a2 * b3;
+                acc[12] += a3 * b0; acc[13] += a3 * b1; acc[14] += a3 * b2; acc[15] += a3 * b3;
+            }
+            for (int ii = 0; ii < 4; ii++) {
+                for (int jj = 0; jj < 4; jj++) {
+                    C[(i + ii) * ld + (j + jj)] -= acc[ii * 4 + jj];
+                }
+            }
+        }
+        for (; j < nC; j++) {
+            for (int ii = 0; ii < 4; ii++) {
+                double sum = 0.0;
+                for (Py_ssize_t p = 0; p < kk; p++) {
+                    sum += A[(i + ii) * ld + p] * B[j * ld + p];
+                }
+                C[(i + ii) * ld + j] -= sum;
+            }
+        }
+    }
+    for (; i < mC; i++) {
+        for (Py_ssize_t j = 0; j < nC; j++) {
+            double sum = 0.0;
+            for (Py_ssize_t p = 0; p < kk; p++) {
+                sum += A[i * ld + p] * B[j * ld + p];
+            }
+            C[i * ld + j] -= sum;
+        }
+    }
+}
+
+#if defined(__x86_64__) || defined(_M_X64)
+__attribute__((target("avx2,fma")))
+#endif
+static void tail_dense_chol(double *M, Py_ssize_t t) {
+    for (Py_ssize_t c0 = 0; c0 < t; c0 += TAIL_NB) {
+        Py_ssize_t nb = t - c0 < TAIL_NB ? t - c0 : TAIL_NB;
+        for (Py_ssize_t i = c0; i < c0 + nb; i++) {
+            for (Py_ssize_t j = c0; j < i; j++) {
+                double sum = M[i * t + j];
+                for (Py_ssize_t p = c0; p < j; p++) {
+                    sum -= M[i * t + p] * M[j * t + p];
+                }
+                M[i * t + j] = sum / M[j * t + j];
+            }
+            double diag = M[i * t + i];
+            for (Py_ssize_t p = c0; p < i; p++) {
+                diag -= M[i * t + p] * M[i * t + p];
+            }
+            if (diag < 1e-12) {
+                diag = 1e-12;
+            }
+            M[i * t + i] = sqrt(diag);
+        }
+        if (c0 + nb >= t) {
+            break;
+        }
+        for (Py_ssize_t i = c0 + nb; i < t; i++) {
+            for (Py_ssize_t j = c0; j < c0 + nb; j++) {
+                double sum = M[i * t + j];
+                for (Py_ssize_t p = c0; p < j; p++) {
+                    sum -= M[i * t + p] * M[j * t + p];
+                }
+                M[i * t + j] = sum / M[j * t + j];
+            }
+        }
+        Py_ssize_t rem = t - (c0 + nb);
+        tail_gemm_update(&M[(c0 + nb) * t + (c0 + nb)], &M[(c0 + nb) * t + c0],
+                         &M[(c0 + nb) * t + c0], rem, rem, nb, t);
+    }
+}
 
 /* Numeric refactorization with diagonal D and regularization delta, using
  * the provided CSC value array (so callers can factor a rescaled operator
@@ -2699,11 +2843,18 @@ static void chol_refactor(
         ctx->Cx[ctx->diag_offset[k]] += delta;
     }
 
-    /* up-looking Cholesky over the fixed pattern */
+    /* up-looking Cholesky over the fixed pattern; rows in the dense
+     * tail keep their sparse prefix processing but accumulate their
+     * tail-block entries into the row-major Tdense buffer, which is
+     * then factored with the blocked dense kernel and copied back into
+     * the same CSC storage (the solves never know the difference). */
     memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
     for (int32_t k = 0; k < m; k++) {
         ctx->cursor[k] = 1;
     }
+    int32_t tstart = ctx->tail_start;
+    double *T = ctx->Tdense;
+    Py_ssize_t tlen = ctx->tail_len;
     double *x = ctx->work; /* maintained all-zero between rows */
     for (int32_t k = 0; k < m; k++) {
         for (Py_ssize_t p = ctx->Cp[k]; p < ctx->Cp[k + 1]; p++) {
@@ -2715,22 +2866,57 @@ static void chol_refactor(
         double d = x[k];
         x[k] = 0.0;
         int32_t top = chol_ereach(ctx, k);
-        for (int32_t s = top; s < m; s++) {
-            int32_t j = ctx->epattern[s];
-            double lkj = x[j] / ctx->Lx[ctx->Lp[j]];
-            x[j] = 0.0;
-            Py_ssize_t end = ctx->Lp[j] + ctx->cursor[j];
-            for (Py_ssize_t p = ctx->Lp[j] + 1; p < end; p++) {
-                x[ctx->Li[p]] -= ctx->Lx[p] * lkj;
+        if (k < tstart) {
+            for (int32_t s = top; s < m; s++) {
+                int32_t j = ctx->epattern[s];
+                double lkj = x[j] / ctx->Lx[ctx->Lp[j]];
+                x[j] = 0.0;
+                Py_ssize_t end = ctx->Lp[j] + ctx->cursor[j];
+                for (Py_ssize_t p = ctx->Lp[j] + 1; p < end; p++) {
+                    x[ctx->Li[p]] -= ctx->Lx[p] * lkj;
+                }
+                d -= lkj * lkj;
+                ctx->Lx[end] = lkj;
+                ctx->cursor[j]++;
             }
-            d -= lkj * lkj;
-            ctx->Lx[end] = lkj;
-            ctx->cursor[j]++;
+            if (d < 1e-12) {
+                d = 1e-12;
+            }
+            ctx->Lx[ctx->Lp[k]] = sqrt(d);
+        } else {
+            /* tail row: process only prefix columns; the leftover x
+             * values at tail positions are exactly the Schur-corrected
+             * tail entries of this row */
+            for (int32_t s = top; s < m; s++) {
+                int32_t j = ctx->epattern[s];
+                if (j >= tstart) {
+                    continue;
+                }
+                double lkj = x[j] / ctx->Lx[ctx->Lp[j]];
+                x[j] = 0.0;
+                Py_ssize_t end = ctx->Lp[j] + ctx->cursor[j];
+                for (Py_ssize_t p = ctx->Lp[j] + 1; p < end; p++) {
+                    x[ctx->Li[p]] -= ctx->Lx[p] * lkj;
+                }
+                d -= lkj * lkj;
+                ctx->Lx[end] = lkj;
+                ctx->cursor[j]++;
+            }
+            double *trow = T + (Py_ssize_t)(k - tstart) * tlen;
+            for (int32_t i = tstart; i < k; i++) {
+                trow[i - tstart] = x[i];
+                x[i] = 0.0;
+            }
+            trow[k - tstart] = d;
         }
-        if (d < 1e-12) {
-            d = 1e-12;
+    }
+    if (tlen > 0) {
+        tail_dense_chol(T, tlen);
+        for (int32_t j = tstart; j < m; j++) {
+            for (Py_ssize_t p = ctx->Lp[j]; p < ctx->Lp[j + 1]; p++) {
+                ctx->Lx[p] = T[(Py_ssize_t)(ctx->Li[p] - tstart) * tlen + (j - tstart)];
+            }
         }
-        ctx->Lx[ctx->Lp[k]] = sqrt(d);
     }
 
     /* Dense-column low-rank data: U = A_dense sqrt(D_dense),

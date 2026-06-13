@@ -3,9 +3,11 @@ from __future__ import annotations
 import importlib
 from typing import Literal, cast
 
+import numpy as np
 import pytest
+import scipy.sparse
 
-from linprogx.sparse import SparseLPProblem, SparseSolver, csr_matrix
+from linprogx.sparse import SparseLPProblem, SparseSolver, csr_matrix, from_scipy_sparse
 from linprogx.types import Status
 
 _csparse = importlib.import_module("linprogx._csparse")
@@ -432,3 +434,28 @@ def test_normal_equations_solve_with_dense_column() -> None:
             dense[i][indices[p]] = data[p]
     reference = _dense_solve(_normal_matrix(m, m + 1, indptr, indices, data, d, delta), rhs)
     assert x == pytest.approx(reference, rel=1e-9, abs=1e-9)
+
+
+@pytest.mark.parametrize(("m", "n", "density"), [(200, 400, 0.25), (300, 600, 0.15)])
+def test_normal_equations_dense_tail_matches_dense_reference(
+    m: int, n: int, density: float
+) -> None:
+    # systems large/dense enough that the dense-tail factorization path
+    # activates (tail >= 64 columns clearing the flop break-even)
+    rng = np.random.default_rng(9)
+    A = (
+        scipy.sparse.random(
+            m, n, density=density, random_state=rng, data_rvs=lambda s: rng.uniform(-2, 2, s)
+        ).tocsr()
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    )
+    matrix = from_scipy_sparse(scipy.sparse.csr_matrix(A))
+    d = rng.uniform(0.5, 2.0, n)
+    rhs = rng.uniform(-1, 1, m)
+    delta = 1e-8
+    out = np.array(matrix.normal_equations_solve(d.tolist(), rhs.tolist(), delta))
+    G = (A @ scipy.sparse.diags(d) @ A.T).toarray() + delta * np.eye(m)
+    residual = np.max(np.abs(G @ out - rhs))
+    assert residual <= 1e-10

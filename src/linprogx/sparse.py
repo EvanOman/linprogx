@@ -168,6 +168,38 @@ class SparseSolver:
                 max_iter=min(self.max_iterations, 200),
                 tol=min(self.eps, 1e-9),
             )
+            if (
+                result["status"] != "optimal"
+                and result["status"] != "factor_too_dense"
+                and reduction is not None
+            ):
+                # Degenerate endgames are trajectory-sensitive: the
+                # presolved and raw problems give two independent runs,
+                # and the certificate gate makes a second attempt sound.
+                # Retry on the raw problem before falling back to PDHG.
+                raw_result = problem.A_eq.solve_eq_box_ipm(
+                    c,
+                    b,
+                    lo,
+                    hi,
+                    max_iter=min(self.max_iterations, 200),
+                    tol=min(self.eps, 1e-9),
+                )
+                if raw_result["status"] == "optimal":
+                    x = [float(value) for value in raw_result["x"]]
+                    objective = float(raw_result["objective"])
+                    residual = float(raw_result["max_primal_residual"])
+                    message = (
+                        "native sparse IPM converged on the unpresolved retry; "
+                        f"max equality residual {residual:.3e}"
+                    )
+                    return Solution(
+                        Status.OPTIMAL,
+                        x=x,
+                        objective_value=objective,
+                        iterations=int(raw_result["iterations"]),
+                        message=message,
+                    ), "native-c-sparse-ipm"
             if result["status"] != "optimal" and (
                 algorithm == "auto" or result["status"] == "factor_too_dense"
             ):

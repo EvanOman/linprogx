@@ -5,6 +5,49 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 17: Dense-Tail Factorization LANDED — maros 1.4x, pilot87 1.6x, cre_b 1.5x
+
+Implemented per Update 16, with two lessons the measurements forced:
+
+1. **Entry density is the wrong break-even metric.** The first cut
+   selected the tail by pattern density >= 25% and made everything
+   SLOWER (pilot87 4x worse): dense processing costs t^3/3 regardless
+   of pattern while sparse costs sum(colnnz^2), so 25% entry density
+   means ~16x flop inflation. The selection is now flop-based:
+   largest tail with t^3/3 <= 3x the tail's sum of squared column
+   counts (the kernel's measured speed advantage with margin).
+2. **The kernel needs FMA, surgically.** Plain -O3 has no AVX2/FMA;
+   adding -march=native globally broke the PDHG bit-identity guarantee
+   (FMA contraction everywhere). The tail kernels alone carry
+   __attribute__((target("avx2,fma"))) — PDHG math stays bit-identical,
+   the tail runs at full speed.
+
+Integration is minimal by design: the dense tail writes its results
+back into the same CSC factor storage, so chol_solve / SMW / matvec /
+refinement are untouched. Tail rows keep their sparse prefix
+processing; the leftover up-looking accumulator values at tail
+positions are exactly the Schur-corrected tail entries.
+
+The factor's changed summation order shifted cre_d's degenerate
+endgame off its certified trajectory (presolved IPM fails, raw IPM
+certifies in 75 iterations). Rather than re-roll the dice, auto now
+**retries the IPM on the unpresolved problem when the presolved run
+fails certification** — two independent trajectory tickets, soundness
+unchanged (certificate-gated), and the fallback chain continues to
+PDHG as before. cre_d costs 38 s (failed presolved run + successful
+raw run) instead of being lost.
+
+Official suite (full re-run): maros_r7 13.9 -> 9.9 s, pilot87 37.7 ->
+23.8 s, cre_b 41.6 -> 27.6 s, ken_18 25.8 -> 23.7 s, cre_d 27.6 ->
+38.1 s (the robustness cost). Coverage 23/24 and 8 fastest-of-three
+held. Known pre-existing corner (documented, untouched): when every
+column exceeds the dense-column threshold the SMW path solves against
+M_s = delta*I and loses ~10 digits — the tail never activates there
+(diagonal-only pattern fails the flop test by construction).
+
+Tests: dense-tail residual checks vs dense reference at sizes that
+activate the path (134 total).
+
 ## June 12 Update 16: Dense-Tail Factorization — Designed and Sized
 
 Measured flop concentration in the factor (numeric Cholesky of the
