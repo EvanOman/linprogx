@@ -5,6 +5,24 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 12 Update 19: O(m^2) Pattern Sort Fixed — ken_18 Setup 10.8s -> 0.03s
+
+Phase-timing chol_setup (new SETUP_MARK prints under
+LINPROGX_CHOL_DEBUG) on ken_18 (m=105k) found the one-time setup cost
+dominated by the permuted-pattern build: the counting sort scanned all
+m buckets per column — O(m^2), 1.1e10 iterations, 10.8 s — exactly the
+case the code's own comment warned about ("redo with a sort-free
+approach if it ever shows up in profiles"). Replaced with per-column
+sorts (insertion for <= 64 entries, qsort above). Assembly phase:
+**10.79 s -> 0.03 s**; MD ordering (2.1 s) is now the only meaningful
+setup cost on ken-scale instances. Results are bit-identical (sorted
+pattern is sorted; ken_18's objective matches to 11 digits).
+
+ken_18's remaining time is per-iteration (m=105k triangular solves and
+assembly scatter at ~250-600 ms/iter depending on load); the suite
+table keeps the coherent v3 run and will refresh wholesale on the next
+full official run.
+
 ## June 12 Update 18: Threaded Tail GEMM — pilot87 1.8x, cre_b 1.8x More
 
 The dense-tail trailing update now runs on the existing thread pool

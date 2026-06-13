@@ -2309,6 +2309,12 @@ static void chol_free(CholContext *ctx) {
     free(ctx);
 }
 
+static int cmp_int32(const void *a, const void *b) {
+    int32_t x = *(const int32_t *)a;
+    int32_t y = *(const int32_t *)b;
+    return (x > y) - (x < y);
+}
+
 static Py_ssize_t chol_find_offset(const CholContext *ctx, int32_t row, int32_t col) {
     Py_ssize_t lo_idx = ctx->Cp[col];
     Py_ssize_t hi_idx = ctx->Cp[col + 1] - 1;
@@ -2354,8 +2360,24 @@ static int32_t chol_ereach(const CholContext *ctx, int32_t k) {
  * If factor_flops_cap > 0 and the estimated numeric factorization cost
  * (sum of squared column counts of L) exceeds it, setup aborts and sets
  * *too_dense so callers can route the problem elsewhere. */
+static double setup_clock(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + 1e-9 * (double)ts.tv_nsec;
+}
+
 static CholContext *chol_setup(
     CSRMatrixObject *A, double factor_flops_cap, int64_t md_ops_cap, int *too_dense) {
+    int debug_setup = getenv("LINPROGX_CHOL_DEBUG") != NULL;
+    double t_phase = debug_setup ? setup_clock() : 0.0;
+#define SETUP_MARK(label) \
+    do { \
+        if (debug_setup) { \
+            double now_ = setup_clock(); \
+            fprintf(stderr, "chol_setup %-12s %.2fs\n", label, now_ - t_phase); \
+            t_phase = now_; \
+        } \
+    } while (0)
     int32_t m = (int32_t)A->rows;
     CholContext *ctx = calloc(1, sizeof(CholContext));
     int32_t *head = NULL;
@@ -2479,8 +2501,10 @@ static CholContext *chol_setup(
         for (Py_ssize_t p = 0; p < Bp[m]; p++) {
             Bi_ss[p] = Bi[p];
         }
+        SETUP_MARK("pre-md");
         int status = min_degree_impl(m, Bp_ss, Bi_ss, ctx->perm, md_ops_cap,
                                      factor_flops_cap > 0.0 ? 4.0 * factor_flops_cap : 0.0);
+        SETUP_MARK("min-degree");
         free(Bi_ss);
         if (status == -2 && too_dense != NULL) {
             *too_dense = 1;
@@ -2511,24 +2535,32 @@ static CholContext *chol_setup(
     if (head == NULL) {
         goto fail;
     }
-    /* counting sort by row to keep each column sorted */
-    memset(count, 0, (size_t)m * sizeof(int32_t));
+    /* per-column sort of the permuted row indices: insertion sort for
+     * short columns, qsort above that. (The previous counting sort
+     * scanned all m buckets per column — O(m^2), 10+ seconds on
+     * 100k-row instances.) */
     for (int32_t newc = 0; newc < m; newc++) {
         int32_t oldc = ctx->perm[newc];
-        for (Py_ssize_t p = Bp[oldc]; p < Bp[oldc + 1]; p++) {
-            count[ctx->pinv[Bi[p]]]++;
-        }
         Py_ssize_t base = ctx->Cp[newc];
         Py_ssize_t at = base;
-        for (int32_t r = 0; r < m && at < ctx->Cp[newc + 1]; r++) {
-            while (count[r] > 0) {
-                ctx->Ci[at++] = r;
-                count[r]--;
+        for (Py_ssize_t p = Bp[oldc]; p < Bp[oldc + 1]; p++) {
+            ctx->Ci[at++] = ctx->pinv[Bi[p]];
+        }
+        Py_ssize_t nz = at - base;
+        if (nz <= 64) {
+            for (Py_ssize_t i = base + 1; i < at; i++) {
+                int32_t v = ctx->Ci[i];
+                Py_ssize_t q = i;
+                while (q > base && ctx->Ci[q - 1] > v) {
+                    ctx->Ci[q] = ctx->Ci[q - 1];
+                    q--;
+                }
+                ctx->Ci[q] = v;
             }
+        } else {
+            qsort(ctx->Ci + base, (size_t)nz, sizeof(int32_t), cmp_int32);
         }
     }
-    /* the loop above is O(m) per column; redo with a sort-free approach
-     * if it ever shows up in profiles. */
 
     /* --- assembly map --- */
     Py_ssize_t n_pairs = 0;
@@ -2575,6 +2607,7 @@ static CholContext *chol_setup(
         }
         ctx->diag_offset[k] = offset;
     }
+    SETUP_MARK("assembly-map");
 
     /* --- elimination tree (Liu's algorithm with path compression) --- */
     ctx->parent = calloc((size_t)m, sizeof(int32_t));
@@ -2619,6 +2652,7 @@ static CholContext *chol_setup(
             count[ctx->epattern[s]]++;
         }
     }
+    SETUP_MARK("colcounts");
     if (factor_flops_cap > 0.0) {
         double flops = 0.0;
         for (int32_t k = 0; k < m; k++) {
@@ -2655,6 +2689,7 @@ static CholContext *chol_setup(
         }
     }
     memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
+    SETUP_MARK("li-fill");
 
     /* --- dense-tail selection: the largest trailing block (capped for
      * memory) where the dense kernel's flop count t^3/3 stays within 3x
