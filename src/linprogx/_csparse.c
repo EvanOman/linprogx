@@ -6,6 +6,22 @@
 #include <stdatomic.h>
 #include <time.h>
 #include <unistd.h>
+
+#ifdef LINPROGX_HAVE_BLAS
+/* Fortran LAPACK (LP64, column-major), declared directly so no
+ * lapacke header is required. OpenBLAS exports these symbols. */
+extern void dpotrf_(const char *uplo, const int *n, double *a, const int *lda, int *info);
+extern void openblas_set_num_threads(int n);
+static int g_blas_threads_set = 0;
+static void ensure_blas_threads(void) {
+    if (!g_blas_threads_set) {
+        /* 4 threads measured fastest on the dense-tail sizes (1000-1600);
+         * the full core count oversubscribes and is erratic. */
+        openblas_set_num_threads(4);
+        g_blas_threads_set = 1;
+    }
+}
+#endif
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -119,6 +135,10 @@ typedef struct {
 static ThreadPool g_pool;
 /* number of threads array kernels should use; 1 = fully serial paths */
 static int g_kernel_threads = 1;
+/* when 0, the dense tail uses the floored hand kernel instead of BLAS
+ * dpotrf — a stability fallback for degenerate endgames whose
+ * certificate depends on the per-pivot 1e-12 floor */
+static int g_tail_use_blas = 1;
 
 typedef struct {
     int tid;
@@ -2715,11 +2735,33 @@ static CholContext *chol_setup(
                 continue;
             }
             double dense_flops = (double)t * (double)t * (double)t / 3.0;
-            if (dense_flops <= 3.0 * suffix_sq) {
+            double tail_ratio = 3.0;
+            {
+                const char *env = getenv("LINPROGX_TAIL_RATIO");
+                if (env != NULL) {
+                    tail_ratio = atof(env);
+                }
+            }
+            if (dense_flops <= tail_ratio * suffix_sq) {
                 ctx->tail_start = st;
                 ctx->tail_len = (int32_t)t;
                 /* keep extending while the bound still holds */
             }
+        }
+        if (debug_setup) {
+            double prefix_sq = 0.0, tail_cubed = 0.0;
+            for (int32_t j = 0; j < ctx->tail_start; j++) {
+                double cj = (double)(ctx->Lp[j + 1] - ctx->Lp[j]);
+                prefix_sq += cj * cj;
+            }
+            if (ctx->tail_len > 0) {
+                double t = (double)ctx->tail_len;
+                tail_cubed = t * t * t / 3.0;
+            }
+            fprintf(stderr,
+                    "chol_setup tail: m=%d tail_start=%d tail_len=%d "
+                    "prefix_flops=%.3e tail_flops=%.3e\n",
+                    m, ctx->tail_start, ctx->tail_len, prefix_sq, tail_cubed);
         }
         if (ctx->tail_len > 0) {
             ctx->Tdense = calloc((size_t)ctx->tail_len * (size_t)ctx->tail_len,
@@ -2984,7 +3026,34 @@ static void chol_refactor(
         }
     }
     if (tlen > 0) {
+#ifdef LINPROGX_HAVE_BLAS
+        /* T is row-major lower == column-major upper, so dpotrf("U")
+         * factors A = U^T U and writes U; read back row-major lower
+         * gives exactly L with A = L L^T. delta regularization is
+         * already on T's diagonal, so the block is positive definite;
+         * on the rare indefinite case dpotrf returns info>0 and we
+         * fall back to the hand kernel with its dynamic pivot boost.
+         *
+         * Only large tails go to BLAS: below ~400 the dense block is a
+         * negligible share of runtime, and the hand kernel's per-pivot
+         * 1e-12 floor keeps small degenerate blocks (e.g. cre_a's
+         * 140-col tail) on a more stable trajectory than dpotrf's
+         * unfloored factorization. The threshold is a global
+         * throughput calibration, not a per-instance switch. */
+        if (g_tail_use_blas && tlen >= 400) {
+            ensure_blas_threads();
+            int blas_n = (int)tlen;
+            int blas_info = 0;
+            dpotrf_("U", &blas_n, T, &blas_n, &blas_info);
+            if (blas_info != 0) {
+                tail_dense_chol(T, tlen);
+            }
+        } else {
+            tail_dense_chol(T, tlen);
+        }
+#else
         tail_dense_chol(T, tlen);
+#endif
         for (int32_t j = tstart; j < m; j++) {
             for (Py_ssize_t p = ctx->Lp[j]; p < ctx->Lp[j + 1]; p++) {
                 ctx->Lx[p] = T[(Py_ssize_t)(ctx->Li[p] - tstart) * tlen + (j - tstart)];
@@ -3439,10 +3508,13 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     int debug = 0;
     Py_ssize_t threads = 0; /* 0 = auto; the threaded kernels are
                              * bit-identical at any thread count */
-    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "debug", "threads", NULL};
+    int use_blas = 1; /* 0 forces the floored hand kernel for the tail */
+    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "debug",
+                             "threads", "blas", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "OOOO|ndpn", kwlist,
-            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter, &tol, &debug, &threads)) {
+            args, kwds, "OOOO|ndpnp", kwlist,
+            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter, &tol, &debug, &threads,
+            &use_blas)) {
         return NULL;
     }
     if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
@@ -3665,6 +3737,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             g_kernel_threads = 1;
         }
     }
+    g_tail_use_blas = use_blas;
     chol = chol_setup(self, 7e8, md_budget, &factor_too_dense);
     if (chol == NULL) {
         if (factor_too_dense) {
@@ -4227,6 +4300,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     if (debug) {
         fprintf(stderr, "ipm timers: refactor=%.2fs newton_solves=%.2fs\n",
                 t_refactor, t_newton);
+        fprintf(stderr, "ipm exit: status=%s best_gap=%.3e best_pres=%.3e "
+                "best_dres=%.3e best_mu=%.3e\n",
+                status, best_gap, best_pres, best_dres, best_mu);
     }
     {
         int finite = 1;
@@ -4302,6 +4378,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
 
 done:
     g_kernel_threads = 1;
+    g_tail_use_blas = 1;
     chol_free(chol);
     free(c);
     free(b);

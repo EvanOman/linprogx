@@ -483,3 +483,34 @@ def test_ipm_threads_kwarg_bit_identical() -> None:
     r4 = matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=60, tol=1e-9, threads=4)
     assert r1["x"] == r4["x"]
     assert r1["y"] == r4["y"]
+
+
+def test_ipm_blas_and_floored_tail_agree_on_residual() -> None:
+    # the BLAS dpotrf tail and the floored hand-kernel tail factor the
+    # same system; both must reach the same objective regardless of
+    # which kernel runs (summation order differs, so not bitwise equal).
+    # Sparse columns keep the normal equations factorable.
+    m, n = 900, 1800
+    rows: list[int] = list(range(m))
+    cols: list[int] = list(range(m))
+    data: list[float] = [1.0] * m
+    state = 999
+    for j in range(n):
+        for _ in range(3):
+            state = (state * 1103515245 + 12345) % 2**31
+            rows.append(state % m)
+            cols.append(j)
+            state = (state * 1103515245 + 12345) % 2**31
+            data.append(0.2 + (state % 100) / 200.0)
+    A = scipy.sparse.csr_matrix((data, (rows, cols)), shape=(m, n))
+    matrix = from_scipy_sparse(A)
+    rng = np.random.default_rng(33)
+    b = (A @ rng.uniform(0.5, 1.5, n)).tolist()
+    c = rng.uniform(0.5, 2.0, n).tolist()
+    lo = [0.0] * n
+    hi = [float("inf")] * n
+    r_blas = matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=200, tol=1e-9, blas=True)
+    r_hand = matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=200, tol=1e-9, blas=False)
+    assert r_blas["status"] == r_hand["status"]
+    if r_blas["status"] == "optimal":
+        assert r_blas["objective"] == pytest.approx(r_hand["objective"], rel=1e-6, abs=1e-6)

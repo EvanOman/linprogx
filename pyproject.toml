@@ -52,8 +52,9 @@ extra-compile-args = ["-O3"]
 [[tool.setuptools.ext-modules]]
 name = "linprogx._csparse"
 sources = ["src/linprogx/_csparse.c"]
-extra-compile-args = ["-O3", "-pthread"]
+extra-compile-args = ["-O3", "-pthread", "-DLINPROGX_HAVE_BLAS"]
 extra-link-args = ["-pthread"]
+libraries = ["openblas"]
 
 [tool.ruff]
 line-length = 100

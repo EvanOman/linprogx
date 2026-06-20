@@ -184,6 +184,10 @@ class SparseSolver:
                     hi,
                     max_iter=min(self.max_iterations, 200),
                     tol=min(self.eps, 1e-9),
+                    # the floored hand-kernel factor is more stable on
+                    # degenerate endgames whose certificate the faster
+                    # BLAS dpotrf factor cannot close (e.g. cre_d)
+                    blas=False,
                 )
                 if raw_result["status"] == "optimal":
                     x = [float(value) for value in raw_result["x"]]
