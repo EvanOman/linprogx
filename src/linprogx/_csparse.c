@@ -2711,42 +2711,52 @@ static CholContext *chol_setup(
     memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
     SETUP_MARK("li-fill");
 
-    /* --- dense-tail selection: the largest trailing block (capped for
-     * memory) where the dense kernel's flop count t^3/3 stays within 3x
-     * the sparse path's sum of squared column counts — flop inflation
-     * is what matters, not entry density (the blocked kernel's measured
-     * 4.5x speed advantage breaks even at ~4.5x inflation; 3x leaves
-     * margin). Tail columns only reference tail rows, so the block
-     * stands alone. Small tails are not worth the bookkeeping. --- */
+    /* --- dense-tail selection by a two-speed cost model. Splitting the
+     * factor at column s costs (sum_{j<s} colcount[j]^2) scalar flops on
+     * the sparse up-looking prefix plus (m-s)^3/3 flops on the dense
+     * tail. The kernels run at very different rates (the scalar
+     * up-looking path ~1 Gflop/s vs OpenBLAS dpotrf ~55 Gflop/s on the
+     * relevant sizes), so the optimal split minimizes
+     *   prefix_sq(s) + ALPHA * (m-s)^3/3,   ALPHA = v_sparse / v_dense.
+     * This absorbs a large sparse prefix into the fast dense block when
+     * that prefix dominates (maros_r7), and leaves the tail small when
+     * the prefix is already cheap (pilot87). ALPHA is a machine
+     * throughput constant, not a per-instance switch. --- */
     ctx->tail_start = m;
     ctx->tail_len = 0;
     {
-        int32_t cap_t = 2048;
+        const double ALPHA = 1.0 / 58.0; /* v_sparse / v_dense, measured */
+        int32_t cap_t = 4096; /* tail buffer is t^2 doubles */
         int32_t s_min = m > cap_t ? m - cap_t : 0;
-        double suffix_sq = 0.0;
-        for (int32_t j = m - 1; j >= s_min; j--) {
-            /* accumulate from the end so each candidate st sees the
-             * full suffix sum when reached in the descending pass */
+        const char *alpha_env = getenv("LINPROGX_TAIL_ALPHA");
+        double alpha = alpha_env != NULL ? atof(alpha_env) : ALPHA;
+        /* prefix_sq over [0, s): build cumulatively as s increases */
+        double prefix_sq = 0.0;
+        for (int32_t j = 0; j < s_min; j++) {
             double cj = (double)(ctx->Lp[j + 1] - ctx->Lp[j]);
-            suffix_sq += cj * cj;
-            int32_t st = j;
-            Py_ssize_t t = m - st;
-            if (t < 64) {
-                continue;
+            prefix_sq += cj * cj;
+        }
+        double best_cost = prefix_sq; /* s = m baseline counts only above */
+        /* recompute the all-sparse baseline properly: full prefix_sq */
+        {
+            double full_sq = prefix_sq;
+            for (int32_t j = s_min; j < m; j++) {
+                double cj = (double)(ctx->Lp[j + 1] - ctx->Lp[j]);
+                full_sq += cj * cj;
             }
-            double dense_flops = (double)t * (double)t * (double)t / 3.0;
-            double tail_ratio = 3.0;
-            {
-                const char *env = getenv("LINPROGX_TAIL_RATIO");
-                if (env != NULL) {
-                    tail_ratio = atof(env);
-                }
-            }
-            if (dense_flops <= tail_ratio * suffix_sq) {
-                ctx->tail_start = st;
+            best_cost = full_sq;
+        }
+        for (int32_t s = s_min; s <= m - 64; s++) {
+            Py_ssize_t t = m - s;
+            double dense = (double)t * (double)t * (double)t / 3.0;
+            double cost = prefix_sq + alpha * dense;
+            if (cost < best_cost) {
+                best_cost = cost;
+                ctx->tail_start = s;
                 ctx->tail_len = (int32_t)t;
-                /* keep extending while the bound still holds */
             }
+            double cs = (double)(ctx->Lp[s + 1] - ctx->Lp[s]);
+            prefix_sq += cs * cs;
         }
         if (debug_setup) {
             double prefix_sq = 0.0, tail_cubed = 0.0;

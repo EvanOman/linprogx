@@ -5,6 +5,41 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 20 Update 21: Two-Speed Cost-Model Tail Split — maros_r7 toward HiGHS
+
+The dense-tail size was chosen by a fixed flop-inflation ratio (3x),
+calibrated for the old hand kernel. With BLAS the dense kernel is ~58x
+the scalar prefix rate, so the right split is the one that minimizes
+actual predicted time across the two regimes:
+
+    cost(s) = prefix_sq(s) / v_sparse + (m-s)^3/3 / v_dense
+
+minimized over the split column s, with prefix_sq(s) = sum_{j<s}
+colcount[j]^2. Implemented in chol_setup (ALPHA = v_sparse/v_dense =
+1/58, a machine throughput constant). This absorbs a large sparse
+prefix into the fast dense block when the prefix dominates and leaves
+the tail small when it doesn't -- exactly the adaptive behavior a fixed
+ratio could not give (a single ratio that helped maros_r7 hurt
+pilot87 and vice versa).
+
+Selected tails match the offline optimum: maros_r7 1360 -> 2687 (its
+2.9e8-flop scalar prefix collapses to 3.3e7), pilot87 unchanged (1132
+-> 1163; its prefix was already tiny), cre_b 1631 -> 1712.
+
+Paired local measurement (back-to-back, identical machine load -- the
+honest controlled comparison; the shared box was at loadavg ~12 during
+the official-suite attempt, which inflated all rows ~1.5x and is not
+recorded): maros_r7 5.82 -> 4.6s, cre_b 9.95 -> 7.3s, cre_d 9.06 ->
+8.0s, pilot87 unchanged 5.9s. All optimal, certificate-backed, worst
+rel delta 5.5e-6, 136 tests. The scoreboard table is left at the prior
+quiet-run numbers pending a fresh quiet official run.
+
+maros_r7 is now ~4.6s vs HiGHS 0.95s -- closer but HiGHS still leads.
+Its dense tail factor is ~2.2s of the 4.6; closing the rest needs a
+genuine supernodal sparse factor (dense BLAS panels over the
+elimination tree's amalgamated columns) rather than one monolithic
+dense block paying t^3/3. That is the next and deepest lever.
+
 ## June 20 Update 20: OpenBLAS Dense-Tail Factor — Now Exceeds Clarabel (19/23)
 
 BLAS dependencies were permitted (reversing the dependency-free
