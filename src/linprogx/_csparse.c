@@ -3044,6 +3044,17 @@ static void chol_refactor(
             ensure_blas_threads();
             int blas_n = (int)tlen;
             int blas_info = 0;
+            /* dpotrf has no per-pivot floor, so on degenerate blocks it
+             * lands a less-regularized factor than the hand kernel
+             * (which boosts pivots to 1e-12), giving a trajectory whose
+             * Lagrangian certificate cannot close (cre_a/b/d). A tiny
+             * relative diagonal ridge emulates that floor: it certifies
+             * the cre family with BLAS in one run while leaving the
+             * well-conditioned instances unchanged (the IPM's iterative
+             * refinement and certificate gate absorb it). */
+            for (Py_ssize_t i = 0; i < tlen; i++) {
+                T[i * tlen + i] += 1e-11 * (1.0 + fabs(T[i * tlen + i]));
+            }
             dpotrf_("U", &blas_n, T, &blas_n, &blas_info);
             if (blas_info != 0) {
                 tail_dense_chol(T, tlen);

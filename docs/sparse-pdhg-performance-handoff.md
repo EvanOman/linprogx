@@ -5,6 +5,43 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 20 Update 20: OpenBLAS Dense-Tail Factor — Now Exceeds Clarabel (19/23)
+
+BLAS dependencies were permitted (reversing the dependency-free
+constraint). The dense-tail Cholesky — the dominant cost on the
+factor-bound IPM instances — now calls OpenBLAS `dpotrf` (4 threads,
+measured 54-67 Gflop/s on the 1000-1600 tail sizes vs the hand kernel's
+~4-12). T is row-major-lower == column-major-upper, so `dpotrf('U')`
+factors A = U^T U and reading back row-major-lower gives L with
+A = L L^T; the result feeds the same CSC storage, so solves / SMW /
+matvec / refinement are untouched.
+
+Three things made it sound and a net win (the first two were learned
+from regressions):
+1. **Gate at tlen >= 400.** Below that the dense block is a negligible
+   runtime share; keeping small tails on the hand kernel avoids its
+   trajectory churn (cre_a's 140-col tail).
+2. **A 1e-11 relative diagonal ridge before dpotrf.** dpotrf has no
+   per-pivot floor, so on the degenerate cre family it landed a
+   less-regularized factor whose Lagrangian certificate could not close
+   (best_gap = inf), forcing a slow floored re-solve that made cre_b a
+   net regression (15 -> 25s). A tiny ridge emulates the hand kernel's
+   1e-12 pivot boost: cre_b/cre_d/cre_a now certify with BLAS in a
+   single run, and quality even improved (cre_b rel 4.6e-6 -> 4.4e-7).
+3. **Floored retry kept as a safety net** (auto retries blas=False, the
+   presolved problem first then the unpresolved), now rarely triggered.
+
+Official suite (full re-run): cre_b 41 -> 9.95s, cre_d 38 -> 9.06s,
+pilot87 24 -> 6.83s, maros_r7 -> 5.82s, d2q06c -> 0.77s. All optimal,
+every optimum certificate-backed, worst rel delta 5.5e-6.
+
+**Result: linprogx now beats Clarabel on 19 of 23 solved instances**
+(the exceptions: maros_r7, and sub-0.02s ties on cre_a/truss/woodw) and
+ties it on coverage — i.e. it EXCEEDS Clarabel across the suite. HiGHS
+still leads on the small dense-factor IPM instances (maros_r7 0.95s,
+pds_20 12.5s); that is the one remaining frontier vs HiGHS. CI installs
+libopenblas-dev; README documents the dependency.
+
 ## June 12 Update 19: O(m^2) Pattern Sort Fixed — ken_18 Setup 10.8s -> 0.03s
 
 Phase-timing chol_setup (new SETUP_MARK prints under

@@ -168,42 +168,49 @@ class SparseSolver:
                 max_iter=min(self.max_iterations, 200),
                 tol=min(self.eps, 1e-9),
             )
-            if (
-                result["status"] != "optimal"
-                and result["status"] != "factor_too_dense"
-                and reduction is not None
-            ):
-                # Degenerate endgames are trajectory-sensitive: the
-                # presolved and raw problems give two independent runs,
-                # and the certificate gate makes a second attempt sound.
-                # Retry on the raw problem before falling back to PDHG.
-                raw_result = problem.A_eq.solve_eq_box_ipm(
-                    c,
-                    b,
-                    lo,
-                    hi,
-                    max_iter=min(self.max_iterations, 200),
-                    tol=min(self.eps, 1e-9),
-                    # the floored hand-kernel factor is more stable on
-                    # degenerate endgames whose certificate the faster
-                    # BLAS dpotrf factor cannot close (e.g. cre_d)
-                    blas=False,
-                )
-                if raw_result["status"] == "optimal":
-                    x = [float(value) for value in raw_result["x"]]
-                    objective = float(raw_result["objective"])
-                    residual = float(raw_result["max_primal_residual"])
-                    message = (
-                        "native sparse IPM converged on the unpresolved retry; "
-                        f"max equality residual {residual:.3e}"
+            if result["status"] != "optimal" and result["status"] != "factor_too_dense":
+                # The fast BLAS dpotrf tail factor lacks the hand
+                # kernel's per-pivot floor, so on degenerate endgames it
+                # can land a point the Lagrangian certificate can't
+                # close. Retry the SAME (presolved) problem with the
+                # floored kernel first -- cheap and usually enough --
+                # then, only if that also fails, the unpresolved problem
+                # (an independent trajectory). The certificate gate
+                # keeps every accepted retry sound.
+                retries: list[
+                    tuple[Any, list[float], list[float], list[float], list[float], str]
+                ] = [(matrix, solve_c, solve_b, solve_lo, solve_hi, "floored retry")]
+                if reduction is not None:
+                    retries.append((problem.A_eq, c, b, lo, hi, "unpresolved floored retry"))
+                for rmatrix, rc, rb, rlo, rhi, note in retries:
+                    retry_result = rmatrix.solve_eq_box_ipm(
+                        rc,
+                        rb,
+                        rlo,
+                        rhi,
+                        max_iter=min(self.max_iterations, 200),
+                        tol=min(self.eps, 1e-9),
+                        blas=False,
                     )
-                    return Solution(
-                        Status.OPTIMAL,
-                        x=x,
-                        objective_value=objective,
-                        iterations=int(raw_result["iterations"]),
-                        message=message,
-                    ), "native-c-sparse-ipm"
+                    if retry_result["status"] == "optimal":
+                        is_raw = rmatrix is problem.A_eq and reduction is not None
+                        rx = [float(value) for value in retry_result["x"]]
+                        if is_raw:
+                            objective = float(retry_result["objective"])
+                        else:
+                            rx = postsolve_x(rx, reduction) if reduction is not None else rx
+                            objective = sum(v * coef for v, coef in zip(rx, problem.c, strict=True))
+                        residual = float(retry_result["max_primal_residual"])
+                        return Solution(
+                            Status.OPTIMAL,
+                            x=rx,
+                            objective_value=objective,
+                            iterations=int(retry_result["iterations"]),
+                            message=(
+                                f"native sparse IPM converged on the {note}; "
+                                f"max equality residual {residual:.3e}"
+                            ),
+                        ), "native-c-sparse-ipm"
             if result["status"] != "optimal" and (
                 algorithm == "auto" or result["status"] == "factor_too_dense"
             ):

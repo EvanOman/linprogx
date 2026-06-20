@@ -29,7 +29,11 @@ This is an inspectable, hand-built solver. On the included benchmarks it is comp
 
 ## Install
 
+The sparse `_csparse` extension links OpenBLAS for its dense-tail
+factorization, so install the dev package first (Debian/Ubuntu shown):
+
 ```bash
+sudo apt-get install -y libopenblas-dev
 git clone git@github.com:EvanOman/linprogx.git
 cd linprogx
 uv sync --extra dev
@@ -459,22 +463,23 @@ A larger sweep over the SuiteSparse LPnetlib collection — the same Netlib
 family used in the Clarabel and HiGHS benchmark papers, including the
 Kennington set — is recorded in [assets/lpnetlib_suite.md](assets/lpnetlib_suite.md)
 with the harness in `experiments/suite_bench.py`. Headline: **linprogx,
-HiGHS, and Clarabel each solve 23/24 — equal coverage** — and every
-linprogx optimum is certificate-backed (full KKT or an explicit
-Lagrangian dual bound) at relative objective errors of 9.2e-12 to 2.2e-5.
-Each solver misses exactly one instance: HiGHS times out on qap15,
-Clarabel reports DualInfeasible on ken_18, and linprogx declines to
-certify greenbea (where Clarabel certifies a point that is wrong by
-1.3e-3 — the honesty guarantee is the difference). linprogx is
-fastest-of-three on 8 instances: fit2p (0.15s vs HiGHS 1.24s), ken_07,
-ken_11, osa_30, osa_60 (15.6s vs HiGHS 24.1s), qap12 (0.52s vs HiGHS
-104s), qap15 (1.2s; HiGHS times out), and truss (23x HiGHS). The degenerate cre_a/cre_b instances are
-closed by a min-norm dual cleanup at the IPM exit (a small least-squares
-correction over the few wrong-signed reduced costs — it can gain
-certificates but never fake one), and osa_60 by a predicted-fill early
-abort inside the minimum-degree ordering that lets cheap-factor
-instances through to the IPM regardless of how expensive their ordering
-looks.
+HiGHS, and Clarabel each solve 23/24 — equal coverage — and linprogx now
+beats Clarabel on 19 of the 23 solved instances** (faster, or Clarabel
+fails), while every linprogx optimum is certificate-backed (full KKT or
+an explicit Lagrangian dual bound) at relative objective errors of
+9.2e-12 to 2.2e-5. Each solver misses exactly one instance: HiGHS times
+out on qap15, Clarabel reports DualInfeasible on ken_18, and linprogx
+declines to certify greenbea (where Clarabel certifies a point that is
+wrong by 1.3e-3 — the honesty guarantee is the difference). An OpenBLAS
+`dpotrf` dense-tail factorization roughly halved the factor-bound IPM
+instances (cre_b 41→10s, cre_d 38→9s, pilot87 24→7s), moving them from
+losing to Clarabel to beating it decisively; a tiny diagonal ridge
+emulates the hand kernel's pivot floor so those degenerate endgames
+still certify. linprogx is fastest of all three on fit2p, d2q06c,
+osa_60 (19s vs HiGHS 24s), qap12 (0.55s vs HiGHS 104s), qap15 (HiGHS
+times out), and truss (16x HiGHS). HiGHS still leads on the small
+dense-factor instances (maros_r7, pds_20) — that gap is the one
+remaining frontier.
 
 ## License
 
