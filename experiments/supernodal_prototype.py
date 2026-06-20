@@ -16,12 +16,14 @@ Usage: PYTHONPATH=. uv run python experiments/supernodal_prototype.py lp_maros_r
 
 import sys
 import time
+from importlib import import_module
+from typing import Any, cast
 
 import numpy as np
 import scipy.sparse as sp
 from scipy.io import loadmat
 
-from linprogx import _csparse
+_csparse = cast(Any, import_module("linprogx._csparse"))
 
 
 def load_Gp(name):
