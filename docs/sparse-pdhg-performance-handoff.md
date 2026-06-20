@@ -5,6 +5,37 @@
 **Primary branch:** `sparse-support`
 **Supersedes:** the May 18, 2026 handoff (column equilibration / tuned polish era)
 
+## June 20 Update 22: Supernode Detection — Foundation for the HiGHS Gap
+
+The HiGHS gap on maros_r7 is now precisely quantified: the monolithic
+dense tail pays t^3/3 = 6.5e9 flops/factor where the true sparse fill
+is only 5.7e8 (11x inflation), because one dense block treats the
+sparse upper region of the tail as dense. The fix is a supernodal
+numeric factor — dense BLAS panels over the real fill only — which
+recovers BLAS speed AND sparse flop counts, the same thing that makes
+HiGHS fast.
+
+This update lands the behavior-neutral foundation: chol_setup computes
+the fundamental supernode partition (column j joins j-1's supernode iff
+j-1 is j's only elimination-tree child and their column counts differ
+by one) and stores snode_start on the context; a supernode_sizes() test
+hook exposes it. Validated: maros_r7 -> 316 supernodes, largest 674,
+matching an independent reference exactly (pilot87/cre_b differ only
+because chol_setup correctly excludes dense columns from the pattern).
+
+Supernode sizes by instance: maros_r7 mean 9.9 / largest 674 (good
+amalgamation -> big BLAS panels), pilot87 mean 1.7 / largest 88 and
+cre_b mean 1.3 / largest 459 (fragmented tops; their big supernodes are
+already captured by the dense tail). So the supernodal numeric factor
+is a clear win for maros_r7 and modest elsewhere — which is exactly the
+remaining HiGHS-gap instance.
+
+Next: the supernodal numeric left-looking factor over this partition
+(per supernode: gather descendant updates via dgemm, factor the
+diagonal block via dpotrf, dtrsm the panel), validated against the
+current factor by residual, then wired into refactor behind the same
+certificate gate.
+
 ## June 20 Update 21: Two-Speed Cost-Model Tail Split — maros_r7 toward HiGHS
 
 The dense-tail size was chosen by a fixed flop-inflation ratio (3x),
