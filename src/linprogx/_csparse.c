@@ -1875,6 +1875,7 @@ done:
 
 static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
+static PyObject *CSRMatrix_supernode_sizes(CSRMatrixObject *self, PyObject *args);
 
 static PyGetSetDef CSRMatrix_getset[] = {
     {"shape", (getter)CSRMatrix_shape, NULL, "matrix shape", NULL},
@@ -1891,6 +1892,7 @@ static PyMethodDef CSRMatrix_methods[] = {
     {"solve_eq_box_pdhg", (PyCFunction)CSRMatrix_solve_eq_box_pdhg, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with native PDHG."},
     {"normal_equations_solve", (PyCFunction)CSRMatrix_normal_equations_solve, METH_VARARGS, "Solve (A diag(d) A' + delta I) x = rhs with the native sparse Cholesky."},
     {"solve_eq_box_ipm", (PyCFunction)CSRMatrix_solve_eq_box_ipm, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with a native interior point method."},
+    {"supernode_sizes", (PyCFunction)CSRMatrix_supernode_sizes, METH_NOARGS, "Test hook: fundamental supernode sizes of the Cholesky factor of A A'."},
     {NULL}
 };
 
@@ -2296,6 +2298,12 @@ typedef struct {
     int32_t tail_start;           /* first tail column; == m disables */
     int32_t tail_len;
     double *Tdense;               /* tail_len x tail_len, row-major */
+    /* Fundamental supernode partition of L (consecutive columns sharing
+     * lower structure). snode_start has n_snodes+1 entries; supernode s
+     * spans columns [snode_start[s], snode_start[s+1]). Foundation for a
+     * supernodal numeric factor; computed but not yet used by refactor. */
+    int32_t n_snodes;
+    int32_t *snode_start;
 } CholContext;
 
 static void chol_free(CholContext *ctx) {
@@ -2326,6 +2334,7 @@ static void chol_free(CholContext *ctx) {
     free(ctx->cap);
     free(ctx->cap_rhs);
     free(ctx->Tdense);
+    free(ctx->snode_start);
     free(ctx);
 }
 
@@ -2710,6 +2719,54 @@ static CholContext *chol_setup(
     }
     memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
     SETUP_MARK("li-fill");
+
+    /* --- fundamental supernode partition. Column j joins the supernode
+     * of j-1 when j-1 is the only child of j in the elimination tree and
+     * colcount[j-1] == colcount[j] + 1 (identical lower structure shifted
+     * by the diagonal). This is the classic fundamental-supernode rule;
+     * it is computed here as the foundation for a supernodal numeric
+     * factor and does not yet change the factorization. --- */
+    {
+        int32_t *nchild = count; /* reuse: count is free here, size m */
+        memset(nchild, 0, (size_t)m * sizeof(int32_t));
+        for (int32_t j = 0; j < m; j++) {
+            if (ctx->parent[j] >= 0) {
+                nchild[ctx->parent[j]]++;
+            }
+        }
+        ctx->snode_start = malloc((size_t)(m + 1) * sizeof(int32_t));
+        if (ctx->snode_start == NULL) {
+            goto fail;
+        }
+        int32_t ns = 0;
+        for (int32_t j = 0; j < m; j++) {
+            int32_t cc_j = (int32_t)(ctx->Lp[j + 1] - ctx->Lp[j]);
+            int merge = 0;
+            if (j > 0) {
+                int32_t cc_prev = (int32_t)(ctx->Lp[j] - ctx->Lp[j - 1]);
+                if (ctx->parent[j - 1] == j && nchild[j] == 1 &&
+                    cc_prev == cc_j + 1) {
+                    merge = 1;
+                }
+            }
+            if (!merge) {
+                ctx->snode_start[ns++] = j;
+            }
+        }
+        ctx->snode_start[ns] = m;
+        ctx->n_snodes = ns;
+        if (debug_setup) {
+            int32_t big = 0;
+            for (int32_t s = 0; s < ns; s++) {
+                int32_t w = ctx->snode_start[s + 1] - ctx->snode_start[s];
+                if (w > big) {
+                    big = w;
+                }
+            }
+            fprintf(stderr, "chol_setup supernodes: m=%d count=%d mean=%.1f largest=%d\n",
+                    m, ns, (double)m / (double)ns, big);
+        }
+    }
 
     /* --- dense-tail selection by a two-speed cost model. Splitting the
      * factor at column s costs (sum_{j<s} colcount[j]^2) scalar flops on
@@ -3227,6 +3284,32 @@ static void chol_solve(CholContext *ctx, const double *rhs, double *out) {
             out[i] -= w[i] * scale;
         }
     }
+}
+
+/* Test hook: fundamental supernode sizes of chol(A A' + I)'s factor. */
+static PyObject *CSRMatrix_supernode_sizes(CSRMatrixObject *self, PyObject *args) {
+    (void)args;
+    if (self->rows > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError, "matrix too large for the 32-bit factorization");
+        return NULL;
+    }
+    int too_dense = 0;
+    CholContext *ctx = chol_setup(self, 0.0, 1000000000000LL, &too_dense);
+    if (ctx == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "chol_setup failed");
+        return NULL;
+    }
+    PyObject *sizes = PyList_New(ctx->n_snodes);
+    if (sizes == NULL) {
+        chol_free(ctx);
+        return NULL;
+    }
+    for (int32_t s = 0; s < ctx->n_snodes; s++) {
+        int32_t w = ctx->snode_start[s + 1] - ctx->snode_start[s];
+        PyList_SET_ITEM(sizes, s, PyLong_FromLong((long)w));
+    }
+    chol_free(ctx);
+    return sizes;
 }
 
 /* Test hook: solve (A D A' + delta I) x = rhs with the native Cholesky. */

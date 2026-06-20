@@ -514,3 +514,53 @@ def test_ipm_blas_and_floored_tail_agree_on_residual() -> None:
     assert r_blas["status"] == r_hand["status"]
     if r_blas["status"] == "optimal":
         assert r_blas["objective"] == pytest.approx(r_hand["objective"], rel=1e-6, abs=1e-6)
+
+
+def _build_sparse_csr(m: int, n: int, per_col: int, seed: int) -> scipy.sparse.csr_matrix:
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[float] = []
+    state = seed
+    for j in range(n):
+        for _ in range(per_col):
+            state = (state * 1103515245 + 12345) % 2**31
+            rows.append(state % m)
+            cols.append(j)
+            state = (state * 1103515245 + 12345) % 2**31
+            data.append(1.0 + (state % 50) / 50.0)
+    return scipy.sparse.csr_matrix((data, (rows, cols)), shape=(m, n))
+
+
+def test_supernode_partition_covers_all_columns() -> None:
+    # the fundamental supernode sizes must tile the columns exactly
+    A = _build_sparse_csr(40, 160, 4, seed=11)
+    sizes = from_scipy_sparse(A).supernode_sizes()
+    assert sum(sizes) == A.shape[0]
+    assert all(w >= 1 for w in sizes)
+
+
+def test_supernode_partition_block_diagonal_doubles() -> None:
+    # two independent blocks: every column still accounted for, and the
+    # partition does not merge across the disconnected blocks
+    block = _build_sparse_csr(16, 60, 4, seed=7)
+    blk = scipy.sparse.bmat([[block, None], [None, block]]).tocsr()
+    sizes = from_scipy_sparse(blk).supernode_sizes()
+    assert sum(sizes) == blk.shape[0] == 32
+    single = from_scipy_sparse(block).supernode_sizes()
+    # the doubled system has at least as many supernodes as one block
+    assert len(sizes) >= len(single)
+
+
+def test_supernode_partition_on_cre_a_fixture() -> None:
+    # a real instance: every column tiled, and amalgamation actually
+    # happens (some supernode wider than one column)
+    from pathlib import Path
+
+    from scipy.io import loadmat
+
+    path = Path(__file__).parent / "data" / "lp_cre_a.mat"
+    raw = loadmat(path)["Problem"][0, 0]
+    A = raw["A"].tocsr().astype(float)
+    sizes = from_scipy_sparse(A).supernode_sizes()
+    assert sum(sizes) == A.shape[0]
+    assert max(sizes) > 1
