@@ -8,7 +8,9 @@ import sys
 from pathlib import Path
 from typing import Literal, cast
 
+import numpy as np
 import pytest
+from scipy import optimize as scipy_optimize
 
 from linprogx.sparse import SparseLPProblem, SparseSolver, csr_matrix
 from linprogx.types import Status
@@ -47,9 +49,6 @@ def _random_feasible_problem(
 
 @pytest.mark.parametrize("seed", [1, 7, 42])
 def test_auto_solver_matches_scipy_on_random_feasible_lps(seed: int) -> None:
-    scipy_optimize = pytest.importorskip("scipy.optimize")
-    np = pytest.importorskip("numpy")
-
     rows, cols = 25, 60
     problem, b = _random_feasible_problem(seed, rows, cols)
 
@@ -115,8 +114,6 @@ def _load_cycle_module():
 
 
 def test_cycle_auto_routes_to_ipm_with_high_accuracy() -> None:
-    pytest.importorskip("scipy")
-    np = pytest.importorskip("numpy")
     bench_cycle = _load_cycle_module()
     problem_data = bench_cycle.load_cycle(bench_cycle.DATA_PATH)
 
