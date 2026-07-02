@@ -223,6 +223,20 @@ class _FallbackMatrix:
 
     def __init__(self) -> None:
         self.pdhg_calls = 0
+        self.dual_simplex_calls = 0
+
+    def solve_eq_box_dual_simplex(self, *args: object, **kwargs: object) -> dict[str, object]:
+        # the auto route tries a dual simplex rescue before keeping the
+        # feasible IPM candidate; model it failing to certify
+        self.dual_simplex_calls += 1
+        return {
+            "status": "iteration_limit",
+            "objective": 0.0,
+            "max_primal_residual": 1.0,
+            "iterations": 5,
+            "x": [0.0],
+            "y": [0.0],
+        }
 
     def solve_eq_box_ipm(self, *args: object, **kwargs: object) -> dict[str, object]:
         return {
@@ -295,6 +309,7 @@ def test_auto_skips_pdhg_when_ipm_candidate_is_feasible_but_uncertified() -> Non
     assert result.solution.x == [1.0]
     assert "best feasible IPM candidate" in result.solution.message
     assert matrix.pdhg_calls == 0
+    assert matrix.dual_simplex_calls == 1
 
 
 def test_pdhg_public_route_defaults_to_four_threads() -> None:
@@ -391,6 +406,64 @@ def test_sparse_ipm_equality_bounds_path() -> None:
     assert result.solution.status == Status.OPTIMAL
     assert result.solution.objective_value == pytest.approx(4.0, abs=1e-6)
     assert result.solution.x == pytest.approx([2.0, 1.0], abs=1e-6)
+
+
+def test_sparse_dual_simplex_equality_bounds_path() -> None:
+    a_eq = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
+
+    result = SparseSolver(algorithm="dual_simplex", eps=1e-9).solve(
+        SparseLPProblem(
+            [1.0, 2.0],
+            A_eq=a_eq,
+            b_eq=[3.0],
+            objective="min",
+            bounds=[(0.0, 2.0), (0.0, 3.0)],
+        )
+    )
+
+    assert result.backend == "native-c-sparse-dual_simplex"
+    assert result.solution.status == Status.OPTIMAL
+    assert result.solution.objective_value == pytest.approx(4.0, abs=1e-6)
+    assert result.solution.x == pytest.approx([2.0, 1.0], abs=1e-6)
+
+
+def test_sparse_dual_simplex_matches_ipm_on_random_lp() -> None:
+    import numpy as np
+    import scipy.sparse
+
+    from linprogx.sparse import from_scipy_sparse
+
+    rng = np.random.default_rng(3)
+    m, n = 12, 30
+    dense = (
+        scipy.sparse.random(
+            m, n, density=0.3, random_state=rng, data_rvs=lambda s: rng.uniform(-2, 2, s)
+        ).tocsr()
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    )
+    lo = np.zeros(n)
+    hi = rng.uniform(0.5, 3.0, n)
+    x0 = lo + (hi - lo) * rng.uniform(0, 1, n)
+    b = (dense @ x0).tolist()
+    c = rng.uniform(-2, 2, n).tolist()
+    problem = SparseLPProblem(
+        c,
+        A_eq=from_scipy_sparse(scipy.sparse.csr_matrix(dense)),
+        b_eq=b,
+        objective="min",
+        bounds=[(float(a), float(z)) for a, z in zip(lo, hi, strict=True)],
+    )
+
+    ds = SparseSolver(algorithm="dual_simplex", eps=1e-9).solve(problem)
+    ipm = SparseSolver(algorithm="ipm", eps=1e-9).solve(problem)
+
+    assert ds.solution.status == Status.OPTIMAL
+    assert ipm.solution.status == Status.OPTIMAL
+    assert ds.solution.objective_value == pytest.approx(
+        ipm.solution.objective_value, rel=1e-6, abs=1e-6
+    )
 
 
 def test_sparse_auto_routes_small_problems_to_ipm() -> None:

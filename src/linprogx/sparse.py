@@ -99,7 +99,7 @@ class SparseSolver:
         *,
         eps: float = 1e-9,
         max_iterations: int = 50_000,
-        algorithm: Literal["simplex", "pdhg", "ipm", "auto"] = "simplex",
+        algorithm: Literal["simplex", "pdhg", "ipm", "dual_simplex", "auto"] = "simplex",
         objective_scale: float | None = None,
         check_interval: int | None = None,
         presolve: bool = True,
@@ -118,7 +118,7 @@ class SparseSolver:
 
     def solve(self, problem: SparseLPProblem) -> SparseSolveResult:
         start = time.perf_counter()
-        if self.algorithm in ("pdhg", "ipm", "auto"):
+        if self.algorithm in ("pdhg", "ipm", "dual_simplex", "auto"):
             solution, backend = self._solve_eq_box(problem, self.algorithm)
         else:
             solution = self._solve(problem)
@@ -171,6 +171,14 @@ class SparseSolver:
 
         result = None
         feasible_ipm_candidate: tuple[list[float], float, int, float] | None = None
+        if chosen == "dual_simplex":
+            result = matrix.solve_eq_box_dual_simplex(
+                solve_c,
+                solve_b,
+                solve_lo,
+                solve_hi,
+                max_iter=min(self.max_iterations, 200_000),
+            )
         if chosen == "ipm":
             result = matrix.solve_eq_box_ipm(
                 solve_c,
@@ -247,6 +255,40 @@ class SparseSolver:
                                 f"max equality residual {residual:.3e}"
                             ),
                         ), "native-c-sparse-ipm"
+                if algorithm == "auto":
+                    rows, cols = matrix.shape
+                    if rows <= 4000 and cols <= 30_000:
+                        # Dual simplex rescue: greenbea-class instances reach
+                        # an uncertifiable IPM stall, but the basis method
+                        # certifies exactly (primal + dual feasible at a
+                        # basis implies complementarity). Only worth trying
+                        # at sizes where the product-form solver is
+                        # practical; the residual re-check below keeps the
+                        # eps contract on the original problem.
+                        ds_result = matrix.solve_eq_box_dual_simplex(
+                            solve_c,
+                            solve_b,
+                            solve_lo,
+                            solve_hi,
+                            max_iter=min(self.max_iterations, 50_000),
+                        )
+                        if ds_result["status"] == "optimal":
+                            dx = [float(value) for value in ds_result["x"]]
+                            if reduction is not None:
+                                dx = postsolve_x(dx, reduction)
+                            objective = sum(v * coef for v, coef in zip(dx, problem.c, strict=True))
+                            residual = _max_equality_residual(problem.A_eq, dx, b)
+                            if residual <= self.eps:
+                                return Solution(
+                                    Status.OPTIMAL,
+                                    x=dx,
+                                    objective_value=objective,
+                                    iterations=int(ds_result["iterations"]),
+                                    message=(
+                                        "native sparse dual simplex certified after the "
+                                        f"IPM stalled; max equality residual {residual:.3e}"
+                                    ),
+                                ), "native-c-sparse-dual-simplex"
                 if algorithm == "auto" and feasible_ipm_candidate is not None:
                     fx, fobj, fiters, fresidual = feasible_ipm_candidate
                     return Solution(
@@ -316,6 +358,12 @@ class SparseSolver:
             verb = "converged" if status == Status.OPTIMAL else "hit the iteration limit"
             message = (
                 f"native sparse IPM {verb}; max equality residual {residual:.3e}{presolve_note}"
+            )
+        elif chosen == "dual_simplex":
+            verb = "converged" if status == Status.OPTIMAL else "hit the iteration limit"
+            message = (
+                f"native sparse dual simplex {verb}; "
+                f"max equality residual {residual:.3e}{presolve_note}"
             )
         else:
             objective_scale = float(result["objective_scale"])
