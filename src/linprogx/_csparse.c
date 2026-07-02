@@ -2538,6 +2538,7 @@ typedef struct {
      * into the same CSC storage, so the solves are untouched. */
     int32_t tail_start;           /* first tail column; == m disables */
     int32_t tail_len;
+    double prefix_flops;          /* sum of colcount^2 over the sparse prefix */
     double *Tdense;               /* tail_len x tail_len, row-major */
     /* Fundamental supernode partition of L (consecutive columns sharing
      * lower structure). snode_start has n_snodes+1 entries; supernode s
@@ -3496,7 +3497,7 @@ static CholContext *chol_setup(
             double cs = (double)(ctx->Lp[s + 1] - ctx->Lp[s]);
             prefix_sq += cs * cs;
         }
-        if (debug_setup) {
+        {
             double prefix_sq = 0.0, tail_cubed = 0.0;
             for (int32_t j = 0; j < ctx->tail_start; j++) {
                 double cj = (double)(ctx->Lp[j + 1] - ctx->Lp[j]);
@@ -3506,10 +3507,13 @@ static CholContext *chol_setup(
                 double t = (double)ctx->tail_len;
                 tail_cubed = t * t * t / 3.0;
             }
-            fprintf(stderr,
-                    "chol_setup tail: m=%d tail_start=%d tail_len=%d "
-                    "prefix_flops=%.3e tail_flops=%.3e\n",
-                    m, ctx->tail_start, ctx->tail_len, prefix_sq, tail_cubed);
+            ctx->prefix_flops = prefix_sq;
+            if (debug_setup) {
+                fprintf(stderr,
+                        "chol_setup tail: m=%d tail_start=%d tail_len=%d "
+                        "prefix_flops=%.3e tail_flops=%.3e\n",
+                        m, ctx->tail_start, ctx->tail_len, prefix_sq, tail_cubed);
+            }
         }
         if (ctx->tail_len > 0) {
             ctx->Tdense = calloc((size_t)ctx->tail_len * (size_t)ctx->tail_len,
@@ -4149,7 +4153,20 @@ static void chol_refactor_mode(
 }
 
 static int chol_auto_supernodal(const CholContext *ctx) {
-    if (ctx->n_snodes <= 0 || ctx->tail_len < 512) {
+    if (ctx->n_snodes <= 0) {
+        return 0;
+    }
+    /* A dominant scalar prefix is worth panelizing even when supernodes
+     * are narrow: on ken_18 (prefix 1.78e8 flops, mean width 1.3) the
+     * supernodal refactor measured 3.1x faster than row-wise, while
+     * every other suite instance sits below 3e7 prefix flops where the
+     * fragmentation overhead wins (cre_b 2.4e7 measured 2-3x slower
+     * forced). 1e8 is a machine-rate constant (~0.1s of scalar prefix
+     * work per refactor), not a per-instance switch. */
+    if (ctx->prefix_flops >= 1e8) {
+        return 1;
+    }
+    if (ctx->tail_len < 512) {
         return 0;
     }
     double mean_width = (double)ctx->m / (double)ctx->n_snodes;
@@ -5244,12 +5261,19 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     IpmNewton nw = {chol, &op, D, sl, su, zl, zu, bound_kind, rhs_x, tmp_x, rhs_m, aty,
                     res_m, corr_m};
     int max_mcc = 2;
+    double mcc_ratio = 5.5;
     {
         const char *mcc_env = getenv("LINPROGX_IPM_MCC");
         if (mcc_env != NULL) {
             max_mcc = atoi(mcc_env);
         }
+        const char *ratio_env = getenv("LINPROGX_IPM_MCC_RATIO");
+        if (ratio_env != NULL) {
+            mcc_ratio = atof(ratio_env);
+        }
     }
+    double sum_refactor_seconds = 0.0;
+    double sum_affine_seconds = 0.0;
     for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
         iterations = iter;
         /* slacks, residuals, and the barrier parameter */
@@ -5565,32 +5589,25 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             H[j] = h;
             D[j] = 1.0 / h;
         }
-        if (debug) {
-            struct timespec ts0, ts1;
-            clock_gettime(CLOCK_MONOTONIC, &ts0);
-            chol_refactor_mode(chol, self, csc_vals, D, delta_it, refactor_supernodal);
-            clock_gettime(CLOCK_MONOTONIC, &ts1);
-            t_refactor += (double)(ts1.tv_sec - ts0.tv_sec) +
-                          1e-9 * (double)(ts1.tv_nsec - ts0.tv_nsec);
-        } else {
-            chol_refactor_mode(chol, self, csc_vals, D, delta_it, refactor_supernodal);
-        }
+        /* Always time the refactor and the affine solve: the corrector
+         * gate below needs the measured cost ratio (two clock reads per
+         * phase, negligible against either). */
+        double t_phase = linprogx_monotonic_seconds();
+        chol_refactor_mode(chol, self, csc_vals, D, delta_it, refactor_supernodal);
+        double refactor_seconds = linprogx_monotonic_seconds() - t_phase;
+        t_refactor += refactor_seconds;
+        sum_refactor_seconds += refactor_seconds;
 
         /* affine direction */
         for (Py_ssize_t j = 0; j < n; j++) {
             rcl[j] = (bound_kind[j] & 1) ? -sl[j] * zl[j] : 0.0;
             rcu[j] = (bound_kind[j] & 2) ? -su[j] * zu[j] : 0.0;
         }
-        if (debug) {
-            struct timespec ts0, ts1;
-            clock_gettime(CLOCK_MONOTONIC, &ts0);
-            ipm_newton_solve(&nw, rp, rd, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
-            clock_gettime(CLOCK_MONOTONIC, &ts1);
-            t_newton += (double)(ts1.tv_sec - ts0.tv_sec) +
-                        1e-9 * (double)(ts1.tv_nsec - ts0.tv_nsec);
-        } else {
-            ipm_newton_solve(&nw, rp, rd, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
-        }
+        t_phase = linprogx_monotonic_seconds();
+        ipm_newton_solve(&nw, rp, rd, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
+        double solve_seconds = linprogx_monotonic_seconds() - t_phase;
+        t_newton += solve_seconds;
+        sum_affine_seconds += solve_seconds;
 
         double ap_aff = 1.0;
         double ad_aff = 1.0;
@@ -5692,8 +5709,19 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
          * recentering direction (zero primal/dual residual rhs) while it
          * lengthens the steps. One back-solve per round is cheap against
          * the full refactor a saved iteration avoids. Global constants;
-         * skipped once both steps are already long. */
-        for (int mcc = 0; mcc < max_mcc; mcc++) {
+         * skipped once both steps are already long.
+         *
+         * Cost-ratio gate (Gondzio's rule): correctors pay only when a
+         * saved iteration (one refactor) is worth clearly more than the
+         * extra back-solves. Measured ratios: maros_r7 ~7, pilot87 ~7,
+         * and pre-gate ken_18 ~11 gain from correctors; cre_b ~4.5,
+         * cre_d ~5, osa_14 ~4.4 lose wall time to them. 5.5 sits in the
+         * gap between the measured populations; it is a machine cost
+         * ratio, not per-instance. Cumulative sums, not per-iteration
+         * values, so load spikes cannot flap the decision. */
+        int mcc_budget =
+            sum_refactor_seconds >= mcc_ratio * sum_affine_seconds ? max_mcc : 0;
+        for (int mcc = 0; mcc < mcc_budget; mcc++) {
             if (ap >= 0.9 && ad >= 0.9) {
                 break;
             }
