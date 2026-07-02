@@ -6194,53 +6194,51 @@ typedef struct {
 
     int32_t  singular_step; /* -1 if nonsingular, else failing step index */
 
-    /* ---- Basis update eta file (product form of the inverse) ----
+    /* ---- Sparse Forrest-Tomlin basis update ----
      *
-     * Each update k stores:
-     *   eta_vectors[k*m .. (k+1)*m - 1] = alpha_k = B_{k-1}^{-1} * a_entering_k
-     *   eta_positions[k] = leaving_pos (original column index being replaced)
+     * Replaces the dense product-form-of-the-inverse (PFI) with packed
+     * sparse eta vectors.  Each update k stores:
      *
-     * Operator composition for FTRAN (solve B_k x = b):
+     *   eta_positions[k] = leaving_pos p_k
+     *   eta_pivot[k]     = alpha_k[p_k]  (the pivot value)
+     *   eta_sp_idx/val[eta_sp_start[k] .. eta_sp_start[k+1]-1]
+     *       = nonzero entries of alpha_k at indices j != p_k
      *
-     *   B_k = B_0 E_1 E_2 ... E_k  where E_i replaces column p_i of B_{i-1}
-     *     with a_entering_i.  E_i has column j = e_j (j != p_i) and
-     *     column p_i = alpha_i.
+     * The semantics of the update are identical to the old dense PFI:
      *
-     *   B_k^{-1} = E_k^{-1} ... E_1^{-1} B_0^{-1}
+     *   FTRAN step (apply E_k^{-1}):
+     *     temp = x[p_k] / eta_pivot[k]
+     *     for (j, v) in sparse entries: x[j] -= v * temp
+     *     x[p_k] = temp
      *
-     *   E_i^{-1} = I + (e_{p_i} - alpha_i) e_{p_i}^T / alpha_i[p_i]
+     *   BTRAN step (apply E_k^{-T}, in reverse order):
+     *     dot = eta_pivot[k] * v[p_k]
+     *     for (j, v) in sparse entries: dot += v * v_eta[j]
+     *     v_eta[p_k] += (v_eta[p_k] - dot) / eta_pivot[k]
      *
-     *   FTRAN steps:
-     *   1. w = B_0^{-1} b  (standard FTRAN: z=Pb, Lw=z, Uy=w, x=Qy)
-     *   2. For i = 1..k:  apply E_i^{-1}:
-     *        temp = w[p_i] / alpha_i[p_i]
-     *        for j != p_i:  w[j] -= alpha_i[j] * temp
-     *        w[p_i] = temp
-     *   3. Result: x = w
-     *
-     * Operator composition for BTRAN (solve B_k^T x = b):
-     *
-     *   B_k^{-T} = B_0^{-T} E_1^{-T} ... E_k^{-T}
-     *
-     *   E_i^{-T} = I + e_{p_i} (e_{p_i} - alpha_i)^T / alpha_i[p_i]
-     *
-     *   (E_i^{-T} v)[j] = v[j]                                   for j != p_i
-     *   (E_i^{-T} v)[p_i] = v[p_i] + (v[p_i] - alpha_i^T v) / alpha_i[p_i]
-     *
-     *   BTRAN steps:
-     *   1. v = b  (working copy)
-     *   2. For i = k..1:  apply E_i^{-T}:
-     *        dot = sum_j alpha_i[j] * v[j]
-     *        v[p_i] += (v[p_i] - dot) / alpha_i[p_i]
-     *   3. x = B_0^{-T} v  (standard BTRAN on modified v)
+     * Packed storage avoids the O(k*m) cost of dense PFI; each
+     * FTRAN/BTRAN update costs O(nnz_k) instead of O(m).
      */
-    double  *eta_vectors;    /* flattened: eta_vectors[k*m .. (k+1)*m-1] */
-    int32_t *eta_positions;  /* leaving_pos for each update */
-    int32_t  n_updates;      /* number of accumulated updates */
-    int32_t  eta_cap;        /* allocated capacity for updates */
-    int32_t  orig_nnz_lu;    /* original nnzL + nnzU for refactor threshold */
-    double   max_abs_diag;   /* max |alpha_i[p_i]| across all updates */
-    double   min_abs_diag;   /* min |alpha_i[p_i]| across all updates */
+    int32_t *eta_positions;     /* leaving_pos per update, size n_updates */
+    double  *eta_pivot;         /* pivot value per update, size n_updates */
+    int32_t *eta_sp_start;      /* CSR-style starts into packed arrays, size n_updates+1 */
+    int32_t *eta_sp_idx;        /* packed nonzero column indices */
+    double  *eta_sp_val;        /* packed nonzero values */
+    int32_t  eta_sp_total_nnz;  /* total packed nonzeros across all updates */
+    int32_t  eta_sp_packed_cap; /* allocated capacity for packed arrays */
+    int32_t  n_updates;         /* number of accumulated updates */
+    int32_t  eta_cap;           /* allocated capacity for per-update arrays */
+    int32_t  orig_nnz_lu;       /* original nnzL + nnzU for refactor threshold */
+    double   max_abs_diag;      /* max |eta_pivot[k]| across all updates */
+    double   min_abs_diag;      /* min |eta_pivot[k]| across all updates */
+
+    /* ---- Cached U diagonal for fast FTRAN/BTRAN ---- */
+    double  *u_diag;            /* u_diag[j] = U[j,j], size m */
+
+    /* ---- Reusable workspace for FTRAN/BTRAN (avoid per-call malloc) ---- */
+    double  *ws_z;              /* workspace of size m */
+    double  *ws_w;              /* workspace of size m */
+    double  *ws_v;              /* workspace of size m (BTRAN eta application) */
 } LUContext;
 
 /* Allocate a pool entry; returns index or -1 on failure. */
@@ -6397,8 +6395,15 @@ static void lu_context_free(LUContext *ctx) {
     free(ctx->perm_col);
     free(ctx->inv_perm_row);
     free(ctx->inv_perm_col);
-    free(ctx->eta_vectors);
     free(ctx->eta_positions);
+    free(ctx->eta_pivot);
+    free(ctx->eta_sp_start);
+    free(ctx->eta_sp_idx);
+    free(ctx->eta_sp_val);
+    free(ctx->u_diag);
+    free(ctx->ws_z);
+    free(ctx->ws_w);
+    free(ctx->ws_v);
     free(ctx);
 }
 
@@ -7019,13 +7024,37 @@ assemble:
     }
 
     /* Initialize basis update eta file */
-    ctx->eta_vectors = NULL;
+    /* Initialize sparse Forrest-Tomlin update storage */
     ctx->eta_positions = NULL;
+    ctx->eta_pivot = NULL;
+    ctx->eta_sp_start = NULL;
+    ctx->eta_sp_idx = NULL;
+    ctx->eta_sp_val = NULL;
+    ctx->eta_sp_total_nnz = 0;
+    ctx->eta_sp_packed_cap = 0;
     ctx->n_updates = 0;
     ctx->eta_cap = 0;
     ctx->orig_nnz_lu = ctx->nnz_l + ctx->nnz_u;
     ctx->max_abs_diag = 0.0;
     ctx->min_abs_diag = 1e300;
+
+    /* Build cached U diagonal for fast access in FTRAN/BTRAN */
+    ctx->u_diag = calloc((size_t)m, sizeof(double));
+    if (ctx->u_diag == NULL) goto oom;
+    for (int32_t j = 0; j < m; j++) {
+        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+            if (ctx->u_indices[p] == j) {
+                ctx->u_diag[j] = ctx->u_values[p];
+                break;
+            }
+        }
+    }
+
+    /* Allocate reusable workspace for FTRAN/BTRAN */
+    ctx->ws_z = calloc((size_t)m, sizeof(double));
+    ctx->ws_w = calloc((size_t)m, sizeof(double));
+    ctx->ws_v = calloc((size_t)m, sizeof(double));
+    if (ctx->ws_z == NULL || ctx->ws_w == NULL || ctx->ws_v == NULL) goto oom;
 
     /* Cleanup temporaries and return */
     lu_active_free(&active);
@@ -7066,15 +7095,8 @@ oom:
  */
 static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
     int32_t m = ctx->m;
-    double *z = calloc((size_t)m, sizeof(double));
-    double *w = calloc((size_t)m, sizeof(double));
-    if (z == NULL || w == NULL) {
-        /* Fallback: zero output on OOM (shouldn't happen for reasonable m) */
-        memset(x, 0, (size_t)m * sizeof(double));
-        free(z);
-        free(w);
-        return;
-    }
+    double *z = ctx->ws_z;
+    double *w = ctx->ws_w;
 
     /* Step 1: z = P b */
     for (int32_t k = 0; k < m; k++) {
@@ -7086,32 +7108,19 @@ static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
     for (int32_t j = 0; j < m; j++) {
         /* w[j] is finalized (L[j,j] = 1 implicit) */
         for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
-            int32_t i = ctx->l_indices[p];
-            w[i] -= ctx->l_values[p] * w[j];
+            w[ctx->l_indices[p]] -= ctx->l_values[p] * w[j];
         }
     }
 
-    /* Step 3: U y = w (back substitution, U is upper triangular CSC) */
+    /* Step 3: U y = w (back substitution using cached diagonal) */
     /* y stored in z (reuse) */
     memcpy(z, w, (size_t)m * sizeof(double));
     for (int32_t j = m - 1; j >= 0; j--) {
-        /* Find diagonal entry U[j,j] in column j */
-        double diag = 0.0;
-        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
-            if (ctx->u_indices[p] == j) {
-                diag = ctx->u_values[p];
-            } else if (ctx->u_indices[p] < j) {
-                /* Above diagonal: subtract from z */
-                /* This entry is U[i,j] where i < j. We'll handle in a
-                 * column-oriented back-solve: subtract U[i,j]*z[j] from z[i]
-                 * after computing z[j]. But z[j] isn't known yet for
-                 * non-diagonal entries. We need to find the diagonal first. */
-            }
-        }
+        double diag = ctx->u_diag[j];
         if (diag != 0.0) {
             z[j] /= diag;
         }
-        /* Now subtract U[i,j] * z[j] from z[i] for i < j */
+        /* Subtract U[i,j] * z[j] from z[i] for i < j */
         for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
             int32_t i = ctx->u_indices[p];
             if (i < j) {
@@ -7125,30 +7134,29 @@ static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
         x[ctx->perm_col[k]] = z[k];
     }
 
-    /* Step 5: Apply basis-update etas (product form of the inverse).
+    /* Step 5: Apply sparse Forrest-Tomlin etas.
      *
      * After standard FTRAN, x = B_0^{-1} b. With k accumulated updates:
      *   x_final = E_k^{-1} ... E_1^{-1} x
      *
      * Each E_i^{-1} acts on x as:
-     *   temp = x[pos_i] / alpha_i[pos_i]
-     *   x[j] -= alpha_i[j] * temp   for all j != pos_i
+     *   temp = x[pos_i] / pivot_i
+     *   for (j, v) in sparse eta_i: x[j] -= v * temp
      *   x[pos_i] = temp
+     *
+     * Cost per update: O(nnz_i) instead of O(m).
      */
     for (int32_t upd = 0; upd < ctx->n_updates; upd++) {
         int32_t pos = ctx->eta_positions[upd];
-        const double *alpha = ctx->eta_vectors + (size_t)upd * (size_t)m;
-        double temp = x[pos] / alpha[pos];
-        for (int32_t j = 0; j < m; j++) {
-            if (j != pos) {
-                x[j] -= alpha[j] * temp;
-            }
+        double temp = x[pos] / ctx->eta_pivot[upd];
+        int32_t sp_start = ctx->eta_sp_start[upd];
+        int32_t sp_end   = ctx->eta_sp_start[upd + 1];
+        for (int32_t p = sp_start; p < sp_end; p++) {
+            x[ctx->eta_sp_idx[p]] -= ctx->eta_sp_val[p] * temp;
         }
         x[pos] = temp;
     }
 
-    free(z);
-    free(w);
 }
 
 /*
@@ -7170,46 +7178,34 @@ static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
  */
 static void lu_btran(const LUContext *ctx, const double *b, double *x) {
     int32_t m = ctx->m;
-    double *z = calloc((size_t)m, sizeof(double));
-    double *w = calloc((size_t)m, sizeof(double));
-    if (z == NULL || w == NULL) {
-        memset(x, 0, (size_t)m * sizeof(double));
-        free(z);
-        free(w);
-        return;
-    }
+    double *z = ctx->ws_z;
+    double *w = ctx->ws_w;
 
-    /* Step 0: Apply basis-update etas BEFORE the standard BTRAN.
+    /* Step 0: Apply sparse Forrest-Tomlin etas BEFORE the standard BTRAN.
      *
      * With k accumulated updates:
      *   x = B_0^{-T} E_1^{-T} ... E_k^{-T} b
      *
-     * Apply etas to b in reverse order (k downto 1), producing v:
-     *   v = E_1^{-T} ... E_k^{-T} b
+     * Apply etas in reverse order (k downto 1):
+     *   dot = pivot_i * v[pos_i] + sum_{(j,v) in sparse} v * v_eta[j]
+     *   v[pos_i] += (v[pos_i] - dot) / pivot_i
      *
-     * Each E_i^{-T} acts on v as:
-     *   v[j] unchanged for j != pos_i
-     *   v[pos_i] += (v[pos_i] - dot(alpha_i, v)) / alpha_i[pos_i]
+     * Cost per update: O(nnz_i) instead of O(m).
      */
-    double *v_eta = NULL;
+    double *v_eta = ctx->ws_v;
     const double *b_eff = b;
     if (ctx->n_updates > 0) {
-        v_eta = calloc((size_t)m, sizeof(double));
-        if (v_eta == NULL) {
-            memset(x, 0, (size_t)m * sizeof(double));
-            free(z);
-            free(w);
-            return;
-        }
         memcpy(v_eta, b, (size_t)m * sizeof(double));
         for (int32_t upd = ctx->n_updates - 1; upd >= 0; upd--) {
             int32_t pos = ctx->eta_positions[upd];
-            const double *alpha = ctx->eta_vectors + (size_t)upd * (size_t)m;
-            double dot = 0.0;
-            for (int32_t j = 0; j < m; j++) {
-                dot += alpha[j] * v_eta[j];
+            double piv = ctx->eta_pivot[upd];
+            double dot = piv * v_eta[pos];
+            int32_t sp_start = ctx->eta_sp_start[upd];
+            int32_t sp_end   = ctx->eta_sp_start[upd + 1];
+            for (int32_t p = sp_start; p < sp_end; p++) {
+                dot += ctx->eta_sp_val[p] * v_eta[ctx->eta_sp_idx[p]];
             }
-            v_eta[pos] += (v_eta[pos] - dot) / alpha[pos];
+            v_eta[pos] += (v_eta[pos] - dot) / piv;
         }
         b_eff = v_eta;
     }
@@ -7219,111 +7215,40 @@ static void lu_btran(const LUContext *ctx, const double *b, double *x) {
         z[k] = b_eff[ctx->perm_col[k]];
     }
 
-    /* Step 2: U^T w = z (forward solve with U transposed)
-     * U^T is lower triangular. Column j of U^T = row j of U.
-     * In CSC of U: column j has entries U[i,j]. Transposing: U^T[j,i] = U[i,j].
-     * Forward solve on U^T (lower triangular):
-     * For j = 0..m-1:
-     *   w[j] = (z[j] - sum_{i<j} U^T[j,i]*w[i]) / U^T[j,j]
-     *        = (z[j] - sum_{i<j} U[i,j]*w[i]) / U[j,j]
-     * But U is stored in CSC, so U[i,j] is in column j.
-     * For column-oriented: process columns and scatter.
+    /* Step 2: U^T w = z (forward solve with U transposed, using cached diagonal)
+     *
+     * U^T is lower triangular. U^T[j,i] = U[i,j].
+     * Row j of U^T corresponds to column j of U.
+     * Entries in column j of U with row index i < j give U^T[j,i] for i < j.
+     *
+     * Forward solve: for j = 0..m-1:
+     *   w[j] = (z[j] - sum_{i<j} U[i,j] * w[i]) / U[j,j]
      */
     memcpy(w, z, (size_t)m * sizeof(double));
     for (int32_t j = 0; j < m; j++) {
-        /* Find diagonal and divide */
-        double diag = 0.0;
-        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
-            if (ctx->u_indices[p] == j) {
-                diag = ctx->u_values[p];
-                break;
-            }
-        }
-        if (diag != 0.0) {
-            w[j] /= diag;
-        }
-        /* Scatter: for each U[i,j] with i < j, this means U^T[j,i].
-         * In U^T forward solve, after computing w[j], we subtract
-         * U^T[k,j] * w[j] from w[k] for k > j.
-         * U^T[k,j] = U[j,k] -- that's in column k of U, not column j.
-         * So column-oriented U^T solve doesn't scatter from column j.
-         *
-         * Let me redo this: row-oriented forward solve on U^T:
-         * w[j] = z[j]; for i in row j of U^T (i.e., entries U^T[j,i] for i<j):
-         *   w[j] -= U^T[j,i] * w[i]
-         * w[j] /= U^T[j,j]
-         *
-         * U^T[j,i] = U[i,j]. In CSC of U, U[i,j] is in column j at row i.
-         * So to get row j of U^T, we need all U[i,j] entries -- wait, that's
-         * column j of U. No: U^T[j,i] = U[i,j], so row j of U^T has entries
-         * at columns i where U[i,j] != 0, i.e., where column j of U has
-         * row index i. But we want U^T[j, *], which is U[*, j] = column j of U
-         * read as a row.
-         *
-         * Hmm, U^T[j,i] = U[i,j]. To iterate row j of U^T, we need all (i)
-         * such that U[i,j] != 0 for some i, varying over i -- but that's just
-         * all entries in column j of U, giving us pairs (i, U[i,j]).
-         * So U^T row j has entries at columns {i : U[i,j] != 0} with values U[i,j].
-         *
-         * For forward solve on lower triangular U^T:
-         * for j=0..m-1:
-         *   w[j] = z[j] - sum over p in U_col_j where U_indices[p] < j:
-         *          nothing -- those have i < j, meaning U^T[j, i] for i<j.
-         *          Wait: U^T[j,i] = U[i,j]. Looking at column j of U:
-         *          entry with row i means U[i,j], which is U^T[j,i].
-         *          For forward solve: subtract U^T[j,i]*w[i] for i < j.
-         *          The entries with i < j in column j give us those.
-         */
-        /* Redo: subtract entries with row index < j (they are U^T[j, i] = U[i,j]) */
-        /* We already divided by diag above which assumed w[j] was adjusted.
-         * Let's redo properly: */
-    }
-    /* Redo U^T forward solve properly */
-    memcpy(w, z, (size_t)m * sizeof(double));
-    for (int32_t j = 0; j < m; j++) {
-        /* Subtract contributions from earlier columns */
-        /* U^T[j, i] = U[i, j] for i < j. These are entries in column j of U
-         * with row index i < j. */
+        /* Subtract contributions from entries in column j with row < j */
         for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
             int32_t i = ctx->u_indices[p];
             if (i < j) {
                 w[j] -= ctx->u_values[p] * w[i];
             }
         }
-        /* Divide by diagonal: U^T[j,j] = U[j,j] */
-        double diag = 0.0;
-        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
-            if (ctx->u_indices[p] == j) {
-                diag = ctx->u_values[p];
-                break;
-            }
-        }
+        /* Divide by cached diagonal */
+        double diag = ctx->u_diag[j];
         if (diag != 0.0) {
             w[j] /= diag;
         }
     }
 
     /* Step 3: L^T y = w (back solve with L^T, unit upper triangular)
-     * L is unit lower triangular CSC. L^T is unit upper triangular.
-     * L^T[i, j] = L[j, i]. Column j of L has entries L[i, j] for i > j.
-     * So L^T[j, i] = L[i, j] for i > j means L^T row j has entries at
-     * columns i > j.
      *
-     * Back solve on unit upper triangular L^T:
      * for j = m-1 .. 0:
-     *   y[j] = w[j] - sum over i > j of L^T[j, i] * y[i]
-     *        = w[j] - sum over i > j of L[i, j] * y[i]
-     * Column j of L gives us L[i, j] for i > j. So:
-     * for j = m-1 .. 0:
-     *   y[j] = w[j] - sum over p in L_col_j: L_values[p] * y[L_indices[p]]
-     * where L_indices[p] > j (all of them since L is strictly lower tri).
+     *   y[j] = w[j] - sum_{p in L_col_j} L_values[p] * y[L_indices[p]]
      */
-    /* y stored in z (reuse) */
     memcpy(z, w, (size_t)m * sizeof(double));
     for (int32_t j = m - 1; j >= 0; j--) {
         for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
-            int32_t i = ctx->l_indices[p];
-            z[j] -= ctx->l_values[p] * z[i];
+            z[j] -= ctx->l_values[p] * z[ctx->l_indices[p]];
         }
     }
 
@@ -7331,16 +7256,12 @@ static void lu_btran(const LUContext *ctx, const double *b, double *x) {
     for (int32_t i = 0; i < m; i++) {
         x[i] = z[ctx->inv_perm_row[i]];
     }
-
-    free(z);
-    free(w);
-    free(v_eta);
 }
 
 /* ---- Basis-update functions ---- */
 
 /*
- * lu_update: Forrest-Tomlin basis-change update (product form of the inverse).
+ * lu_update: Sparse Forrest-Tomlin basis-change update.
  *
  * Replaces column `leaving_pos` of B with the entering column given in
  * sparse form (entering_indices, entering_values, entering_nnz).
@@ -7350,7 +7271,9 @@ static void lu_btran(const LUContext *ctx, const double *b, double *x) {
  * 2. FTRAN through current factorization (L, U, P, Q + accumulated etas)
  *    to get alpha = B_current^{-1} * a_entering.
  * 3. Check |alpha[leaving_pos]| >= threshold for singularity.
- * 4. Store (leaving_pos, alpha) as a new eta entry.
+ * 4. Store (leaving_pos, pivot, sparse off-diagonal entries of alpha).
+ *    Entries with |alpha[j]| < drop_tol * max|alpha| are dropped to
+ *    improve sparsity without measurable accuracy loss.
  *
  * Returns 0 on success, -1 if the update is (near-)singular.
  * On singularity, state is unchanged (skip-and-continue semantics).
@@ -7392,30 +7315,86 @@ static int lu_update(LUContext *ctx,
         return -1;
     }
 
-    /* Grow eta storage if needed */
+    /* Count nonzeros for sparse storage (off-diagonal entries only).
+     * Drop entries with |alpha[j]| < drop_tol to improve sparsity. */
+    double alpha_max = 0.0;
+    for (int32_t j = 0; j < m; j++) {
+        double av = fabs(alpha[j]);
+        if (av > alpha_max) alpha_max = av;
+    }
+    (void)alpha_max;  /* no drop tolerance — keep etas exact */
+
+    int32_t sp_nnz = 0;
+    for (int32_t j = 0; j < m; j++) {
+        if (j != leaving_pos && alpha[j] != 0.0) {
+            sp_nnz++;
+        }
+    }
+
+    /* Grow per-update arrays if needed */
     if (ctx->n_updates >= ctx->eta_cap) {
         int32_t new_cap = ctx->eta_cap == 0 ? 16 : ctx->eta_cap * 2;
-        double *new_vectors = realloc(ctx->eta_vectors,
-                                       (size_t)new_cap * (size_t)m * sizeof(double));
         int32_t *new_positions = realloc(ctx->eta_positions,
                                           (size_t)new_cap * sizeof(int32_t));
-        if (new_vectors == NULL || new_positions == NULL) {
-            /* If one succeeded and the other failed, the old pointer is still
-             * valid (realloc guarantees this on failure). */
-            if (new_vectors != NULL) ctx->eta_vectors = new_vectors;
+        double *new_pivot = realloc(ctx->eta_pivot,
+                                     (size_t)new_cap * sizeof(double));
+        int32_t *new_starts = realloc(ctx->eta_sp_start,
+                                       ((size_t)new_cap + 1) * sizeof(int32_t));
+        if (new_positions == NULL || new_pivot == NULL || new_starts == NULL) {
             if (new_positions != NULL) ctx->eta_positions = new_positions;
+            if (new_pivot != NULL) ctx->eta_pivot = new_pivot;
+            if (new_starts != NULL) ctx->eta_sp_start = new_starts;
             free(alpha);
             return -1;
         }
-        ctx->eta_vectors = new_vectors;
         ctx->eta_positions = new_positions;
+        ctx->eta_pivot = new_pivot;
+        ctx->eta_sp_start = new_starts;
+        if (ctx->n_updates == 0) {
+            ctx->eta_sp_start[0] = 0;
+        }
         ctx->eta_cap = new_cap;
     }
 
-    /* Store eta entry */
-    memcpy(ctx->eta_vectors + (size_t)ctx->n_updates * (size_t)m,
-           alpha, (size_t)m * sizeof(double));
+    /* Grow packed sparse arrays if needed */
+    int32_t new_total = ctx->eta_sp_total_nnz + sp_nnz;
+    if (new_total > ctx->eta_sp_packed_cap) {
+        int32_t new_pcap = ctx->eta_sp_packed_cap == 0 ? 256 : ctx->eta_sp_packed_cap;
+        while (new_pcap < new_total) new_pcap *= 2;
+        int32_t *new_idx = realloc(ctx->eta_sp_idx,
+                                    (size_t)new_pcap * sizeof(int32_t));
+        double *new_val = realloc(ctx->eta_sp_val,
+                                   (size_t)new_pcap * sizeof(double));
+        if (new_idx == NULL || new_val == NULL) {
+            if (new_idx != NULL) ctx->eta_sp_idx = new_idx;
+            if (new_val != NULL) ctx->eta_sp_val = new_val;
+            free(alpha);
+            return -1;
+        }
+        ctx->eta_sp_idx = new_idx;
+        ctx->eta_sp_val = new_val;
+        ctx->eta_sp_packed_cap = new_pcap;
+    }
+
+    /* Store sparse eta entry */
+    if (ctx->n_updates == 0 && ctx->eta_sp_start == NULL) {
+        /* Should not happen after grow above, but be safe */
+        free(alpha);
+        return -1;
+    }
+    int32_t pack_pos = ctx->eta_sp_total_nnz;
+    for (int32_t j = 0; j < m; j++) {
+        if (j != leaving_pos && alpha[j] != 0.0) {
+            ctx->eta_sp_idx[pack_pos] = j;
+            ctx->eta_sp_val[pack_pos] = alpha[j];
+            pack_pos++;
+        }
+    }
+
     ctx->eta_positions[ctx->n_updates] = leaving_pos;
+    ctx->eta_pivot[ctx->n_updates] = pivot;
+    ctx->eta_sp_start[ctx->n_updates + 1] = new_total;
+    ctx->eta_sp_total_nnz = new_total;
     ctx->n_updates++;
 
     /* Track diagonal statistics */
@@ -7427,13 +7406,120 @@ static int lu_update(LUContext *ctx,
 }
 
 /*
+ * lu_update_with_ftran: basis-change update using a PRE-COMPUTED alpha
+ * vector (alpha = B_current^{-1} * a_entering, already obtained via
+ * lu_ftran in the calling code).  Avoids the redundant internal FTRAN
+ * that the standard lu_update performs.
+ *
+ * The caller must ensure alpha_precomputed[0..m-1] is valid dense output
+ * from lu_ftran on the current factorization.  This buffer is NOT freed
+ * by this function.
+ *
+ * Returns 0 on success, -1 if near-singular (state unchanged).
+ */
+static int lu_update_with_ftran(LUContext *ctx,
+                                int32_t leaving_pos,
+                                const double *alpha_precomputed) {
+    int32_t m = ctx->m;
+
+    double pivot = alpha_precomputed[leaving_pos];
+    double abs_pivot = fabs(pivot);
+
+    double max_diag = ctx->max_abs_diag;
+    if (max_diag < 1.0) max_diag = 1.0;
+
+    if (abs_pivot < 1e-11 * max_diag) {
+        return -1;
+    }
+
+    /* Count nonzeros for sparse storage */
+    double alpha_max = 0.0;
+    for (int32_t j = 0; j < m; j++) {
+        double av = fabs(alpha_precomputed[j]);
+        if (av > alpha_max) alpha_max = av;
+    }
+    (void)alpha_max;  /* no drop tolerance — keep etas exact */
+
+    int32_t sp_nnz = 0;
+    for (int32_t j = 0; j < m; j++) {
+        if (j != leaving_pos && alpha_precomputed[j] != 0.0) {
+            sp_nnz++;
+        }
+    }
+
+    /* Grow per-update arrays if needed */
+    if (ctx->n_updates >= ctx->eta_cap) {
+        int32_t new_cap = ctx->eta_cap == 0 ? 16 : ctx->eta_cap * 2;
+        int32_t *new_positions = realloc(ctx->eta_positions,
+                                          (size_t)new_cap * sizeof(int32_t));
+        double *new_pivot = realloc(ctx->eta_pivot,
+                                     (size_t)new_cap * sizeof(double));
+        int32_t *new_starts = realloc(ctx->eta_sp_start,
+                                       ((size_t)new_cap + 1) * sizeof(int32_t));
+        if (new_positions == NULL || new_pivot == NULL || new_starts == NULL) {
+            if (new_positions != NULL) ctx->eta_positions = new_positions;
+            if (new_pivot != NULL) ctx->eta_pivot = new_pivot;
+            if (new_starts != NULL) ctx->eta_sp_start = new_starts;
+            return -1;
+        }
+        ctx->eta_positions = new_positions;
+        ctx->eta_pivot = new_pivot;
+        ctx->eta_sp_start = new_starts;
+        if (ctx->n_updates == 0) {
+            ctx->eta_sp_start[0] = 0;
+        }
+        ctx->eta_cap = new_cap;
+    }
+
+    /* Grow packed sparse arrays if needed */
+    int32_t new_total = ctx->eta_sp_total_nnz + sp_nnz;
+    if (new_total > ctx->eta_sp_packed_cap) {
+        int32_t new_pcap = ctx->eta_sp_packed_cap == 0 ? 256 : ctx->eta_sp_packed_cap;
+        while (new_pcap < new_total) new_pcap *= 2;
+        int32_t *new_idx = realloc(ctx->eta_sp_idx,
+                                    (size_t)new_pcap * sizeof(int32_t));
+        double *new_val = realloc(ctx->eta_sp_val,
+                                   (size_t)new_pcap * sizeof(double));
+        if (new_idx == NULL || new_val == NULL) {
+            if (new_idx != NULL) ctx->eta_sp_idx = new_idx;
+            if (new_val != NULL) ctx->eta_sp_val = new_val;
+            return -1;
+        }
+        ctx->eta_sp_idx = new_idx;
+        ctx->eta_sp_val = new_val;
+        ctx->eta_sp_packed_cap = new_pcap;
+    }
+
+    /* Store sparse eta entry */
+    int32_t pack_pos = ctx->eta_sp_total_nnz;
+    for (int32_t j = 0; j < m; j++) {
+        if (j != leaving_pos && alpha_precomputed[j] != 0.0) {
+            ctx->eta_sp_idx[pack_pos] = j;
+            ctx->eta_sp_val[pack_pos] = alpha_precomputed[j];
+            pack_pos++;
+        }
+    }
+
+    ctx->eta_positions[ctx->n_updates] = leaving_pos;
+    ctx->eta_pivot[ctx->n_updates] = pivot;
+    ctx->eta_sp_start[ctx->n_updates + 1] = new_total;
+    ctx->eta_sp_total_nnz = new_total;
+    ctx->n_updates++;
+
+    if (abs_pivot > ctx->max_abs_diag) ctx->max_abs_diag = abs_pivot;
+    if (abs_pivot < ctx->min_abs_diag) ctx->min_abs_diag = abs_pivot;
+
+    return 0;
+}
+
+/*
  * lu_should_refactor: predicate indicating the factorization should be
  * recomputed from scratch.
  *
  * Triggers:
  * - Number of accumulated updates >= 100
  * - Diagonal growth ratio max/min > 1e8
- * - Total eta storage > 2 * original nnz(L + U)
+ * - Total sparse eta fill > 4 * original nnz(L + U)
  *
  * Returns 1 if refactorization is recommended, 0 otherwise.
  */
@@ -7445,12 +7531,12 @@ static int lu_should_refactor(const LUContext *ctx) {
         if (ratio > 1e8) return 1;
     }
 
-    /* Total eta entries: n_updates * m (dense vectors).
-     * Only check after enough updates to amortize refactorization cost.
-     * Minimum 20 updates (important for identity-start where orig_nnz is tiny). */
+    /* Total sparse eta entries.  With sparse storage the fill grows much
+     * more slowly than the old dense O(k*m) scheme, so use a 4x threshold
+     * (was 2x for dense).  Minimum 20 updates to amortize refactorization. */
     if (ctx->n_updates >= 20) {
-        int64_t eta_fill = (int64_t)ctx->n_updates * (int64_t)ctx->m;
-        if (eta_fill > 2 * (int64_t)ctx->orig_nnz_lu) return 1;
+        int64_t eta_fill = (int64_t)ctx->eta_sp_total_nnz;
+        if (eta_fill > 4 * (int64_t)ctx->orig_nnz_lu) return 1;
     }
 
     return 0;
@@ -7726,6 +7812,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *lo_true = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     double *hi_true = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
 
+    /* Ruiz equilibration scaling arrays */
+    double *ds_row_scale = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *ds_col_scale = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    double *scaled_csc_data = calloc((size_t)(self->nnz > 0 ? self->nnz : 1), sizeof(double));
+    double *scaled_csr_data = calloc((size_t)(self->nnz > 0 ? self->nnz : 1), sizeof(double));
+    double *c_orig = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+
     if (c_ext == NULL || lo_ext == NULL || hi_ext == NULL ||
         x_ext == NULL || r_ext == NULL || basis_pos == NULL || bound_status == NULL ||
         b == NULL || y == NULL || x_B == NULL || rhs == NULL ||
@@ -7734,7 +7827,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         b_indptr == NULL || b_indices == NULL || b_values == NULL ||
         rho_nz_rows == NULL || alpha_scratch == NULL || alpha_touched == NULL ||
         flip_delta_xB == NULL ||
-        has_art_bound == NULL || lo_true == NULL || hi_true == NULL) {
+        has_art_bound == NULL || lo_true == NULL || hi_true == NULL ||
+        ds_row_scale == NULL || ds_col_scale == NULL || scaled_csc_data == NULL ||
+        scaled_csr_data == NULL || c_orig == NULL) {
         PyErr_NoMemory();
         goto done;
     }
@@ -7746,6 +7841,150 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         fill_double_array(hi_obj, n_s, hi_ext, "hi") != 0) {
         goto done;
     }
+    /* Save original costs before scaling (avoid round-trip error from
+     * multiplying then dividing by the scale factor). */
+    memcpy(c_orig, c_ext, (size_t)n * sizeof(double));
+
+    /* ---- Ruiz equilibration: scale A, b, c, lo, hi ----
+     * Same 10-pass inf-norm + 1 l2 pass as in the IPM entry.
+     * Scaled problem: min c_s'x_s s.t. A_s x_s = b_s, lo_s <= x_s <= hi_s
+     * where A_s = R A C, b_s = R b, c_s = C c, lo_s = lo/C, hi_s = hi/C,
+     * x_s = C^{-1} x. R = diag(ds_row_scale), C = diag(ds_col_scale).
+     *
+     * Skip Ruiz when the matrix is already well-conditioned (inf-norm ratio
+     * < 100): the round-trip scale/unscale introduces floating-point error
+     * that can exceed tight absolute tolerances on well-balanced problems. */
+    int ruiz_active = 0;  /* set to 1 if we actually apply scaling */
+    {
+        /* Temp arrays for row/col inf-norms (reuse rhs and alpha_col) */
+        double *row_norms = rhs;       /* size m */
+        double *col_norms = alpha_col;  /* size m, but we need n; use r_ext */
+        /* Actually, r_ext is size n_total >= n, and we haven't used it yet. */
+        double *cn = r_ext;  /* borrow r_ext temporarily for col norms */
+
+        for (int32_t j = 0; j < n; j++) ds_col_scale[j] = 1.0;
+        for (int32_t i = 0; i < m; i++) ds_row_scale[i] = 1.0;
+
+        /* Compute row inf-norms of the raw matrix to decide if scaling
+         * is needed.  If max_norm / min_norm < 100 the matrix is already
+         * well-balanced and Ruiz would only introduce round-trip error. */
+        {
+            double min_rnorm = 1e300, max_rnorm = 0.0;
+            for (int32_t i = 0; i < m; i++) row_norms[i] = 0.0;
+            for (int32_t j = 0; j < n; j++) {
+                for (Py_ssize_t p = self->csc_indptr[j];
+                     p < self->csc_indptr[j + 1]; p++) {
+                    int32_t row = (int32_t)self->csc_rows[p];
+                    double av = fabs(self->csc_data[p]);
+                    if (av > row_norms[row]) row_norms[row] = av;
+                }
+            }
+            for (int32_t i = 0; i < m; i++) {
+                if (row_norms[i] > 0.0) {
+                    if (row_norms[i] < min_rnorm) min_rnorm = row_norms[i];
+                    if (row_norms[i] > max_rnorm) max_rnorm = row_norms[i];
+                }
+            }
+            if (min_rnorm > 0.0 && max_rnorm / min_rnorm >= 100.0) {
+                ruiz_active = 1;
+            }
+        }
+
+        /* 10 passes of Ruiz inf-norm equilibration */
+        if (ruiz_active)
+        for (int ruiz_iter = 0; ruiz_iter < 10; ruiz_iter++) {
+            for (int32_t i = 0; i < m; i++) row_norms[i] = 0.0;
+            for (int32_t j = 0; j < n; j++) cn[j] = 0.0;
+
+            /* Scan CSC to find scaled inf-norms */
+            for (int32_t j = 0; j < n; j++) {
+                for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                    int32_t row = (int32_t)self->csc_rows[p];
+                    double val = fabs(self->csc_data[p] * ds_row_scale[row] * ds_col_scale[j]);
+                    if (val > row_norms[row]) row_norms[row] = val;
+                    if (val > cn[j]) cn[j] = val;
+                }
+            }
+            for (int32_t i = 0; i < m; i++) {
+                if (row_norms[i] > 0.0) ds_row_scale[i] /= sqrt(row_norms[i]);
+            }
+            for (int32_t j = 0; j < n; j++) {
+                if (cn[j] > 0.0) ds_col_scale[j] /= sqrt(cn[j]);
+            }
+        }
+
+        if (ruiz_active) {
+            /* One l2 balancing pass */
+            for (int32_t i = 0; i < m; i++) row_norms[i] = 0.0;
+            for (int32_t j = 0; j < n; j++) cn[j] = 0.0;
+            for (int32_t j = 0; j < n; j++) {
+                for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                    int32_t row = (int32_t)self->csc_rows[p];
+                    double val = self->csc_data[p] * ds_row_scale[row] * ds_col_scale[j];
+                    row_norms[row] += val * val;
+                    cn[j] += val * val;
+                }
+            }
+            for (int32_t i = 0; i < m; i++) {
+                if (row_norms[i] > 0.0) ds_row_scale[i] /= sqrt(sqrt(row_norms[i]));
+            }
+            for (int32_t j = 0; j < n; j++) {
+                if (cn[j] > 0.0) ds_col_scale[j] /= sqrt(sqrt(cn[j]));
+            }
+
+            /* Clamp scales */
+            for (int32_t i = 0; i < m; i++) {
+                if (ds_row_scale[i] < 1e-8) ds_row_scale[i] = 1e-8;
+                else if (ds_row_scale[i] > 1e8) ds_row_scale[i] = 1e8;
+            }
+            for (int32_t j = 0; j < n; j++) {
+                if (ds_col_scale[j] < 1e-8) ds_col_scale[j] = 1e-8;
+                else if (ds_col_scale[j] > 1e8) ds_col_scale[j] = 1e8;
+            }
+            /* Build scaled CSC data */
+            for (int32_t j = 0; j < n; j++) {
+                for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                    int32_t row = (int32_t)self->csc_rows[p];
+                    scaled_csc_data[p] = self->csc_data[p] * ds_row_scale[row] * ds_col_scale[j];
+                }
+            }
+
+            /* Build scaled CSR data (same scaling, CSR layout).
+             * A_s[i,j] = ds_row_scale[i] * A[i,j] * ds_col_scale[j]. */
+            for (int32_t i = 0; i < m; i++) {
+                double rs = ds_row_scale[i];
+                for (Py_ssize_t p = self->indptr[i]; p < self->indptr[i + 1]; p++) {
+                    int32_t col = (int32_t)self->indices[p];
+                    scaled_csr_data[p] = self->data[p] * rs * ds_col_scale[col];
+                }
+            }
+
+            /* Scale c, lo, hi, b for structural columns */
+            for (int32_t j = 0; j < n; j++) {
+                c_ext[j] *= ds_col_scale[j];
+                if (isfinite(lo_ext[j])) lo_ext[j] /= ds_col_scale[j];
+                if (isfinite(hi_ext[j])) hi_ext[j] /= ds_col_scale[j];
+            }
+            for (int32_t i = 0; i < m; i++) {
+                b[i] *= ds_row_scale[i];
+            }
+        } else {
+            /* No scaling: copy raw data to scaled buffers */
+            memcpy(scaled_csc_data, self->csc_data,
+                   (size_t)self->nnz * sizeof(double));
+            memcpy(scaled_csr_data, self->data,
+                   (size_t)self->nnz * sizeof(double));
+        }
+
+        /* Zero the temp arrays we borrowed */
+        memset(rhs, 0, (size_t)m * sizeof(double));
+        memset(r_ext, 0, (size_t)n_total * sizeof(double));
+    }
+
+    /* Local pointer to scaled CSC data — used everywhere instead of
+     * self->csc_data so the solver operates in equilibrated space. */
+    const double *a_data = scaled_csc_data;
+
     /* Set up artificial columns: indices n..n+m-1, cost 0, bounds [0,0] (fixed) */
     for (int32_t i = 0; i < m; i++) {
         c_ext[n + i] = 0.0;
@@ -7782,7 +8021,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
                     int32_t row = (int32_t)self->csc_rows[p];
                     if (!row_covered[row]) {
-                        double av = fabs(self->csc_data[p]);
+                        double av = fabs(a_data[p]);
                         if (av > best_abs) {
                             best_abs = av;
                             best_row = row;
@@ -7817,7 +8056,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      */
     {
         lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
-                                self->csc_data, basis,
+                                a_data, basis,
                                 b_indptr, b_indices, b_values);
         if (lu == NULL || lu->singular_step >= 0) {
             /* Fall back to pure identity basis (all artificials) */
@@ -7827,7 +8066,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 basis[i] = n + i;  /* artificial for row i */
             }
             lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
-                                    self->csc_data, basis,
+                                    a_data, basis,
                                     b_indptr, b_indices, b_values);
             if (lu == NULL || lu->singular_step >= 0) {
                 status = "numerical_error";
@@ -7888,7 +8127,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         if (j < n) {
             /* Structural column */
             for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
-                rj -= self->csc_data[p] * y[(int32_t)self->csc_rows[p]];
+                rj -= a_data[p] * y[(int32_t)self->csc_rows[p]];
             }
         } else {
             /* Artificial column: single +1 in row (j - n) */
@@ -7967,7 +8206,6 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         int32_t iters_since_refac = 0;
         int32_t clean_streak = 0;
         const int32_t clean_streak_target = 3;
-
         for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
             iterations = iter;
 
@@ -7979,7 +8217,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 double xj = x_ext[j];
                 if (j < n) {
                     for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
-                        rhs[(int32_t)self->csc_rows[p]] -= self->csc_data[p] * xj;
+                        rhs[(int32_t)self->csc_rows[p]] -= a_data[p] * xj;
                     }
                 } else {
                     /* Artificial column: single +1 in row (j - n) */
@@ -8065,16 +8303,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 for (int32_t ri = 0; ri < rho_nnz; ri++) {
                     int32_t row = rho_nz_rows[ri];
                     double rho_val = rho[row];
-                    /* Walk CSR row of A */
+                    /* Walk CSR row of A using pre-scaled CSR data */
                     for (Py_ssize_t p = self->indptr[row]; p < self->indptr[row + 1]; p++) {
                         int32_t col = (int32_t)self->indices[p];
                         if (alpha_scratch[col] == 0.0 && alpha_touched[col] == 0) {
                             alpha_touched[col] = 1;
-                            /* We'll record touched columns in rho_nz_rows after rho_nnz
-                             * but that array is only m-sized. Use alpha_touched as flag
-                             * and clean up via a second pass over touched columns. */
                         }
-                        alpha_scratch[col] += rho_val * self->data[p];
+                        alpha_scratch[col] += rho_val * scaled_csr_data[p];
                     }
                 }
                 /* Also handle artificial columns: artificial n+i has a single +1 in row i.
@@ -8311,7 +8546,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             double rj = c_ext[j2];
                             if (j2 < n) {
                                 for (Py_ssize_t p = self->csc_indptr[j2]; p < self->csc_indptr[j2 + 1]; p++) {
-                                    rj -= self->csc_data[p] * y[(int32_t)self->csc_rows[p]];
+                                    rj -= a_data[p] * y[(int32_t)self->csc_rows[p]];
                                 }
                             } else {
                                 rj -= y[j2 - n];
@@ -8378,7 +8613,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 if (a_entering == NULL) { PyErr_NoMemory(); goto done; }
                 if (entering_col < n) {
                     for (Py_ssize_t p = self->csc_indptr[entering_col]; p < self->csc_indptr[entering_col + 1]; p++) {
-                        a_entering[(int32_t)self->csc_rows[p]] = self->csc_data[p];
+                        a_entering[(int32_t)self->csc_rows[p]] = a_data[p];
                     }
                 } else {
                     /* Artificial column */
@@ -8419,13 +8654,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
              * However, alpha_scratch was cleared. We need the full update, so recompute
              * using the CSR scatter again for the reduced cost update. */
             {
-                /* Recompute alpha_j for all nonbasic columns via CSR scatter */
+                /* Recompute alpha_j for all nonbasic columns via CSR scatter
+                 * (using pre-scaled CSR data) */
                 for (int32_t ri = 0; ri < rho_nnz; ri++) {
                     int32_t row = rho_nz_rows[ri];
                     double rho_val = rho[row];
                     for (Py_ssize_t p = self->indptr[row]; p < self->indptr[row + 1]; p++) {
                         int32_t col = (int32_t)self->indices[p];
-                        alpha_scratch[col] += rho_val * self->data[p];
+                        alpha_scratch[col] += rho_val * scaled_csr_data[p];
                     }
                 }
                 /* Artificials */
@@ -8491,41 +8727,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
             /* ---- 4j. LU update ---- */
             {
-                int32_t *ent_idx = NULL;
-                double *ent_val = NULL;
-                int32_t ent_nnz;
                 int need_refac = 0;
 
-                if (entering_col < n) {
-                    Py_ssize_t col_start = self->csc_indptr[entering_col];
-                    Py_ssize_t col_end   = self->csc_indptr[entering_col + 1];
-                    ent_nnz = (int32_t)(col_end - col_start);
-                    ent_idx = calloc((size_t)(ent_nnz > 0 ? ent_nnz : 1), sizeof(int32_t));
-                    ent_val = calloc((size_t)(ent_nnz > 0 ? ent_nnz : 1), sizeof(double));
-                    if (ent_idx == NULL || ent_val == NULL) {
-                        free(ent_idx); free(ent_val);
-                        PyErr_NoMemory(); goto done;
-                    }
-                    for (int32_t k = 0; k < ent_nnz; k++) {
-                        ent_idx[k] = (int32_t)self->csc_rows[col_start + k];
-                        ent_val[k] = self->csc_data[col_start + k];
-                    }
-                } else {
-                    /* Artificial column */
-                    ent_nnz = 1;
-                    ent_idx = calloc(1, sizeof(int32_t));
-                    ent_val = calloc(1, sizeof(double));
-                    if (ent_idx == NULL || ent_val == NULL) {
-                        free(ent_idx); free(ent_val);
-                        PyErr_NoMemory(); goto done;
-                    }
-                    ent_idx[0] = entering_col - n;
-                    ent_val[0] = 1.0;
-                }
-
-                int rc = lu_update(lu, leaving_basis_pos, ent_idx, ent_val, ent_nnz);
-                free(ent_idx);
-                free(ent_val);
+                /* Use the alpha_col already computed in step 4e to avoid a
+                 * redundant FTRAN inside the standard lu_update.  This saves
+                 * one full FTRAN per iteration (the most expensive operation). */
+                int rc = lu_update_with_ftran(lu, leaving_basis_pos, alpha_col);
 
                 if (rc != 0) {
                     need_refac = 1;
@@ -8550,12 +8757,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 if (need_refac) {
                     lu_context_free(lu);
                     lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
-                                            self->csc_data, basis,
+                                            a_data, basis,
                                             b_indptr, b_indices, b_values);
                     if (lu != NULL && lu->singular_step >= 0) {
                         lu = ds_repair_singular_basis(
                             lu, m, n, self->csc_indptr, self->csc_rows,
-                            self->csc_data, basis, basis_pos, bound_status,
+                            a_data, basis, basis_pos, bound_status,
                             x_ext, r_ext, lo_ext, hi_ext,
                             b_indptr, b_indices, b_values, 10);
                     }
@@ -8583,7 +8790,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             double xj2 = x_ext[j2];
                             if (j2 < n) {
                                 for (Py_ssize_t p = self->csc_indptr[j2]; p < self->csc_indptr[j2 + 1]; p++) {
-                                    rhs2[(int32_t)self->csc_rows[p]] -= self->csc_data[p] * xj2;
+                                    rhs2[(int32_t)self->csc_rows[p]] -= a_data[p] * xj2;
                                 }
                             } else {
                                 rhs2[j2 - n] -= xj2;
@@ -8629,7 +8836,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         double rj = c_ext[j];
                         if (j < n) {
                             for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
-                                rj -= self->csc_data[p] * y[(int32_t)self->csc_rows[p]];
+                                rj -= a_data[p] * y[(int32_t)self->csc_rows[p]];
                             }
                         } else {
                             rj -= y[j - n];
@@ -8694,12 +8901,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     if (strcmp(status, "optimal") == 0) {
         lu_context_free(lu);
         lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
-                                self->csc_data, basis,
+                                a_data, basis,
                                 b_indptr, b_indices, b_values);
         if (lu != NULL && lu->singular_step >= 0) {
             lu = ds_repair_singular_basis(
                 lu, m, n, self->csc_indptr, self->csc_rows,
-                self->csc_data, basis, basis_pos, bound_status,
+                a_data, basis, basis_pos, bound_status,
                 x_ext, r_ext, lo_ext, hi_ext,
                 b_indptr, b_indices, b_values, 10);
         }
@@ -8714,7 +8921,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 double xj = x_ext[j];
                 if (j < n) {
                     for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
-                        rhs[(int32_t)self->csc_rows[p]] -= self->csc_data[p] * xj;
+                        rhs[(int32_t)self->csc_rows[p]] -= a_data[p] * xj;
                     }
                 } else {
                     rhs[j - n] -= xj;
@@ -8762,15 +8969,19 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             }
 
             /* ---- 5b. Dual feasibility check against TRUE bounds ---- */
+            /* Compute in ORIGINAL units to match the eps contract.
+             * y_orig = R * y_scaled; r_orig = c_orig - A_orig^T y_orig. */
             if (strcmp(status, "optimal") == 0) {
                 for (int32_t j = 0; j < n; j++) {
                     if (basis_pos[j] >= 0) continue;
-                    /* Recompute r_j from scratch */
-                    double rj = c_ext[j];
+                    /* Recompute r_j in original units */
+                    double c_orig_j = c_orig[j];
+                    double rj = c_orig_j;
                     for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
-                        rj -= self->csc_data[p] * y[(int32_t)self->csc_rows[p]];
+                        int32_t row = (int32_t)self->csc_rows[p];
+                        rj -= self->csc_data[p] * (ds_row_scale[row] * y[row]);
                     }
-                    double dtol = 1e-7 * (1.0 + fabs(c_ext[j]));
+                    double dtol = 1e-7 * (1.0 + fabs(c_orig_j));
                     int tlo = isfinite(lo_true[j]);
                     int thi = isfinite(hi_true[j]);
 
@@ -8819,12 +9030,27 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     }
 
 build_result:
+    /* ---- Unscale from Ruiz equilibration ----
+     * x_out is in scaled space (x_s = C^{-1} x). Restore to original units.
+     * b was scaled (b_s = R b). Restore so residual uses original b.
+     * Objective c_s^T x_s = c^T x is scale-invariant; no need to touch c. */
+    if (ruiz_active) {
+        for (int32_t j = 0; j < n; j++) {
+            x_out[j] *= ds_col_scale[j];
+        }
+        for (int32_t i = 0; i < m; i++) {
+            b[i] /= ds_row_scale[i];
+        }
+    }
     {
         double objective = 0.0;
         double max_residual = 0.0;
 
+        /* Compute objective in original units: sum c_orig[j] * x_orig[j].
+         * c_ext[j] is still scaled (c_s = c * C), x_out is now unscaled,
+         * so c_s[j] * x_out[j] / col_scale[j] = c[j] * x[j]. */
         for (int32_t j = 0; j < n; j++) {
-            objective += c_ext[j] * x_out[j];
+            objective += c_orig[j] * x_out[j];
         }
 
         /* Primal residual: max |A x - b| (structural columns only) */
@@ -8872,6 +9098,7 @@ done:
     free(rho_nz_rows); free(alpha_scratch); free(alpha_touched);
     free(flip_delta_xB);
     free(has_art_bound); free(lo_true); free(hi_true);
+    free(ds_row_scale); free(ds_col_scale); free(scaled_csc_data); free(scaled_csr_data); free(c_orig);
     return result;
 }
 
