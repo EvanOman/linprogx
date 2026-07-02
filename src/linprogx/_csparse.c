@@ -2766,7 +2766,11 @@ static int chol_build_supernode_symbolic(CholContext *ctx) {
     for (int32_t s = 0; s < ns; s++) {
         int32_t j0 = ctx->snode_start[s];
         int32_t j1 = ctx->snode_start[s + 1];
-        Py_ssize_t nr = ctx->Lp[j0 + 1] - ctx->Lp[j0];
+        /* Union row list of a (possibly relaxed) supernode: its own
+         * columns [j0, j1) followed by the below-diagonal structure of
+         * its last column. parent[j] == j+1 holds inside every merged
+         * group, so earlier columns' structures nest into the last. */
+        Py_ssize_t nr = (Py_ssize_t)(j1 - j0) + (ctx->Lp[j1] - ctx->Lp[j1 - 1] - 1);
         Py_ssize_t panel_n = nr * (Py_ssize_t)(j1 - j0);
         if (panel_n > ctx->snode_panel_cap) {
             ctx->snode_panel_cap = panel_n;
@@ -2800,18 +2804,24 @@ static int chol_build_supernode_symbolic(CholContext *ctx) {
         int32_t w = j1 - j0;
         Py_ssize_t nr = ctx->snode_row_ptr[s + 1] - ctx->snode_row_ptr[s];
         int32_t *rows = ctx->snode_rows + ctx->snode_row_ptr[s];
-        memcpy(rows, ctx->Li + ctx->Lp[j0], (size_t)nr * sizeof(int32_t));
         if (nr < w) {
             goto fail;
         }
         for (int32_t c = 0; c < w; c++) {
-            if (rows[c] != j0 + c) {
-                goto fail;
-            }
+            rows[c] = j0 + c;
         }
+        memcpy(rows + w, ctx->Li + ctx->Lp[j1 - 1] + 1,
+               (size_t)(nr - w) * sizeof(int32_t));
         Py_ssize_t panel_base = ctx->snode_panel_ptr[s];
+        /* Padding positions (union rows absent from a column's exact
+         * structure) alias the sentinel zero slot at Lx[Lp[m]]: they
+         * read as exact 0.0 in gathers and only ever have exact zeros
+         * scattered back. */
+        Py_ssize_t zero_lx = ctx->Lp[ctx->m];
         for (int32_t c = 0; c < w; c++) {
             int32_t col = j0 + c;
+            Py_ssize_t lx = ctx->Lp[col];
+            Py_ssize_t lx_end = ctx->Lp[col + 1];
             for (Py_ssize_t rpos = 0; rpos < nr; rpos++) {
                 Py_ssize_t dst = panel_base + rpos * (Py_ssize_t)w + c;
                 ctx->snode_panel_cx[dst] = chol_find_offset(ctx, rows[rpos], col);
@@ -2819,11 +2829,15 @@ static int chol_build_supernode_symbolic(CholContext *ctx) {
                     ctx->snode_panel_lx[dst] = -1;
                     continue;
                 }
-                Py_ssize_t lx = ctx->Lp[col] + (rpos - c);
-                if (lx >= ctx->Lp[col + 1] || ctx->Li[lx] != rows[rpos]) {
-                    goto fail;
+                if (lx < lx_end && ctx->Li[lx] == rows[rpos]) {
+                    ctx->snode_panel_lx[dst] = lx;
+                    lx++;
+                } else {
+                    ctx->snode_panel_lx[dst] = zero_lx;
                 }
-                ctx->snode_panel_lx[dst] = lx;
+            }
+            if (lx != lx_end) {
+                goto fail;
             }
         }
     }
@@ -3291,7 +3305,10 @@ static CholContext *chol_setup(
         ctx->Lp[k + 1] = ctx->Lp[k] + count[k];
     }
     ctx->Li = calloc((size_t)ctx->Lp[m], sizeof(int32_t));
-    ctx->Lx = calloc((size_t)ctx->Lp[m], sizeof(double));
+    /* One extra slot past Lp[m]: relaxed-supernode panel positions that
+     * are structural zeros of L alias this sentinel. It reads as exactly
+     * 0.0 and only ever has exact zeros scattered back into it. */
+    ctx->Lx = calloc((size_t)ctx->Lp[m] + 1, sizeof(double));
     if (ctx->Li == NULL || ctx->Lx == NULL) {
         goto fail;
     }
@@ -3345,16 +3362,81 @@ static CholContext *chol_setup(
         }
         ctx->snode_start[ns] = m;
         ctx->n_snodes = ns;
-        if (debug_setup) {
-            int32_t big = 0;
-            for (int32_t s = 0; s < ns; s++) {
-                int32_t w = ctx->snode_start[s + 1] - ctx->snode_start[s];
-                if (w > big) {
-                    big = w;
+
+        /* --- relaxed supernode amalgamation (Ashcraft/Grimes-style).
+         * Merge an adjacent chain of fundamental supernodes when the
+         * elimination tree links them (the parent of the left group's
+         * last column is the right group's first column) and the merged
+         * panel would carry at most a bounded fraction of structural
+         * zeros. Padding positions are exact zeros of L (every update
+         * product into them has a structurally-zero factor), so the
+         * numeric factor is unchanged; merging turns many thin scalar
+         * descendant updates into fewer BLAS-panel updates. The
+         * threshold is a global constant, not a per-instance switch.
+         * With parent[j] == j+1 across the whole merged group, its union
+         * row set is [g0, j2) followed by struct(j2-1) minus the
+         * diagonal, so the padded trapezoid size is closed-form. --- */
+        {
+            const char *relax_env = getenv("LINPROGX_SNODE_RELAX");
+            double relax_frac = relax_env != NULL ? atof(relax_env) : 0.15;
+            int32_t fundamental_ns = ns;
+            if (relax_frac > 0.0 && ns > 1) {
+                int32_t *merged_start = malloc(((size_t)ns + 1) * sizeof(int32_t));
+                if (merged_start == NULL) {
+                    goto fail;
                 }
+                int32_t out = 0;
+                int32_t s = 0;
+                while (s < ns) {
+                    int32_t g0 = ctx->snode_start[s];
+                    double true_nnz = 0.0;
+                    for (int32_t j = g0; j < ctx->snode_start[s + 1]; j++) {
+                        true_nnz += (double)(ctx->Lp[j + 1] - ctx->Lp[j]);
+                    }
+                    int32_t t = s + 1;
+                    while (t < ns) {
+                        int32_t j1 = ctx->snode_start[t];
+                        int32_t j2 = ctx->snode_start[t + 1];
+                        if (ctx->parent[j1 - 1] != j1) {
+                            break;
+                        }
+                        double next_nnz = 0.0;
+                        for (int32_t j = j1; j < j2; j++) {
+                            next_nnz += (double)(ctx->Lp[j + 1] - ctx->Lp[j]);
+                        }
+                        double W = (double)(j2 - g0);
+                        double N = W + (double)(ctx->Lp[j2] - ctx->Lp[j2 - 1]) - 1.0;
+                        double padded = W * N - W * (W - 1.0) / 2.0;
+                        if (padded - (true_nnz + next_nnz) > relax_frac * padded) {
+                            break;
+                        }
+                        true_nnz += next_nnz;
+                        t++;
+                    }
+                    merged_start[out++] = g0;
+                    s = t;
+                }
+                merged_start[out] = m;
+                memcpy(ctx->snode_start, merged_start,
+                       ((size_t)out + 1) * sizeof(int32_t));
+                ctx->n_snodes = out;
+                free(merged_start);
             }
-            fprintf(stderr, "chol_setup supernodes: m=%d count=%d mean=%.1f largest=%d\n",
-                    m, ns, (double)m / (double)ns, big);
+            ns = ctx->n_snodes;
+            if (debug_setup) {
+                int32_t big = 0;
+                for (int32_t s = 0; s < ns; s++) {
+                    int32_t w = ctx->snode_start[s + 1] - ctx->snode_start[s];
+                    if (w > big) {
+                        big = w;
+                    }
+                }
+                fprintf(stderr,
+                        "chol_setup supernodes: m=%d fundamental=%d count=%d "
+                        "mean=%.1f largest=%d relax=%.2f\n",
+                        m, fundamental_ns, ns, (double)m / (double)ns, big,
+                        relax_frac);
+            }
         }
     }
     SETUP_MARK("supernodes");

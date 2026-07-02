@@ -262,10 +262,40 @@ Follow-up in the same session:
   bad signs. More dual cleanup is the wrong lever for `greenbea`; it needs a
   genuine primal/basis improvement.
 
-Next C-factor work: reduce gather/scatter/update overhead enough that the
-supernodal refactor approaches the prototype's expected 0.2-0.5s on
-`maros_r7`; otherwise move to the sparse revised simplex lever for `pds_20`
-and small simplex-favorable cases.
+- Follow-up 2026-07-01 (later session): implemented relaxed supernode
+  amalgamation (Ashcraft/Grimes-style) in `chol_setup`. Adjacent fundamental
+  supernodes are merged greedily when the elimination tree links them
+  (`parent[last col of left] == first col of right`) and the merged panel
+  carries at most `LINPROGX_SNODE_RELAX` (default 0.15) structural zeros.
+  Padding positions are exact zeros of L — every update product into them
+  has a structurally-zero factor — so the numeric factor is unchanged; they
+  alias a sentinel zero slot appended to `Lx` so the hot gather/scatter
+  loops stay branch-free. The union row list of a merged group is its
+  columns followed by the below-diagonal structure of its last column
+  (valid because `parent[j] == j+1` holds inside every group). Measured on
+  `maros_r7` (loadavg ~5, paired A/B via the env knob): fundamental
+  partition 316 supernodes (mean 9.9) -> 167 (mean 18.8); per-refactor
+  scalar updates 4955 -> 1052, BLAS updates 211 -> 109; profile per-refactor
+  cost ~0.11s -> ~0.065s; public worker 2.36-2.59s (relax=0, old partition)
+  vs 2.06-2.24s (relax=0.15), same 15 iterations, objective identical to
+  13 digits, residual 3.3e-11 vs 2.9e-11. A 0.25 setting tied 0.15, so the
+  default stays at the more conservative 0.15. Fragmented cases stay on the
+  row-wise path (post-merge mean widths pilot87 2.6, cre_b 1.6, cre_a 1.8,
+  all below the auto-gate's 4.0), with statuses/iterations/residuals
+  unchanged and timings within load noise. Eight-instance sanity sweep
+  (woodw, 80bau3b, d2q06c, stocfor3, degen3, fit2p, ken_11, truss) all
+  optimal with objectives matching published optima at the usual
+  tolerances. The Python symbolic reference in `tests/test_ipm.py` mirrors
+  the same merge rule; new tests cover solve correctness at relax 0/0.15/0.4
+  and partition coarsening on `cre_a`. `just ci` green: 152 tests, 86.56%.
+
+Next C-factor work: with amalgamation in, the supernodal refactor cost on
+`maros_r7` is roughly halved but total time (~2.1s) is still dominated by
+15 IPM iterations x (refactor + triangular solves); HiGHS is ~0.94s on the
+same box. Remaining levers: fewer IPM iterations (better centering /
+predictor quality), a cheaper triangular-solve path over the supernodal
+panels, or the sparse revised simplex lever for `pds_20` and small
+simplex-favorable cases.
 
 ## SECOND LEVER — sparse revised simplex (larger, multi-session)
 

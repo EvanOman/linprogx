@@ -504,6 +504,58 @@ def test_normal_equations_supernodal_factor_matches_dense_reference() -> None:
     assert residual <= 1e-10
 
 
+def test_supernodal_factor_correct_across_relax_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # the relaxed-amalgamation padding must not change the numeric
+    # factor: solves stay correct with amalgamation disabled, at the
+    # default, and at an aggressive setting
+    rng = np.random.default_rng(23)
+    m, n = 64, 160
+    A = (
+        scipy.sparse.random(
+            m,
+            n,
+            density=0.06,
+            random_state=rng,
+            data_rvs=lambda size: rng.uniform(-1.5, 1.5, size),
+        ).tocsr()
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    )
+    d = rng.uniform(0.25, 2.0, n)
+    rhs = rng.uniform(-1, 1, m)
+    delta = 1e-7
+    G = (A @ scipy.sparse.diags(d) @ A.T).toarray() + delta * np.eye(m)
+    for relax in ("0", "0.15", "0.4"):
+        monkeypatch.setenv("LINPROGX_SNODE_RELAX", relax)
+        matrix = from_scipy_sparse(scipy.sparse.csr_matrix(A))
+        out = np.array(matrix.normal_equations_solve(d.tolist(), rhs.tolist(), delta, True))
+        residual = np.max(np.abs(G @ out - rhs))
+        assert residual <= 1e-10, f"relax={relax} residual={residual}"
+
+
+def test_relaxed_amalgamation_reduces_supernode_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # amalgamation may only coarsen the fundamental partition, and both
+    # partitions must tile the columns exactly
+    from pathlib import Path
+
+    from scipy.io import loadmat
+
+    path = Path(__file__).parent / "data" / "lp_cre_a.mat"
+    raw = loadmat(path)["Problem"][0, 0]
+    A = raw["A"].tocsr().astype(float)
+    monkeypatch.setenv("LINPROGX_SNODE_RELAX", "0")
+    fundamental = from_scipy_sparse(A).supernode_sizes()
+    monkeypatch.delenv("LINPROGX_SNODE_RELAX")
+    relaxed = from_scipy_sparse(A).supernode_sizes()
+    assert sum(fundamental) == sum(relaxed) == A.shape[0]
+    assert len(relaxed) <= len(fundamental)
+
+
 def test_supernodal_profile_reports_single_thread_blas(
     monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -655,10 +707,43 @@ def _reference_supernode_symbolic(
             starts.append(j)
     starts.append(m)
 
+    # relaxed amalgamation: merge an adjacent chain of fundamental
+    # supernodes when the elimination tree links them and the merged
+    # panel carries at most `relax_frac` structural zeros. Mirrors the
+    # C default in chol_setup (LINPROGX_SNODE_RELAX).
+    relax_frac = 0.15
+    cc = [len(rows) for rows in col_rows]
+    merged: list[int] = []
+    ns = len(starts) - 1
+    s = 0
+    while s < ns:
+        g0 = starts[s]
+        true_nnz = sum(cc[j] for j in range(g0, starts[s + 1]))
+        t = s + 1
+        while t < ns:
+            j1, j2 = starts[t], starts[t + 1]
+            if parent[j1 - 1] != j1:
+                break
+            next_nnz = sum(cc[j] for j in range(j1, j2))
+            width = j2 - g0
+            union_rows = width + cc[j2 - 1] - 1
+            padded = width * union_rows - width * (width - 1) // 2
+            if padded - (true_nnz + next_nnz) > relax_frac * padded:
+                break
+            true_nnz += next_nnz
+            t += 1
+        merged.append(g0)
+        s = t
+    merged.append(m)
+    starts = merged
+
     out: list[
         tuple[int, list[int], list[tuple[int, list[int], list[int], list[int], list[int]]]]
     ] = []
-    snode_rows = [col_rows[starts[s]].tolist() for s in range(len(starts) - 1)]
+    snode_rows = [
+        list(range(starts[s], starts[s + 1])) + col_rows[starts[s + 1] - 1].tolist()[1:]
+        for s in range(len(starts) - 1)
+    ]
     for s, rows_s_list in enumerate(snode_rows):
         j0, j1 = starts[s], starts[s + 1]
         rows_s = np.array(rows_s_list, dtype=np.int64)
