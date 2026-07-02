@@ -2539,6 +2539,7 @@ typedef struct {
     int32_t tail_start;           /* first tail column; == m disables */
     int32_t tail_len;
     double prefix_flops;          /* sum of colcount^2 over the sparse prefix */
+    double factor_flops;          /* sum of colcount^2 over all of L */
     double *Tdense;               /* tail_len x tail_len, row-major */
     /* Fundamental supernode partition of L (consecutive columns sharing
      * lower structure). snode_start has n_snodes+1 entries; supernode s
@@ -3295,19 +3296,23 @@ static CholContext *chol_setup(
         }
     }
     SETUP_MARK("colcounts");
-    if (factor_flops_cap > 0.0) {
+    {
         double flops = 0.0;
         for (int32_t k = 0; k < m; k++) {
             flops += (double)count[k] * (double)count[k];
         }
-        if (getenv("LINPROGX_CHOL_DEBUG") != NULL) {
-            fprintf(stderr, "chol_setup: factor flops %.3e (cap %.3e)\n", flops, factor_flops_cap);
-        }
-        if (flops > factor_flops_cap) {
-            if (too_dense != NULL) {
-                *too_dense = 1;
+        ctx->factor_flops = flops;
+        if (factor_flops_cap > 0.0) {
+            if (getenv("LINPROGX_CHOL_DEBUG") != NULL) {
+                fprintf(stderr, "chol_setup: factor flops %.3e (cap %.3e)\n", flops,
+                        factor_flops_cap);
             }
-            goto fail;
+            if (flops > factor_flops_cap) {
+                if (too_dense != NULL) {
+                    *too_dense = 1;
+                }
+                goto fail;
+            }
         }
     }
     for (int32_t k = 0; k < m; k++) {
@@ -5153,6 +5158,48 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     int refactor_supernodal =
         use_supernodal < 0 ? chol_auto_supernodal(chol) : use_supernodal;
 
+    int max_mcc = 2;
+    double mcc_ratio = 5.5;
+    {
+        const char *mcc_env = getenv("LINPROGX_IPM_MCC");
+        if (mcc_env != NULL) {
+            max_mcc = atoi(mcc_env);
+        }
+        const char *ratio_env = getenv("LINPROGX_IPM_MCC_RATIO");
+        if (ratio_env != NULL) {
+            mcc_ratio = atof(ratio_env);
+        }
+    }
+    /* Deterministic Gondzio-corrector budget (Gondzio's cost-ratio rule):
+     * correctors pay only when a saved iteration (one refactor) is worth
+     * clearly more than the extra back-solves they cost. Estimated in
+     * sparse-equivalent flop units from the symbolic structure — never
+     * from wall time, which would break bit-identical results across
+     * thread counts and runs. The row-wise refactor model reuses the
+     * dense-tail machine constant (1/58); the supernodal panel rate
+     * (~1/8 of scalar) is calibrated on maros_r7's measured 65ms
+     * refactor vs 15ms scalar solves. Measured corrector economics:
+     * cre_b/cre_d/osa_14 lose wall time to correctors, pilot87/ken_18
+     * are neutral, maros_r7 mildly gains — the 5.5 threshold keeps only
+     * the gaining population enabled. */
+    int mcc_budget = 0;
+    {
+        double refactor_units;
+        if (refactor_supernodal) {
+            refactor_units = chol->factor_flops / 8.0;
+        } else {
+            double tail = (double)chol->tail_len;
+            refactor_units = chol->prefix_flops + tail * tail * tail / 3.0 / 58.0;
+        }
+        double solve_units = 6.0 * (double)chol->Lp[chol->m] +
+                             4.0 * (double)chol->Cp[chol->m] +
+                             4.0 * (double)nnz;
+        if (solve_units > 0.0 &&
+            refactor_units >= mcc_ratio * solve_units) {
+            mcc_budget = max_mcc;
+        }
+    }
+
     /* Mehrotra least-squares starting point: factor A A' + delta I once,
      * take the min-norm primal consistent with Ax=b and the dual from
      * projecting c, then shift slacks and duals positive. */
@@ -5260,20 +5307,6 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     Py_BEGIN_ALLOW_THREADS
     IpmNewton nw = {chol, &op, D, sl, su, zl, zu, bound_kind, rhs_x, tmp_x, rhs_m, aty,
                     res_m, corr_m};
-    int max_mcc = 2;
-    double mcc_ratio = 5.5;
-    {
-        const char *mcc_env = getenv("LINPROGX_IPM_MCC");
-        if (mcc_env != NULL) {
-            max_mcc = atoi(mcc_env);
-        }
-        const char *ratio_env = getenv("LINPROGX_IPM_MCC_RATIO");
-        if (ratio_env != NULL) {
-            mcc_ratio = atof(ratio_env);
-        }
-    }
-    double sum_refactor_seconds = 0.0;
-    double sum_affine_seconds = 0.0;
     for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
         iterations = iter;
         /* slacks, residuals, and the barrier parameter */
@@ -5589,14 +5622,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             H[j] = h;
             D[j] = 1.0 / h;
         }
-        /* Always time the refactor and the affine solve: the corrector
-         * gate below needs the measured cost ratio (two clock reads per
-         * phase, negligible against either). */
         double t_phase = linprogx_monotonic_seconds();
         chol_refactor_mode(chol, self, csc_vals, D, delta_it, refactor_supernodal);
-        double refactor_seconds = linprogx_monotonic_seconds() - t_phase;
-        t_refactor += refactor_seconds;
-        sum_refactor_seconds += refactor_seconds;
+        t_refactor += linprogx_monotonic_seconds() - t_phase;
 
         /* affine direction */
         for (Py_ssize_t j = 0; j < n; j++) {
@@ -5605,9 +5633,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         }
         t_phase = linprogx_monotonic_seconds();
         ipm_newton_solve(&nw, rp, rd, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
-        double solve_seconds = linprogx_monotonic_seconds() - t_phase;
-        t_newton += solve_seconds;
-        sum_affine_seconds += solve_seconds;
+        t_newton += linprogx_monotonic_seconds() - t_phase;
 
         double ap_aff = 1.0;
         double ad_aff = 1.0;
@@ -5709,18 +5735,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
          * recentering direction (zero primal/dual residual rhs) while it
          * lengthens the steps. One back-solve per round is cheap against
          * the full refactor a saved iteration avoids. Global constants;
-         * skipped once both steps are already long.
-         *
-         * Cost-ratio gate (Gondzio's rule): correctors pay only when a
-         * saved iteration (one refactor) is worth clearly more than the
-         * extra back-solves. Measured ratios: maros_r7 ~7, pilot87 ~7,
-         * and pre-gate ken_18 ~11 gain from correctors; cre_b ~4.5,
-         * cre_d ~5, osa_14 ~4.4 lose wall time to them. 5.5 sits in the
-         * gap between the measured populations; it is a machine cost
-         * ratio, not per-instance. Cumulative sums, not per-iteration
-         * values, so load spikes cannot flap the decision. */
-        int mcc_budget =
-            sum_refactor_seconds >= mcc_ratio * sum_affine_seconds ? max_mcc : 0;
+         * skipped once both steps are already long. mcc_budget is the
+         * deterministic structure-based budget computed before the loop. */
         for (int mcc = 0; mcc < mcc_budget; mcc++) {
             if (ap >= 0.9 && ad >= 0.9) {
                 break;
@@ -6090,6 +6106,1366 @@ done:
     return result;
 }
 
+/* ================================================================== */
+/* Sparse LU factorization with Markowitz pivot selection              */
+/* for the revised simplex basis matrix (square, nonsymmetric, sparse) */
+/* ================================================================== */
+
+/*
+ * Active submatrix representation:
+ *   - Column-linked lists: each column is a singly-linked list of entries
+ *     threaded through a pool of (row, value, next_in_col, next_in_row)
+ *     nodes. A free list recycles deleted entries to avoid realloc during
+ *     fill-in. Row headers provide a linked list through rows as well.
+ *   - Row counts and column counts are maintained for Markowitz scoring.
+ *
+ * Pivot search:
+ *   - Threshold Markowitz with u=0.1: among candidates where
+ *     |pivot| >= u * max_abs_in_its_column, minimize (r-1)*(c-1).
+ *   - Search bounded to 4 candidate "tiers" (columns with minimum count
+ *     first, then next-smallest, etc.) -- O(small) per step, as in
+ *     Markowitz's original suggestion and Duff/Erisman/Reid.
+ *
+ * Output: L (unit lower triangular, CSC), U (upper triangular, CSC),
+ *         P (row permutation), Q (column permutation) such that PAQ = LU.
+ *
+ * Dense RHS for FTRAN/BTRAN in milestone 1. Sparse-RHS Gilbert-Peierls
+ * triangular solves will be added in a later milestone.
+ */
+
+/* Pool entry for the active submatrix linked structure. */
+typedef struct {
+    int32_t row;
+    double  value;
+    int32_t next_in_col;  /* next entry index in same column, or -1 */
+    int32_t next_in_row;  /* next entry index in same row, or -1 */
+    int32_t col;          /* column of this entry */
+} LUPoolEntry;
+
+typedef struct {
+    /* Pool of entries */
+    LUPoolEntry *pool;
+    int32_t pool_len;
+    int32_t pool_cap;
+    int32_t free_head;   /* head of free list, or -1 */
+
+    /* Column headers: col_head[j] = first pool index in column j, or -1 */
+    int32_t *col_head;
+    /* Row headers: row_head[i] = first pool index in row i, or -1 */
+    int32_t *row_head;
+
+    /* Counts of entries in each active row/column */
+    int32_t *col_count;
+    int32_t *row_count;
+
+    /* Whether row/col is still active (not yet pivoted) */
+    unsigned char *row_active;
+    unsigned char *col_active;
+
+    int32_t m;  /* matrix dimension */
+} LUActive;
+
+/* Result of LU factorization. */
+typedef struct {
+    int32_t m;
+
+    /* L in CSC: unit lower triangular */
+    int32_t *l_indptr;    /* size m+1 */
+    int32_t *l_indices;   /* size nnz_l */
+    double  *l_values;    /* size nnz_l */
+    int32_t  nnz_l;
+
+    /* U in CSC: upper triangular */
+    int32_t *u_indptr;    /* size m+1 */
+    int32_t *u_indices;   /* size nnz_u */
+    double  *u_values;    /* size nnz_u */
+    int32_t  nnz_u;
+
+    /* Permutations: P[k] = original row pivoted at step k,
+     * Q[k] = original column pivoted at step k. PAQ = LU. */
+    int32_t *perm_row;    /* P: size m */
+    int32_t *perm_col;    /* Q: size m */
+
+    /* Inverse permutations for solve convenience */
+    int32_t *inv_perm_row;  /* P^-1: size m */
+    int32_t *inv_perm_col;  /* Q^-1: size m */
+
+    int32_t  singular_step; /* -1 if nonsingular, else failing step index */
+} LUContext;
+
+/* Allocate a pool entry; returns index or -1 on failure. */
+static int32_t lu_pool_alloc(LUActive *a) {
+    if (a->free_head >= 0) {
+        int32_t idx = a->free_head;
+        a->free_head = a->pool[idx].next_in_col;
+        return idx;
+    }
+    if (a->pool_len == a->pool_cap) {
+        int32_t new_cap = a->pool_cap < 256 ? 256 : a->pool_cap * 2;
+        LUPoolEntry *grown = realloc(a->pool, (size_t)new_cap * sizeof(LUPoolEntry));
+        if (grown == NULL) {
+            return -1;
+        }
+        a->pool = grown;
+        a->pool_cap = new_cap;
+    }
+    return a->pool_len++;
+}
+
+/* Free a pool entry by pushing it onto the free list. */
+static void lu_pool_free(LUActive *a, int32_t idx) {
+    a->pool[idx].next_in_col = a->free_head;
+    a->free_head = idx;
+}
+
+/* Insert an entry into the active submatrix. Returns 0 on success, -1 on alloc failure. */
+static int lu_active_insert(LUActive *a, int32_t row, int32_t col, double value) {
+    int32_t idx = lu_pool_alloc(a);
+    if (idx < 0) {
+        return -1;
+    }
+    a->pool[idx].row = row;
+    a->pool[idx].col = col;
+    a->pool[idx].value = value;
+    a->pool[idx].next_in_col = a->col_head[col];
+    a->col_head[col] = idx;
+    a->pool[idx].next_in_row = a->row_head[row];
+    a->row_head[row] = idx;
+    a->col_count[col]++;
+    a->row_count[row]++;
+    return 0;
+}
+
+/* Initialize the active submatrix from CSC arrays. */
+static int lu_active_init(LUActive *a, int32_t m,
+                          const int32_t *csc_indptr, const int32_t *csc_indices,
+                          const double *csc_values) {
+    int32_t nnz = csc_indptr[m];
+    a->m = m;
+    a->pool = NULL;
+    a->pool_len = 0;
+    /* Pre-allocate pool with some room for fill-in */
+    a->pool_cap = nnz + nnz / 2 + 64;
+    a->pool = calloc((size_t)a->pool_cap, sizeof(LUPoolEntry));
+    a->free_head = -1;
+    a->col_head = calloc((size_t)m, sizeof(int32_t));
+    a->row_head = calloc((size_t)m, sizeof(int32_t));
+    a->col_count = calloc((size_t)m, sizeof(int32_t));
+    a->row_count = calloc((size_t)m, sizeof(int32_t));
+    a->row_active = calloc((size_t)m, sizeof(unsigned char));
+    a->col_active = calloc((size_t)m, sizeof(unsigned char));
+    if (a->pool == NULL || a->col_head == NULL || a->row_head == NULL ||
+        a->col_count == NULL || a->row_count == NULL ||
+        a->row_active == NULL || a->col_active == NULL) {
+        return -1;
+    }
+    for (int32_t j = 0; j < m; j++) {
+        a->col_head[j] = -1;
+        a->row_head[j] = -1;
+        a->row_active[j] = 1;
+        a->col_active[j] = 1;
+    }
+    /* Insert entries column by column */
+    for (int32_t j = 0; j < m; j++) {
+        for (int32_t p = csc_indptr[j]; p < csc_indptr[j + 1]; p++) {
+            if (lu_active_insert(a, csc_indices[p], j, csc_values[p]) < 0) {
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+static void lu_active_free(LUActive *a) {
+    free(a->pool);
+    free(a->col_head);
+    free(a->row_head);
+    free(a->col_count);
+    free(a->row_count);
+    free(a->row_active);
+    free(a->col_active);
+}
+
+/* Remove all entries in row `row` from the active submatrix, also unlinking
+ * them from their column lists. Does NOT decrement row_count (row is being
+ * eliminated). */
+static void lu_active_remove_row(LUActive *a, int32_t row) {
+    int32_t idx = a->row_head[row];
+    while (idx >= 0) {
+        int32_t next = a->pool[idx].next_in_row;
+        int32_t col = a->pool[idx].col;
+        /* Remove idx from column col's linked list */
+        int32_t *pp = &a->col_head[col];
+        while (*pp >= 0) {
+            if (*pp == idx) {
+                *pp = a->pool[idx].next_in_col;
+                break;
+            }
+            pp = &a->pool[*pp].next_in_col;
+        }
+        a->col_count[col]--;
+        lu_pool_free(a, idx);
+        idx = next;
+    }
+    a->row_head[row] = -1;
+    a->row_active[row] = 0;
+}
+
+/* Remove all entries in column `col` from the active submatrix, also unlinking
+ * them from their row lists. */
+static void lu_active_remove_col(LUActive *a, int32_t col) {
+    int32_t idx = a->col_head[col];
+    while (idx >= 0) {
+        int32_t next = a->pool[idx].next_in_col;
+        int32_t row = a->pool[idx].row;
+        /* Remove idx from row's linked list */
+        int32_t *pp = &a->row_head[row];
+        while (*pp >= 0) {
+            if (*pp == idx) {
+                *pp = a->pool[idx].next_in_row;
+                break;
+            }
+            pp = &a->pool[*pp].next_in_row;
+        }
+        a->row_count[row]--;
+        lu_pool_free(a, idx);
+        idx = next;
+    }
+    a->col_head[col] = -1;
+    a->col_active[col] = 0;
+}
+
+static void lu_context_free(LUContext *ctx) {
+    if (ctx == NULL) return;
+    free(ctx->l_indptr);
+    free(ctx->l_indices);
+    free(ctx->l_values);
+    free(ctx->u_indptr);
+    free(ctx->u_indices);
+    free(ctx->u_values);
+    free(ctx->perm_row);
+    free(ctx->perm_col);
+    free(ctx->inv_perm_row);
+    free(ctx->inv_perm_col);
+    free(ctx);
+}
+
+/*
+ * lu_factorize: sparse LU factorization with threshold Markowitz pivoting.
+ *
+ * Input: square matrix in CSC format (csc_indptr, csc_indices, csc_values),
+ *        dimension m, threshold parameter u (typically 0.1).
+ *
+ * Returns an LUContext on success (caller must call lu_context_free),
+ * or NULL on allocation failure (sets *alloc_fail=1).
+ * If the matrix is singular, ctx->singular_step >= 0 indicates the step.
+ *
+ * Performance notes:
+ *   - Schur update is column-oriented: for each column c in the pivot row,
+ *     walk column c once, updating existing entries at update rows via a
+ *     dense multiplier array, then insert fill-in for update rows not found.
+ *     Cost per step: O(prow_nnz * (col_len + n_update_rows)) instead of the
+ *     naive O(n_update_rows * prow_nnz * col_len).
+ *   - Dense-tail switch: when the active submatrix remaining dimension is
+ *     <= DENSE_TAIL_THRESHOLD or density > DENSE_TAIL_DENSITY, copy to a
+ *     dense buffer and finish with dense partial-pivot LU. This avoids
+ *     linked-list overhead when the submatrix has gone dense from fill-in.
+ */
+#define LU_DENSE_TAIL_DIM 64
+#define LU_DENSE_TAIL_DENSITY 0.30
+
+static LUContext *lu_factorize(int32_t m,
+                               const int32_t *csc_indptr,
+                               const int32_t *csc_indices,
+                               const double *csc_values,
+                               double u,
+                               int *alloc_fail) {
+    LUContext *ctx = NULL;
+    LUActive active;
+    /* Dense workspace arrays, allocated once and reused every step */
+    double *mult_arr = NULL;       /* mult_arr[row] = L multiplier for update rows */
+    unsigned char *is_update = NULL; /* marks update rows */
+    double *prow_work = NULL;      /* dense scatter of pivot row values */
+    unsigned char *prow_mark = NULL; /* marks columns in pivot row */
+    int32_t *prow_list = NULL;     /* list of pivot row column indices */
+    int32_t *update_rows = NULL;   /* list of update row indices */
+    /* Growable arrays for L and U entries */
+    int32_t *l_row = NULL, *u_row = NULL;
+    double  *l_val = NULL, *u_val = NULL;
+    int32_t  l_len = 0, l_cap = 0;
+    int32_t  u_len = 0, u_cap = 0;
+    /* Column pointers for L and U (built step by step) */
+    int32_t *l_colptr = NULL, *u_colptr = NULL;
+    /* Dense-tail workspace */
+    double *dense_buf = NULL;
+    int32_t *dense_row_map = NULL, *dense_col_map = NULL;
+
+    *alloc_fail = 0;
+    memset(&active, 0, sizeof(active));
+
+    ctx = calloc(1, sizeof(LUContext));
+    if (ctx == NULL) { goto oom; }
+    ctx->m = m;
+    ctx->singular_step = -1;
+    ctx->perm_row = calloc((size_t)m, sizeof(int32_t));
+    ctx->perm_col = calloc((size_t)m, sizeof(int32_t));
+    ctx->inv_perm_row = calloc((size_t)m, sizeof(int32_t));
+    ctx->inv_perm_col = calloc((size_t)m, sizeof(int32_t));
+    if (ctx->perm_row == NULL || ctx->perm_col == NULL ||
+        ctx->inv_perm_row == NULL || ctx->inv_perm_col == NULL) {
+        goto oom;
+    }
+
+    if (m == 0) {
+        /* Trivial case: empty matrix */
+        ctx->l_indptr = calloc(1, sizeof(int32_t));
+        ctx->u_indptr = calloc(1, sizeof(int32_t));
+        if (ctx->l_indptr == NULL || ctx->u_indptr == NULL) goto oom;
+        ctx->nnz_l = 0;
+        ctx->nnz_u = 0;
+        return ctx;
+    }
+
+    mult_arr = calloc((size_t)m, sizeof(double));
+    is_update = calloc((size_t)m, sizeof(unsigned char));
+    prow_work = calloc((size_t)m, sizeof(double));
+    prow_mark = calloc((size_t)m, sizeof(unsigned char));
+    prow_list = calloc((size_t)m, sizeof(int32_t));
+    update_rows = calloc((size_t)m, sizeof(int32_t));
+    l_colptr = calloc((size_t)(m + 1), sizeof(int32_t));
+    u_colptr = calloc((size_t)(m + 1), sizeof(int32_t));
+    if (mult_arr == NULL || is_update == NULL || prow_work == NULL ||
+        prow_mark == NULL || prow_list == NULL || update_rows == NULL ||
+        l_colptr == NULL || u_colptr == NULL) {
+        goto oom;
+    }
+
+    if (lu_active_init(&active, m, csc_indptr, csc_indices, csc_values) < 0) {
+        goto oom;
+    }
+
+    /* Pre-allocate L and U storage with nnz estimate */
+    {
+        int32_t est = csc_indptr[m] + m;
+        l_cap = est > 64 ? est : 64;
+        u_cap = est > 64 ? est : 64;
+    }
+    l_row = calloc((size_t)l_cap, sizeof(int32_t));
+    l_val = calloc((size_t)l_cap, sizeof(double));
+    u_row = calloc((size_t)u_cap, sizeof(int32_t));
+    u_val = calloc((size_t)u_cap, sizeof(double));
+    if (l_row == NULL || l_val == NULL || u_row == NULL || u_val == NULL) {
+        goto oom;
+    }
+
+    /* Main elimination loop */
+    for (int32_t step = 0; step < m; step++) {
+        /* ---- Check for dense-tail switch ---- */
+        int32_t remaining = m - step;
+        if (remaining > 1) {
+            /* Count active entries to estimate density */
+            int64_t active_nnz = 0;
+            for (int32_t j = 0; j < m; j++) {
+                if (active.col_active[j]) active_nnz += active.col_count[j];
+            }
+            double density = (double)active_nnz / ((double)remaining * (double)remaining);
+            if (remaining <= LU_DENSE_TAIL_DIM || density > LU_DENSE_TAIL_DENSITY) {
+                /* Switch to dense LU for the remaining submatrix */
+                int32_t n = remaining;
+                dense_buf = calloc((size_t)n * (size_t)n, sizeof(double));
+                dense_row_map = calloc((size_t)n, sizeof(int32_t));
+                dense_col_map = calloc((size_t)n, sizeof(int32_t));
+                if (dense_buf == NULL || dense_row_map == NULL || dense_col_map == NULL) {
+                    goto oom;
+                }
+                /* Build maps from dense index to original index */
+                {
+                    int32_t ri = 0, ci = 0;
+                    for (int32_t i = 0; i < m; i++) {
+                        if (active.row_active[i]) dense_row_map[ri++] = i;
+                    }
+                    for (int32_t j = 0; j < m; j++) {
+                        if (active.col_active[j]) dense_col_map[ci++] = j;
+                    }
+                }
+                /* Build inverse maps for row: original -> dense index */
+                /* Reuse is_update as scratch (it's 0-initialized, size m) */
+                {
+                    int32_t *row_inv = calloc((size_t)m, sizeof(int32_t));
+                    if (row_inv == NULL) goto oom;
+                    for (int32_t di = 0; di < n; di++) {
+                        row_inv[dense_row_map[di]] = di;
+                    }
+                    /* Fill dense buffer from active columns */
+                    for (int32_t dj = 0; dj < n; dj++) {
+                        int32_t orig_col = dense_col_map[dj];
+                        int32_t idx = active.col_head[orig_col];
+                        while (idx >= 0) {
+                            int32_t di = row_inv[active.pool[idx].row];
+                            dense_buf[di * n + dj] = active.pool[idx].value;
+                            idx = active.pool[idx].next_in_col;
+                        }
+                    }
+                    free(row_inv);
+                }
+                lu_active_free(&active);
+                memset(&active, 0, sizeof(active));
+
+                /* Dense partial-pivot LU on the n x n buffer */
+                /* dense_buf is row-major: dense_buf[i*n + j] = A[i,j] */
+                for (int32_t k = 0; k < n; k++) {
+                    /* Find pivot: largest absolute value in column k, rows k..n-1 */
+                    int32_t piv = -1;
+                    double piv_val = 0.0;
+                    for (int32_t i = k; i < n; i++) {
+                        double av = fabs(dense_buf[i * n + k]);
+                        if (av > fabs(piv_val)) {
+                            piv_val = dense_buf[i * n + k];
+                            piv = i;
+                        }
+                    }
+                    if (piv < 0 || piv_val == 0.0) {
+                        /* Singular: set column pointers for the failing step
+                         * and all remaining steps to the current lengths so
+                         * the assembly loop doesn't read stale offsets. */
+                        ctx->singular_step = step + k;
+                        l_colptr[step + k] = l_len;
+                        u_colptr[step + k] = u_len;
+                        for (int32_t s = k; s < n; s++) {
+                            ctx->perm_row[step + s] = dense_row_map[s];
+                            ctx->perm_col[step + s] = dense_col_map[s];
+                            l_colptr[step + s + 1] = l_len;
+                            u_colptr[step + s + 1] = u_len;
+                        }
+                        goto assemble;
+                    }
+                    /* Swap rows k and piv */
+                    if (piv != k) {
+                        for (int32_t j = 0; j < n; j++) {
+                            double tmp = dense_buf[k * n + j];
+                            dense_buf[k * n + j] = dense_buf[piv * n + j];
+                            dense_buf[piv * n + j] = tmp;
+                        }
+                        {
+                            int32_t tmp = dense_row_map[k];
+                            dense_row_map[k] = dense_row_map[piv];
+                            dense_row_map[piv] = tmp;
+                        }
+                    }
+                    ctx->perm_row[step + k] = dense_row_map[k];
+                    ctx->perm_col[step + k] = dense_col_map[k];
+
+                    /* Record L column (skip exact zeros to avoid nnz bloat) */
+                    l_colptr[step + k] = l_len;
+                    for (int32_t i = k + 1; i < n; i++) {
+                        double lval = dense_buf[i * n + k] / piv_val;
+                        dense_buf[i * n + k] = lval; /* store in-place for Schur update */
+                        if (lval == 0.0) continue;
+                        if (l_len == l_cap) {
+                            int32_t nc = l_cap * 2;
+                            int32_t *nr2 = realloc(l_row, (size_t)nc * sizeof(int32_t));
+                            double  *nv2 = realloc(l_val, (size_t)nc * sizeof(double));
+                            if (nr2 == NULL || nv2 == NULL) {
+                                if (nr2) l_row = nr2;
+                                if (nv2) l_val = nv2;
+                                goto oom;
+                            }
+                            l_row = nr2; l_val = nv2; l_cap = nc;
+                        }
+                        l_row[l_len] = dense_row_map[i];
+                        l_val[l_len] = lval;
+                        l_len++;
+                    }
+
+                    /* Record U row (skip exact zeros) */
+                    u_colptr[step + k] = u_len;
+                    for (int32_t j = k; j < n; j++) {
+                        double uval = dense_buf[k * n + j];
+                        if (uval == 0.0 && j != k) continue; /* keep diagonal */
+                        if (u_len == u_cap) {
+                            int32_t nc = u_cap * 2;
+                            int32_t *nr2 = realloc(u_row, (size_t)nc * sizeof(int32_t));
+                            double  *nv2 = realloc(u_val, (size_t)nc * sizeof(double));
+                            if (nr2 == NULL || nv2 == NULL) {
+                                if (nr2) u_row = nr2;
+                                if (nv2) u_val = nv2;
+                                goto oom;
+                            }
+                            u_row = nr2; u_val = nv2; u_cap = nc;
+                        }
+                        u_row[u_len] = dense_col_map[j];
+                        u_val[u_len] = uval;
+                        u_len++;
+                    }
+
+                    /* Schur complement update on dense buffer */
+                    for (int32_t i = k + 1; i < n; i++) {
+                        double lv = dense_buf[i * n + k]; /* already = L[i,k] */
+                        for (int32_t j = k + 1; j < n; j++) {
+                            dense_buf[i * n + j] -= lv * dense_buf[k * n + j];
+                        }
+                    }
+                }
+                /* All steps consumed by dense tail */
+                free(dense_buf); dense_buf = NULL;
+                free(dense_row_map); dense_row_map = NULL;
+                free(dense_col_map); dense_col_map = NULL;
+                goto assemble;
+            }
+        }
+
+        /* ---- Markowitz pivot selection ---- */
+        /* Search up to 4 "tiers" of minimum column count among active columns.
+         * Within each tier, scan all entries to find the best Markowitz score
+         * subject to the threshold stability test. */
+        int32_t best_pivot_row = -1, best_pivot_col = -1;
+        int64_t best_score = (int64_t)m * (int64_t)m + 1;
+        double best_pivot_val = 0.0;
+
+        /* Find the 4 smallest active column counts */
+        int32_t tier_counts[4] = {-1, -1, -1, -1};
+        int32_t n_tiers = 0;
+        for (int32_t j = 0; j < m; j++) {
+            if (!active.col_active[j]) continue;
+            int32_t cc = active.col_count[j];
+            int already = 0;
+            for (int32_t t = 0; t < n_tiers; t++) {
+                if (tier_counts[t] == cc) { already = 1; break; }
+            }
+            if (!already && n_tiers < 4) {
+                int32_t pos = n_tiers;
+                while (pos > 0 && tier_counts[pos - 1] > cc) {
+                    tier_counts[pos] = tier_counts[pos - 1];
+                    pos--;
+                }
+                tier_counts[pos] = cc;
+                n_tiers++;
+            } else if (!already && cc < tier_counts[3]) {
+                tier_counts[3] = cc;
+                for (int32_t t = 3; t > 0 && tier_counts[t] < tier_counts[t - 1]; t--) {
+                    int32_t tmp = tier_counts[t];
+                    tier_counts[t] = tier_counts[t - 1];
+                    tier_counts[t - 1] = tmp;
+                }
+            }
+        }
+
+        /* Scan columns in the chosen tiers */
+        int32_t max_tier_count = n_tiers > 0 ? tier_counts[n_tiers - 1] : 0;
+        for (int32_t j = 0; j < m; j++) {
+            if (!active.col_active[j]) continue;
+            if (active.col_count[j] > max_tier_count) continue;
+
+            double col_max = 0.0;
+            int32_t idx = active.col_head[j];
+            while (idx >= 0) {
+                double av = fabs(active.pool[idx].value);
+                if (av > col_max) col_max = av;
+                idx = active.pool[idx].next_in_col;
+            }
+            if (col_max == 0.0) continue;
+
+            double threshold = u * col_max;
+            idx = active.col_head[j];
+            while (idx >= 0) {
+                int32_t r = active.pool[idx].row;
+                double av = fabs(active.pool[idx].value);
+                if (av >= threshold) {
+                    int64_t score = (int64_t)(active.row_count[r] - 1) *
+                                   (int64_t)(active.col_count[j] - 1);
+                    if (score < best_score) {
+                        best_score = score;
+                        best_pivot_row = r;
+                        best_pivot_col = j;
+                        best_pivot_val = active.pool[idx].value;
+                        if (score == 0) goto pivot_found;
+                    }
+                }
+                idx = active.pool[idx].next_in_col;
+            }
+        }
+pivot_found:
+
+        if (best_pivot_row < 0) {
+            ctx->singular_step = step;
+            {
+                int32_t ri = 0, ci = 0;
+                for (int32_t s = step; s < m; s++) {
+                    while (ri < m && !active.row_active[ri]) ri++;
+                    while (ci < m && !active.col_active[ci]) ci++;
+                    ctx->perm_row[s] = ri < m ? ri : 0;
+                    ctx->perm_col[s] = ci < m ? ci : 0;
+                    if (ri < m) { active.row_active[ri] = 0; ri++; }
+                    if (ci < m) { active.col_active[ci] = 0; ci++; }
+                    l_colptr[s + 1] = l_len;
+                    u_colptr[s + 1] = u_len;
+                }
+            }
+            break;
+        }
+
+        /* Record the pivot */
+        ctx->perm_row[step] = best_pivot_row;
+        ctx->perm_col[step] = best_pivot_col;
+
+        /* -- Record L column step: multipliers from pivot column -- */
+        l_colptr[step] = l_len;
+        {
+            int32_t idx2 = active.col_head[best_pivot_col];
+            while (idx2 >= 0) {
+                int32_t r = active.pool[idx2].row;
+                if (r != best_pivot_row) {
+                    double lval = active.pool[idx2].value / best_pivot_val;
+                    if (l_len == l_cap) {
+                        int32_t nc = l_cap * 2;
+                        int32_t *nr = realloc(l_row, (size_t)nc * sizeof(int32_t));
+                        double  *nv = realloc(l_val, (size_t)nc * sizeof(double));
+                        if (nr == NULL || nv == NULL) {
+                            if (nr) l_row = nr;
+                            if (nv) l_val = nv;
+                            goto oom;
+                        }
+                        l_row = nr; l_val = nv; l_cap = nc;
+                    }
+                    l_row[l_len] = r;
+                    l_val[l_len] = lval;
+                    l_len++;
+                }
+                idx2 = active.pool[idx2].next_in_col;
+            }
+        }
+
+        /* -- Record U row step: entries in pivot row -- */
+        u_colptr[step] = u_len;
+        {
+            int32_t idx2 = active.row_head[best_pivot_row];
+            while (idx2 >= 0) {
+                int32_t c = active.pool[idx2].col;
+                double val = active.pool[idx2].value;
+                if (u_len == u_cap) {
+                    int32_t nc = u_cap * 2;
+                    int32_t *nr = realloc(u_row, (size_t)nc * sizeof(int32_t));
+                    double  *nv = realloc(u_val, (size_t)nc * sizeof(double));
+                    if (nr == NULL || nv == NULL) {
+                        if (nr) u_row = nr;
+                        if (nv) u_val = nv;
+                        goto oom;
+                    }
+                    u_row = nr; u_val = nv; u_cap = nc;
+                }
+                u_row[u_len] = c;
+                u_val[u_len] = val;
+                u_len++;
+                idx2 = active.pool[idx2].next_in_row;
+            }
+        }
+
+        /* ---- Column-oriented Schur complement update ----
+         *
+         * For each column c in the pivot row (c != pivot_col):
+         *   walk column c once in the active matrix.
+         *   For each entry (r, val): if r is an update row, val -= mult[r] * prow[c].
+         *   Then scan update rows not found in column c and insert fill-in.
+         *
+         * This is O(prow_nnz * (col_len + n_update_rows)) per step, vs the
+         * naive O(n_update_rows * prow_nnz * col_len) which blows up when
+         * columns become dense from fill-in.
+         */
+        {
+            /* Scatter pivot row into dense workspace */
+            int32_t prow_nnz = 0;
+            {
+                int32_t idx2 = active.row_head[best_pivot_row];
+                while (idx2 >= 0) {
+                    int32_t c = active.pool[idx2].col;
+                    prow_work[c] = active.pool[idx2].value;
+                    prow_mark[c] = 1;
+                    prow_list[prow_nnz++] = c;
+                    idx2 = active.pool[idx2].next_in_row;
+                }
+            }
+
+            /* Collect update rows and their multipliers into dense arrays */
+            int32_t n_update_rows = 0;
+            {
+                int32_t idx2 = active.col_head[best_pivot_col];
+                while (idx2 >= 0) {
+                    int32_t r = active.pool[idx2].row;
+                    if (r != best_pivot_row) {
+                        double lmult = active.pool[idx2].value / best_pivot_val;
+                        mult_arr[r] = lmult;
+                        is_update[r] = 1;
+                        update_rows[n_update_rows++] = r;
+                    }
+                    idx2 = active.pool[idx2].next_in_col;
+                }
+            }
+
+            /* Remove pivot row and column from active matrix */
+            lu_active_remove_row(&active, best_pivot_row);
+            lu_active_remove_col(&active, best_pivot_col);
+
+            /* Column-oriented update: for each column c in the pivot row */
+            for (int32_t pc = 0; pc < prow_nnz; pc++) {
+                int32_t c = prow_list[pc];
+                if (c == best_pivot_col) continue;
+                if (!active.col_active[c]) continue;
+                double pval = prow_work[c];
+
+                /* Mark which update rows we find in this column.
+                 * Use is_update: it's 1 for update rows. We'll temporarily
+                 * set it to 2 when found, then reset to 1 after. */
+
+                /* Walk column c, update existing entries at update rows */
+                int32_t idx2 = active.col_head[c];
+                while (idx2 >= 0) {
+                    int32_t r = active.pool[idx2].row;
+                    if (is_update[r] == 1) {
+                        active.pool[idx2].value -= mult_arr[r] * pval;
+                        is_update[r] = 2; /* mark as found */
+                    }
+                    idx2 = active.pool[idx2].next_in_col;
+                }
+
+                /* Insert fill-in for update rows not found in column c */
+                for (int32_t ur = 0; ur < n_update_rows; ur++) {
+                    int32_t r = update_rows[ur];
+                    if (is_update[r] == 1) {
+                        /* Fill-in entry */
+                        double fval = -(mult_arr[r] * pval);
+                        if (lu_active_insert(&active, r, c, fval) < 0) {
+                            goto oom;
+                        }
+                    }
+                    /* Reset found flag back to 1 for next column */
+                    is_update[r] = 1;
+                }
+            }
+
+            /* Clean up dense workspace for pivot row */
+            for (int32_t pc = 0; pc < prow_nnz; pc++) {
+                prow_work[prow_list[pc]] = 0.0;
+                prow_mark[prow_list[pc]] = 0;
+            }
+
+            /* Clean up update row markers */
+            for (int32_t ur = 0; ur < n_update_rows; ur++) {
+                mult_arr[update_rows[ur]] = 0.0;
+                is_update[update_rows[ur]] = 0;
+            }
+        }
+    }
+
+    /* ---- Assemble L and U into CSC format ---- */
+assemble:
+
+    /* Build inverse permutations */
+    for (int32_t k = 0; k < m; k++) {
+        ctx->inv_perm_row[ctx->perm_row[k]] = k;
+        ctx->inv_perm_col[ctx->perm_col[k]] = k;
+    }
+
+    /* L is already collected column-by-column with original row indices.
+     * Convert original row indices to elimination (permuted) row indices,
+     * sort by column. L is unit lower triangular in the permuted ordering. */
+    {
+        int32_t total_l = l_len;
+        ctx->nnz_l = total_l;
+        ctx->l_indptr = calloc((size_t)(m + 1), sizeof(int32_t));
+        ctx->l_indices = total_l > 0 ? calloc((size_t)total_l, sizeof(int32_t)) : NULL;
+        ctx->l_values  = total_l > 0 ? calloc((size_t)total_l, sizeof(double))  : NULL;
+        if (ctx->l_indptr == NULL ||
+            (total_l > 0 && (ctx->l_indices == NULL || ctx->l_values == NULL))) {
+            goto oom;
+        }
+        /* l_colptr[step] marks start of L column `step` in l_row/l_val.
+         * l_colptr[step+1] (from the next step or sentinel) marks the end. */
+        if (ctx->singular_step < 0) {
+            l_colptr[m] = l_len;
+        }
+        /* The sentinel is already set for singular case in the break above */
+
+        int32_t pos = 0;
+        for (int32_t k = 0; k < m; k++) {
+            ctx->l_indptr[k] = pos;
+            for (int32_t p = l_colptr[k]; p < l_colptr[k + 1]; p++) {
+                int32_t orig_row = l_row[p];
+                int32_t perm_row = ctx->inv_perm_row[orig_row];
+                ctx->l_indices[pos] = perm_row;
+                ctx->l_values[pos] = l_val[p];
+                pos++;
+            }
+        }
+        ctx->l_indptr[m] = pos;
+    }
+
+    /* U was collected as rows: U row `step` contains entries at original columns.
+     * Convert to CSC: U column j (in elimination order) contains all U[i,j]
+     * where i <= j. */
+    {
+        /* u_colptr[step] marks start of U row `step` in u_row/u_val.
+         * u_row[p] is the original column index. */
+        if (ctx->singular_step < 0) {
+            u_colptr[m] = u_len;
+        }
+
+        /* First pass: count entries per U column (in elimination order) */
+        int32_t *u_csc_count = calloc((size_t)m, sizeof(int32_t));
+        if (u_csc_count == NULL) goto oom;
+
+        for (int32_t step = 0; step < m; step++) {
+            for (int32_t p = u_colptr[step]; p < u_colptr[step + 1]; p++) {
+                int32_t orig_col = u_row[p];
+                int32_t elim_col = ctx->inv_perm_col[orig_col];
+                u_csc_count[elim_col]++;
+            }
+        }
+
+        int32_t total_u = 0;
+        for (int32_t j = 0; j < m; j++) total_u += u_csc_count[j];
+
+        ctx->nnz_u = total_u;
+        ctx->u_indptr = calloc((size_t)(m + 1), sizeof(int32_t));
+        ctx->u_indices = total_u > 0 ? calloc((size_t)total_u, sizeof(int32_t)) : NULL;
+        ctx->u_values  = total_u > 0 ? calloc((size_t)total_u, sizeof(double))  : NULL;
+        if (ctx->u_indptr == NULL ||
+            (total_u > 0 && (ctx->u_indices == NULL || ctx->u_values == NULL))) {
+            free(u_csc_count);
+            goto oom;
+        }
+
+        /* Build column pointers */
+        ctx->u_indptr[0] = 0;
+        for (int32_t j = 0; j < m; j++) {
+            ctx->u_indptr[j + 1] = ctx->u_indptr[j] + u_csc_count[j];
+        }
+
+        /* Second pass: fill entries */
+        int32_t *u_csc_pos = calloc((size_t)m, sizeof(int32_t));
+        if (u_csc_pos == NULL) {
+            free(u_csc_count);
+            goto oom;
+        }
+        for (int32_t j = 0; j < m; j++) {
+            u_csc_pos[j] = ctx->u_indptr[j];
+        }
+
+        for (int32_t step = 0; step < m; step++) {
+            for (int32_t p = u_colptr[step]; p < u_colptr[step + 1]; p++) {
+                int32_t orig_col = u_row[p];
+                int32_t elim_col = ctx->inv_perm_col[orig_col];
+                int32_t pos2 = u_csc_pos[elim_col]++;
+                ctx->u_indices[pos2] = step;  /* elimination row index */
+                ctx->u_values[pos2] = u_val[p];
+            }
+        }
+
+        free(u_csc_count);
+        free(u_csc_pos);
+    }
+
+    /* Cleanup temporaries and return */
+    lu_active_free(&active);
+    free(mult_arr); free(is_update);
+    free(prow_work); free(prow_mark);
+    free(prow_list); free(update_rows);
+    free(l_row); free(l_val);
+    free(u_row); free(u_val);
+    free(l_colptr); free(u_colptr);
+    free(dense_buf); free(dense_row_map); free(dense_col_map);
+    return ctx;
+
+oom:
+    *alloc_fail = 1;
+    lu_active_free(&active);
+    free(mult_arr); free(is_update);
+    free(prow_work); free(prow_mark);
+    free(prow_list); free(update_rows);
+    free(l_row); free(l_val);
+    free(u_row); free(u_val);
+    free(l_colptr); free(u_colptr);
+    free(dense_buf); free(dense_row_map); free(dense_col_map);
+    lu_context_free(ctx);
+    return NULL;
+}
+
+/*
+ * lu_ftran: solve B x = b where PAQ = LU.
+ *
+ * B = P^-1 L U Q^-1, so B x = b  =>  L U Q^-1 x = P b
+ * Let y = Q^-1 x, then L U y = P b.
+ * 1. z = P b   (permute rhs)
+ * 2. L w = z   (forward solve, L is unit lower triangular)
+ * 3. U y = w   (back solve)
+ * 4. x = Q y   (inverse column permutation)
+ *
+ * Dense rhs for milestone 1.
+ */
+static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
+    int32_t m = ctx->m;
+    double *z = calloc((size_t)m, sizeof(double));
+    double *w = calloc((size_t)m, sizeof(double));
+    if (z == NULL || w == NULL) {
+        /* Fallback: zero output on OOM (shouldn't happen for reasonable m) */
+        memset(x, 0, (size_t)m * sizeof(double));
+        free(z);
+        free(w);
+        return;
+    }
+
+    /* Step 1: z = P b */
+    for (int32_t k = 0; k < m; k++) {
+        z[k] = b[ctx->perm_row[k]];
+    }
+
+    /* Step 2: L w = z (forward substitution, L is unit lower triangular CSC) */
+    memcpy(w, z, (size_t)m * sizeof(double));
+    for (int32_t j = 0; j < m; j++) {
+        /* w[j] is finalized (L[j,j] = 1 implicit) */
+        for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
+            int32_t i = ctx->l_indices[p];
+            w[i] -= ctx->l_values[p] * w[j];
+        }
+    }
+
+    /* Step 3: U y = w (back substitution, U is upper triangular CSC) */
+    /* y stored in z (reuse) */
+    memcpy(z, w, (size_t)m * sizeof(double));
+    for (int32_t j = m - 1; j >= 0; j--) {
+        /* Find diagonal entry U[j,j] in column j */
+        double diag = 0.0;
+        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+            if (ctx->u_indices[p] == j) {
+                diag = ctx->u_values[p];
+            } else if (ctx->u_indices[p] < j) {
+                /* Above diagonal: subtract from z */
+                /* This entry is U[i,j] where i < j. We'll handle in a
+                 * column-oriented back-solve: subtract U[i,j]*z[j] from z[i]
+                 * after computing z[j]. But z[j] isn't known yet for
+                 * non-diagonal entries. We need to find the diagonal first. */
+            }
+        }
+        if (diag != 0.0) {
+            z[j] /= diag;
+        }
+        /* Now subtract U[i,j] * z[j] from z[i] for i < j */
+        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+            int32_t i = ctx->u_indices[p];
+            if (i < j) {
+                z[i] -= ctx->u_values[p] * z[j];
+            }
+        }
+    }
+
+    /* Step 4: x = Q y, i.e., x[Q[k]] = y[k] */
+    for (int32_t k = 0; k < m; k++) {
+        x[ctx->perm_col[k]] = z[k];
+    }
+
+    free(z);
+    free(w);
+}
+
+/*
+ * lu_btran: solve B^T x = b where PAQ = LU.
+ *
+ * B^T = Q^{-T} U^T L^T P^T, so B^T x = b  =>
+ * 1. z = Q^T b    (z[k] = b[Q[k]])
+ * 2. U^T w = z    (forward solve with U^T)
+ * 3. L^T y = w    (back solve with L^T, L unit lower => L^T unit upper)
+ * 4. x = P^T y    (x[P[k]] = ... but P^T means x[i] = y[P^{-1}[i]])
+ *    Actually: x[i] = y[inv_perm_row[i]]
+ *    Equivalently: for k=0..m-1, x[perm_row[k]] ... let's be careful.
+ *    P maps original rows to elimination rows: elim_row = inv_perm_row[orig_row].
+ *    P^T maps elimination rows back to original: x_orig = P^T y_elim.
+ *    x[orig_row] = y[inv_perm_row[orig_row]] ... no.
+ *    P_{ki} = 1 iff perm_row[k] = i. So (P b)_k = b_{perm_row[k]}.
+ *    (P^T y)_i = y_k where perm_row[k] = i, i.e., k = inv_perm_row[i].
+ *    So x[i] = y[inv_perm_row[i]].
+ */
+static void lu_btran(const LUContext *ctx, const double *b, double *x) {
+    int32_t m = ctx->m;
+    double *z = calloc((size_t)m, sizeof(double));
+    double *w = calloc((size_t)m, sizeof(double));
+    if (z == NULL || w == NULL) {
+        memset(x, 0, (size_t)m * sizeof(double));
+        free(z);
+        free(w);
+        return;
+    }
+
+    /* Step 1: z = Q^T b, i.e., z[k] = b[perm_col[k]] */
+    for (int32_t k = 0; k < m; k++) {
+        z[k] = b[ctx->perm_col[k]];
+    }
+
+    /* Step 2: U^T w = z (forward solve with U transposed)
+     * U^T is lower triangular. Column j of U^T = row j of U.
+     * In CSC of U: column j has entries U[i,j]. Transposing: U^T[j,i] = U[i,j].
+     * Forward solve on U^T (lower triangular):
+     * For j = 0..m-1:
+     *   w[j] = (z[j] - sum_{i<j} U^T[j,i]*w[i]) / U^T[j,j]
+     *        = (z[j] - sum_{i<j} U[i,j]*w[i]) / U[j,j]
+     * But U is stored in CSC, so U[i,j] is in column j.
+     * For column-oriented: process columns and scatter.
+     */
+    memcpy(w, z, (size_t)m * sizeof(double));
+    for (int32_t j = 0; j < m; j++) {
+        /* Find diagonal and divide */
+        double diag = 0.0;
+        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+            if (ctx->u_indices[p] == j) {
+                diag = ctx->u_values[p];
+                break;
+            }
+        }
+        if (diag != 0.0) {
+            w[j] /= diag;
+        }
+        /* Scatter: for each U[i,j] with i < j, this means U^T[j,i].
+         * In U^T forward solve, after computing w[j], we subtract
+         * U^T[k,j] * w[j] from w[k] for k > j.
+         * U^T[k,j] = U[j,k] -- that's in column k of U, not column j.
+         * So column-oriented U^T solve doesn't scatter from column j.
+         *
+         * Let me redo this: row-oriented forward solve on U^T:
+         * w[j] = z[j]; for i in row j of U^T (i.e., entries U^T[j,i] for i<j):
+         *   w[j] -= U^T[j,i] * w[i]
+         * w[j] /= U^T[j,j]
+         *
+         * U^T[j,i] = U[i,j]. In CSC of U, U[i,j] is in column j at row i.
+         * So to get row j of U^T, we need all U[i,j] entries -- wait, that's
+         * column j of U. No: U^T[j,i] = U[i,j], so row j of U^T has entries
+         * at columns i where U[i,j] != 0, i.e., where column j of U has
+         * row index i. But we want U^T[j, *], which is U[*, j] = column j of U
+         * read as a row.
+         *
+         * Hmm, U^T[j,i] = U[i,j]. To iterate row j of U^T, we need all (i)
+         * such that U[i,j] != 0 for some i, varying over i -- but that's just
+         * all entries in column j of U, giving us pairs (i, U[i,j]).
+         * So U^T row j has entries at columns {i : U[i,j] != 0} with values U[i,j].
+         *
+         * For forward solve on lower triangular U^T:
+         * for j=0..m-1:
+         *   w[j] = z[j] - sum over p in U_col_j where U_indices[p] < j:
+         *          nothing -- those have i < j, meaning U^T[j, i] for i<j.
+         *          Wait: U^T[j,i] = U[i,j]. Looking at column j of U:
+         *          entry with row i means U[i,j], which is U^T[j,i].
+         *          For forward solve: subtract U^T[j,i]*w[i] for i < j.
+         *          The entries with i < j in column j give us those.
+         */
+        /* Redo: subtract entries with row index < j (they are U^T[j, i] = U[i,j]) */
+        /* We already divided by diag above which assumed w[j] was adjusted.
+         * Let's redo properly: */
+    }
+    /* Redo U^T forward solve properly */
+    memcpy(w, z, (size_t)m * sizeof(double));
+    for (int32_t j = 0; j < m; j++) {
+        /* Subtract contributions from earlier columns */
+        /* U^T[j, i] = U[i, j] for i < j. These are entries in column j of U
+         * with row index i < j. */
+        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+            int32_t i = ctx->u_indices[p];
+            if (i < j) {
+                w[j] -= ctx->u_values[p] * w[i];
+            }
+        }
+        /* Divide by diagonal: U^T[j,j] = U[j,j] */
+        double diag = 0.0;
+        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+            if (ctx->u_indices[p] == j) {
+                diag = ctx->u_values[p];
+                break;
+            }
+        }
+        if (diag != 0.0) {
+            w[j] /= diag;
+        }
+    }
+
+    /* Step 3: L^T y = w (back solve with L^T, unit upper triangular)
+     * L is unit lower triangular CSC. L^T is unit upper triangular.
+     * L^T[i, j] = L[j, i]. Column j of L has entries L[i, j] for i > j.
+     * So L^T[j, i] = L[i, j] for i > j means L^T row j has entries at
+     * columns i > j.
+     *
+     * Back solve on unit upper triangular L^T:
+     * for j = m-1 .. 0:
+     *   y[j] = w[j] - sum over i > j of L^T[j, i] * y[i]
+     *        = w[j] - sum over i > j of L[i, j] * y[i]
+     * Column j of L gives us L[i, j] for i > j. So:
+     * for j = m-1 .. 0:
+     *   y[j] = w[j] - sum over p in L_col_j: L_values[p] * y[L_indices[p]]
+     * where L_indices[p] > j (all of them since L is strictly lower tri).
+     */
+    /* y stored in z (reuse) */
+    memcpy(z, w, (size_t)m * sizeof(double));
+    for (int32_t j = m - 1; j >= 0; j--) {
+        for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
+            int32_t i = ctx->l_indices[p];
+            z[j] -= ctx->l_values[p] * z[i];
+        }
+    }
+
+    /* Step 4: x[i] = y[inv_perm_row[i]] */
+    for (int32_t i = 0; i < m; i++) {
+        x[i] = z[ctx->inv_perm_row[i]];
+    }
+
+    free(z);
+    free(w);
+}
+
+/* ---- Python test hooks for sparse LU ---- */
+
+/*
+ * lu_solve_test(indptr, indices, data, m, rhs_list, transpose)
+ *
+ * indptr, indices, data: CSC format of a square m x m matrix
+ * rhs_list: list of m-length lists (right-hand sides)
+ * transpose: 0 for FTRAN (Bx=b), 1 for BTRAN (B^T x = b)
+ *
+ * Returns: list of m-length lists (solution vectors), or None if singular.
+ */
+static PyObject *csparse_lu_solve_test(PyObject *self, PyObject *args) {
+    (void)self;
+    PyObject *indptr_obj, *indices_obj, *data_obj, *rhs_list_obj;
+    int m_int, transpose;
+    if (!PyArg_ParseTuple(args, "OOOiOi", &indptr_obj, &indices_obj,
+                          &data_obj, &m_int, &rhs_list_obj, &transpose)) {
+        return NULL;
+    }
+    int32_t m = (int32_t)m_int;
+    if (m < 0 || m > 100000) {
+        PyErr_SetString(PyExc_ValueError, "m must be in [0, 100000]");
+        return NULL;
+    }
+
+    /* Parse CSC arrays */
+    int32_t *indptr = calloc((size_t)(m + 1), sizeof(int32_t));
+    if (indptr == NULL) { PyErr_NoMemory(); return NULL; }
+    {
+        Py_ssize_t *tmp = calloc((size_t)(m + 1), sizeof(Py_ssize_t));
+        if (tmp == NULL) { free(indptr); PyErr_NoMemory(); return NULL; }
+        if (fill_index_array(indptr_obj, m + 1, tmp, "indptr") != 0) {
+            free(indptr); free(tmp); return NULL;
+        }
+        for (int32_t i = 0; i <= m; i++) indptr[i] = (int32_t)tmp[i];
+        free(tmp);
+    }
+    int32_t nnz = indptr[m];
+    int32_t *indices = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(int32_t));
+    double  *data    = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(double));
+    if (indices == NULL || data == NULL) {
+        free(indptr); free(indices); free(data);
+        PyErr_NoMemory();
+        return NULL;
+    }
+    {
+        Py_ssize_t *tmp = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(Py_ssize_t));
+        if (tmp == NULL) { free(indptr); free(indices); free(data); PyErr_NoMemory(); return NULL; }
+        if (fill_index_array(indices_obj, nnz, tmp, "indices") != 0) {
+            free(indptr); free(indices); free(data); free(tmp); return NULL;
+        }
+        for (int32_t i = 0; i < nnz; i++) indices[i] = (int32_t)tmp[i];
+        free(tmp);
+    }
+    {
+        double *tmp = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(double));
+        if (tmp == NULL) { free(indptr); free(indices); free(data); PyErr_NoMemory(); return NULL; }
+        if (fill_double_array(data_obj, nnz, tmp, "data") != 0) {
+            free(indptr); free(indices); free(data); free(tmp); return NULL;
+        }
+        memcpy(data, tmp, (size_t)nnz * sizeof(double));
+        free(tmp);
+    }
+
+    /* Factorize */
+    int alloc_fail = 0;
+    LUContext *ctx;
+    Py_BEGIN_ALLOW_THREADS
+    ctx = lu_factorize(m, indptr, indices, data, 0.1, &alloc_fail);
+    Py_END_ALLOW_THREADS
+
+    free(indptr);
+    free(indices);
+    free(data);
+
+    if (ctx == NULL) {
+        if (alloc_fail) {
+            PyErr_NoMemory();
+        } else {
+            PyErr_SetString(PyExc_RuntimeError, "LU factorization failed");
+        }
+        return NULL;
+    }
+
+    if (ctx->singular_step >= 0) {
+        /* Return None to signal singularity */
+        lu_context_free(ctx);
+        Py_RETURN_NONE;
+    }
+
+    /* Parse rhs_list and solve */
+    PyObject *rhs_seq = PySequence_Fast(rhs_list_obj, "rhs_list must be a sequence");
+    if (rhs_seq == NULL) { lu_context_free(ctx); return NULL; }
+    Py_ssize_t n_rhs = PySequence_Fast_GET_SIZE(rhs_seq);
+
+    PyObject *results = PyList_New(n_rhs);
+    if (results == NULL) { Py_DECREF(rhs_seq); lu_context_free(ctx); return NULL; }
+
+    double *b = calloc((size_t)m, sizeof(double));
+    double *x = calloc((size_t)m, sizeof(double));
+    if (b == NULL || x == NULL) {
+        free(b); free(x);
+        Py_DECREF(rhs_seq); Py_DECREF(results);
+        lu_context_free(ctx);
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    for (Py_ssize_t r = 0; r < n_rhs; r++) {
+        PyObject *rhs_item = PySequence_Fast_GET_ITEM(rhs_seq, r);
+        /* Parse the rhs vector - use a temporary Py_ssize_t-free approach */
+        {
+            PyObject *rhs_inner = PySequence_Fast(rhs_item, "each rhs must be a sequence");
+            if (rhs_inner == NULL) {
+                free(b); free(x);
+                Py_DECREF(rhs_seq); Py_DECREF(results);
+                lu_context_free(ctx);
+                return NULL;
+            }
+            if (PySequence_Fast_GET_SIZE(rhs_inner) != m) {
+                Py_DECREF(rhs_inner);
+                free(b); free(x);
+                Py_DECREF(rhs_seq); Py_DECREF(results);
+                lu_context_free(ctx);
+                PyErr_SetString(PyExc_ValueError, "rhs length must match m");
+                return NULL;
+            }
+            for (int32_t i = 0; i < m; i++) {
+                PyObject *item = PySequence_Fast_GET_ITEM(rhs_inner, i);
+                b[i] = PyFloat_AsDouble(item);
+                if (PyErr_Occurred()) {
+                    Py_DECREF(rhs_inner);
+                    free(b); free(x);
+                    Py_DECREF(rhs_seq); Py_DECREF(results);
+                    lu_context_free(ctx);
+                    return NULL;
+                }
+            }
+            Py_DECREF(rhs_inner);
+        }
+
+        /* Solve */
+        Py_BEGIN_ALLOW_THREADS
+        if (transpose) {
+            lu_btran(ctx, b, x);
+        } else {
+            lu_ftran(ctx, b, x);
+        }
+        Py_END_ALLOW_THREADS
+
+        /* Build result list */
+        PyObject *x_list = PyList_New(m);
+        if (x_list == NULL) {
+            free(b); free(x);
+            Py_DECREF(rhs_seq); Py_DECREF(results);
+            lu_context_free(ctx);
+            return NULL;
+        }
+        for (int32_t i = 0; i < m; i++) {
+            PyList_SET_ITEM(x_list, i, PyFloat_FromDouble(x[i]));
+        }
+        PyList_SET_ITEM(results, r, x_list);
+    }
+
+    free(b);
+    free(x);
+    Py_DECREF(rhs_seq);
+    lu_context_free(ctx);
+    return results;
+}
+
+/*
+ * lu_stats_test(indptr, indices, data, m)
+ *
+ * Returns (nnz_l, nnz_u, singular_step) for the LU factorization.
+ * singular_step is -1 if nonsingular.
+ */
+static PyObject *csparse_lu_stats_test(PyObject *self, PyObject *args) {
+    (void)self;
+    PyObject *indptr_obj, *indices_obj, *data_obj;
+    int m_int;
+    if (!PyArg_ParseTuple(args, "OOOi", &indptr_obj, &indices_obj,
+                          &data_obj, &m_int)) {
+        return NULL;
+    }
+    int32_t m = (int32_t)m_int;
+    if (m < 0 || m > 100000) {
+        PyErr_SetString(PyExc_ValueError, "m must be in [0, 100000]");
+        return NULL;
+    }
+
+    int32_t *indptr = calloc((size_t)(m + 1), sizeof(int32_t));
+    if (indptr == NULL) { PyErr_NoMemory(); return NULL; }
+    {
+        Py_ssize_t *tmp = calloc((size_t)(m + 1), sizeof(Py_ssize_t));
+        if (tmp == NULL) { free(indptr); PyErr_NoMemory(); return NULL; }
+        if (fill_index_array(indptr_obj, m + 1, tmp, "indptr") != 0) {
+            free(indptr); free(tmp); return NULL;
+        }
+        for (int32_t i = 0; i <= m; i++) indptr[i] = (int32_t)tmp[i];
+        free(tmp);
+    }
+    int32_t nnz = indptr[m];
+    int32_t *indices = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(int32_t));
+    double  *data_arr = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(double));
+    if (indices == NULL || data_arr == NULL) {
+        free(indptr); free(indices); free(data_arr);
+        PyErr_NoMemory();
+        return NULL;
+    }
+    {
+        Py_ssize_t *tmp = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(Py_ssize_t));
+        if (tmp == NULL) { free(indptr); free(indices); free(data_arr); PyErr_NoMemory(); return NULL; }
+        if (fill_index_array(indices_obj, nnz, tmp, "indices") != 0) {
+            free(indptr); free(indices); free(data_arr); free(tmp); return NULL;
+        }
+        for (int32_t i = 0; i < nnz; i++) indices[i] = (int32_t)tmp[i];
+        free(tmp);
+    }
+    {
+        double *tmp = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(double));
+        if (tmp == NULL) { free(indptr); free(indices); free(data_arr); PyErr_NoMemory(); return NULL; }
+        if (fill_double_array(data_obj, nnz, tmp, "data") != 0) {
+            free(indptr); free(indices); free(data_arr); free(tmp); return NULL;
+        }
+        memcpy(data_arr, tmp, (size_t)nnz * sizeof(double));
+        free(tmp);
+    }
+
+    int alloc_fail = 0;
+    LUContext *ctx;
+    Py_BEGIN_ALLOW_THREADS
+    ctx = lu_factorize(m, indptr, indices, data_arr, 0.1, &alloc_fail);
+    Py_END_ALLOW_THREADS
+
+    free(indptr);
+    free(indices);
+    free(data_arr);
+
+    if (ctx == NULL) {
+        if (alloc_fail) PyErr_NoMemory();
+        else PyErr_SetString(PyExc_RuntimeError, "LU factorization failed");
+        return NULL;
+    }
+
+    PyObject *result = Py_BuildValue("(iii)", ctx->nnz_l, ctx->nnz_u, ctx->singular_step);
+    lu_context_free(ctx);
+    return result;
+}
+
 static PyObject *csparse_min_degree(PyObject *self, PyObject *args) {
     (void)self;
     PyObject *indptr_obj;
@@ -6153,6 +7529,10 @@ static PyObject *csparse_min_degree(PyObject *self, PyObject *args) {
 static PyMethodDef module_methods[] = {
     {"min_degree", csparse_min_degree, METH_VARARGS,
      "Exact minimum-degree ordering of a symmetric CSC/CSR pattern (indptr, indices)."},
+    {"lu_solve_test", csparse_lu_solve_test, METH_VARARGS,
+     "Test hook: sparse LU factorize + FTRAN/BTRAN solve. Returns list of solution vectors, or None if singular."},
+    {"lu_stats_test", csparse_lu_stats_test, METH_VARARGS,
+     "Test hook: sparse LU stats. Returns (nnz_l, nnz_u, singular_step)."},
     {NULL, NULL, 0, NULL}
 };
 
