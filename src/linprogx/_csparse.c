@@ -7956,6 +7956,18 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         int consecutive_degenerate = 0;
         int use_bland = 0;
 
+        /* Adaptive refactorization interval.  Starts at refac_interval
+         * (100). After each refactorization, compare incremental x_B
+         * against the from-scratch x_B; if they differ by > 1e-7
+         * relative, halve the interval (floor 10); if clean for
+         * clean_streak_target consecutive refactorizations, relax
+         * toward 100.  Also refactorize immediately when lu_update
+         * produces a violent eta (diagonal element < 1e-6 or > 1e6). */
+        int32_t refac_interval = 100;
+        int32_t iters_since_refac = 0;
+        int32_t clean_streak = 0;
+        const int32_t clean_streak_target = 3;
+
         for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
             iterations = iter;
 
@@ -8482,6 +8494,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 int32_t *ent_idx = NULL;
                 double *ent_val = NULL;
                 int32_t ent_nnz;
+                int need_refac = 0;
 
                 if (entering_col < n) {
                     Py_ssize_t col_start = self->csc_indptr[entering_col];
@@ -8515,6 +8528,26 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 free(ent_val);
 
                 if (rc != 0) {
+                    need_refac = 1;
+                } else {
+                    iters_since_refac++;
+                    /* Check for violent eta: tiny or huge pivot degrades
+                     * the PFI representation rapidly. */
+                    double abs_pivot = fabs(pivot);
+                    if (abs_pivot < 1e-6 || abs_pivot > 1e6) {
+                        need_refac = 1;
+                    }
+                }
+
+                /* ---- 4k. Adaptive refactorization ---- */
+                if (!need_refac) {
+                    if (lu_should_refactor(lu) ||
+                        iters_since_refac >= refac_interval) {
+                        need_refac = 1;
+                    }
+                }
+
+                if (need_refac) {
                     lu_context_free(lu);
                     lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
                                             self->csc_data, basis,
@@ -8531,48 +8564,91 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         iterations = iter;
                         break;
                     }
-                    /* Reset Devex weights after refactorization */
                     for (int32_t k = 0; k < m; k++) devex_w[k] = 1.0;
-                }
-            }
 
-            /* ---- 4k. Refactorize periodically ---- */
-            if (lu_should_refactor(lu) || (iter > 0 && iter % 100 == 0)) {
-                lu_context_free(lu);
-                lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
-                                        self->csc_data, basis,
-                                        b_indptr, b_indices, b_values);
-                if (lu != NULL && lu->singular_step >= 0) {
-                    lu = ds_repair_singular_basis(
-                        lu, m, n, self->csc_indptr, self->csc_rows,
-                        self->csc_data, basis, basis_pos, bound_status,
-                        x_ext, r_ext, lo_ext, hi_ext,
-                        b_indptr, b_indices, b_values, 10);
-                }
-                if (lu == NULL || lu->singular_step >= 0) {
-                    status = "numerical_error";
-                    iterations = iter;
-                    break;
-                }
-                /* Reset Devex weights */
-                for (int32_t k = 0; k < m; k++) devex_w[k] = 1.0;
-
-                /* Recompute y, r from scratch */
-                for (int32_t k = 0; k < m; k++) c_B[k] = c_ext[basis[k]];
-                lu_btran(lu, c_B, y);
-
-                for (int32_t j = 0; j < n_total; j++) {
-                    if (basis_pos[j] >= 0) continue;
-                    if (bound_status[j] == DS_BOUND_FIXED) continue;
-                    double rj = c_ext[j];
-                    if (j < n) {
-                        for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
-                            rj -= self->csc_data[p] * y[(int32_t)self->csc_rows[p]];
+                    /* Drift-triggered interval adaptation:
+                     * Compare incremental x_B with from-scratch x_B.
+                     * rhs still holds the old x_B from step 4a. */
+                    {
+                        double *xb_fresh = calloc((size_t)m, sizeof(double));
+                        double *rhs2 = calloc((size_t)m, sizeof(double));
+                        if (xb_fresh == NULL || rhs2 == NULL) {
+                            free(xb_fresh); free(rhs2);
+                            PyErr_NoMemory(); goto done;
                         }
-                    } else {
-                        rj -= y[j - n];
+                        memcpy(rhs2, b, (size_t)m * sizeof(double));
+                        for (int32_t j2 = 0; j2 < n_total; j2++) {
+                            if (basis_pos[j2] >= 0) continue;
+                            if (x_ext[j2] == 0.0) continue;
+                            double xj2 = x_ext[j2];
+                            if (j2 < n) {
+                                for (Py_ssize_t p = self->csc_indptr[j2]; p < self->csc_indptr[j2 + 1]; p++) {
+                                    rhs2[(int32_t)self->csc_rows[p]] -= self->csc_data[p] * xj2;
+                                }
+                            } else {
+                                rhs2[j2 - n] -= xj2;
+                            }
+                        }
+                        lu_ftran(lu, rhs2, xb_fresh);
+
+                        double max_drift = 0.0;
+                        for (int32_t k = 0; k < m; k++) {
+                            double diff = fabs(x_B[k] - xb_fresh[k]);
+                            double denom = 1.0 + fabs(xb_fresh[k]);
+                            if (diff / denom > max_drift)
+                                max_drift = diff / denom;
+                        }
+                        /* Use fresh x_B going forward */
+                        memcpy(x_B, xb_fresh, (size_t)m * sizeof(double));
+                        free(xb_fresh);
+                        free(rhs2);
+
+                        if (max_drift > 1e-7) {
+                            refac_interval = refac_interval / 2;
+                            if (refac_interval < 10) refac_interval = 10;
+                            clean_streak = 0;
+                        } else {
+                            clean_streak++;
+                            if (clean_streak >= clean_streak_target &&
+                                refac_interval < 100) {
+                                refac_interval = refac_interval * 2;
+                                if (refac_interval > 100) refac_interval = 100;
+                                clean_streak = 0;
+                            }
+                        }
                     }
-                    r_ext[j] = rj;
+                    iters_since_refac = 0;
+
+                    /* Recompute y, r from scratch and repair dual feasibility */
+                    for (int32_t k = 0; k < m; k++) c_B[k] = c_ext[basis[k]];
+                    lu_btran(lu, c_B, y);
+
+                    for (int32_t j = 0; j < n_total; j++) {
+                        if (basis_pos[j] >= 0) continue;
+                        if (bound_status[j] == DS_BOUND_FIXED) continue;
+                        double rj = c_ext[j];
+                        if (j < n) {
+                            for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                                rj -= self->csc_data[p] * y[(int32_t)self->csc_rows[p]];
+                            }
+                        } else {
+                            rj -= y[j - n];
+                        }
+
+                        /* Dual-feasibility repair: if reduced cost sign
+                         * drifted, flip the nonbasic to its correct bound
+                         * (when finite) to restore dual feasibility. */
+                        int lo_f = isfinite(lo_ext[j]);
+                        int hi_f = isfinite(hi_ext[j]);
+                        if (bound_status[j] == DS_BOUND_LO && rj < -1e-9 && hi_f) {
+                            bound_status[j] = DS_BOUND_HI;
+                            x_ext[j] = hi_ext[j];
+                        } else if (bound_status[j] == DS_BOUND_HI && rj > 1e-9 && lo_f) {
+                            bound_status[j] = DS_BOUND_LO;
+                            x_ext[j] = lo_ext[j];
+                        }
+                        r_ext[j] = rj;
+                    }
                 }
             }
 
