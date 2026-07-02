@@ -297,6 +297,52 @@ predictor quality), a cheaper triangular-solve path over the supernodal
 panels, or the sparse revised simplex lever for `pds_20` and small
 simplex-favorable cases.
 
+- Follow-up 2026-07-01 (same later session): fresh QUIET-box official
+  3-solver suite run (results in the session scratchpad, not yet promoted
+  to `assets/`) at the amalgamation commit showed broad improvement over
+  the stale scoreboard: maros_r7 1.98s (HiGHS 0.74s), ken_18 13.2s (8.1s),
+  pds_20 15.4s (10.3s), cre_b 6.1s (1.9s), ken_13 0.66s (0.84s, now a
+  win), osa_30 3.21s (3.79s, win), d2q06c/fit2p/qap12/qap15/truss still
+  wins — but `osa_60` regressed from the old scoreboard's 18.95s to
+  TIMEOUT. Diagnosis: the old 18.95s "optimal" carried raw residual 8e-3,
+  an eps-contract violation the 2026-06-30 raw-feasibility guard now
+  correctly rejects; the honest path then burned the 180s budget in
+  retries. The presolved IPM run actually reaches pres=2.4e-8 /
+  dres=3.1e-11 but goes NaN one iteration after raw enters the polish
+  window, with raw 8.6e-3 stuck above eps due to row scaling.
+- Fix (commit after the amalgamation one): (1) primal-polish raw window
+  1e-3 -> 1e-1 (it is only a cost pre-filter; the polish self-checks bound
+  violation, recomputed raw residual, and Lagrangian gap), (2) min-norm
+  dual cleanup attempted in that window on the 16-iteration rate limit
+  without requiring a step stall, (3) the same certified-dual + guarded
+  primal-polish chain retried once on non-optimal exit from the restored
+  best iterate (residual/aty recomputed; the possibly NaN-poisoned last
+  factor is bypassed because the polish refactors with its own slack
+  weights). Public `osa_60`: optimal, 15.4s, residual 7.5e-9, 51
+  iterations — now BEATS HiGHS's 19.1s and is certificate-backed.
+- Same commit: Gondzio multiple centrality correctors in the IPM loop —
+  up to `LINPROGX_IPM_MCC` (default 2) recentering back-solves per
+  iteration with zero primal/dual rhs, targets projected into the
+  [0.1, 10] * sigma * mu hypercube from a 0.08-extended trial step,
+  accepted only when both step lengths hold and their sum grows by 0.01+,
+  skipped once ap, ad >= 0.9. Iterations: maros_r7 15->12, pilot87
+  150->128, cre_b 71->62, cre_a 36->31. Loaded-box 12-instance sweep all
+  optimal with objectives at published optima within certificate
+  tolerance. `test_gondzio_correctors_preserve_solution_and_save_iterations`
+  pins equal-objective/fewer-iterations on the cre_a fixture.
+- Re-probed supernodal OpenBLAS threads after amalgamation widened the
+  panels (largest 705 cols): 1 thread still fastest on maros_r7 (2.33s vs
+  2.46s/2.41s at 2/4). Default stays 1;
+  `LINPROGX_SUPERNODAL_BLAS_THREADS` exists for future re-probes.
+- NEXT: re-run the official 3-solver suite on a QUIET box with the
+  corrector+polish build and promote it to `assets/lpnetlib_suite.md` +
+  `assets/lpnetlib_suite_results.jsonl` (the current assets scoreboard
+  predates the supernodal work entirely). Standing after tonight:
+  exceeds Clarabel; vs HiGHS the remaining timing losses are maros_r7
+  (2.0s vs 0.74s), cre_b/cre_d, ken_18, pds_10/pds_20, and several
+  sub-second instances; coverage 23/24 each (linprogx misses greenbea,
+  HiGHS misses qap15) with osa_60 back in the linprogx column.
+
 ## SECOND LEVER — sparse revised simplex (larger, multi-session)
 
 Attacks pds_20 (fill-explosive, IPM can't factor) and the small
