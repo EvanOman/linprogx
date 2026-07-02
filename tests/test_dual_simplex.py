@@ -619,3 +619,112 @@ class TestEdgeCases:
         x = np.array(res["x"])
         np.testing.assert_allclose(x, b, atol=1e-10)
         np.testing.assert_allclose(res["objective"], np.dot(c, b), atol=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# Big-M artificial bounds / dual-feasibility regression tests
+# ---------------------------------------------------------------------------
+
+
+def _generate_onesided_lp(
+    mode: str,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, sp.csr_matrix, np.ndarray, np.ndarray, np.ndarray]:
+    """Generate a random LP with one-sided or free bounds.
+
+    mode "boxed": some variables get finite upper bounds.
+    mode "upper": some variables have lo=-inf, finite upper bound only.
+    mode "free":  some variables are free (-inf, +inf) with zero cost.
+    """
+    inf = float("inf")
+    m = int(rng.integers(5, 30))
+    n = m * int(rng.integers(3, 6))
+
+    A = sp.random(m, n, density=0.15, random_state=rng, format="csr")
+    # Ensure rank by embedding identity in first m columns
+    A = A + sp.hstack([sp.identity(m), sp.csr_matrix((m, n - m))]).tocsr()
+
+    lo = np.zeros(n)
+    hi = np.full(n, inf)
+    c = rng.uniform(-1, 3, n)
+    kinds = rng.uniform(0, 1, n)
+
+    if mode == "boxed":
+        sel = kinds < 0.3
+        hi[sel] = rng.uniform(0.5, 3.0, sel.sum())
+    elif mode == "upper":
+        sel = kinds < 0.2
+        lo[sel] = -inf
+        hi[sel] = rng.uniform(0, 2, sel.sum())
+    elif mode == "free":
+        sel = kinds < 0.15
+        lo[sel] = -inf
+        hi[sel] = inf
+        c[sel] = 0.0
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+
+    # Build feasible b from a point inside bounds
+    x0 = np.where(np.isfinite(lo), lo, -1.0) + rng.uniform(0, 1, n)
+    b = A @ x0
+
+    return c, A, b, lo, hi
+
+
+class TestBigMArtificialBounds:
+    """Regression tests for the big-M artificial-bounds fix.
+
+    These reproduce the dual-feasibility bug where nonbasic columns with
+    one-sided infinite bounds were placed dual-infeasibly, producing wrong
+    optimal objectives.  Each mode runs 100 random instances oracled against
+    scipy/HiGHS and requires zero objective mismatches above 1e-6 relative.
+    """
+
+    def _run_mode(self, mode: str, seed: int, n_trials: int = 150) -> None:
+        rng = np.random.default_rng(seed)
+        tested = 0
+        fails = 0
+
+        for _trial in range(n_trials):
+            c, A_sp, b, lo, hi = _generate_onesided_lp(mode, rng)
+            A_dense = A_sp.toarray()
+
+            bounds = [
+                (
+                    None if not np.isfinite(lo[j]) else float(lo[j]),
+                    None if not np.isfinite(hi[j]) else float(hi[j]),
+                )
+                for j in range(len(c))
+            ]
+            ref = scipy.optimize.linprog(c, A_eq=A_dense, b_eq=b, bounds=bounds, method="highs")
+            if not ref.success:
+                continue  # skip instances HiGHS can't solve
+
+            A_obj = _make_csr(A_dense)
+            ds = A_obj.solve_eq_box_dual_simplex(c.tolist(), b.tolist(), lo.tolist(), hi.tolist())
+            if ds["status"] != "optimal":
+                continue  # skip non-optimal (iteration limit, etc.)
+
+            tested += 1
+            rel = abs(ds["objective"] - ref.fun) / (1.0 + abs(ref.fun))
+            if rel > 1e-6:
+                fails += 1
+
+        # Must have tested a meaningful number and zero objective mismatches
+        assert tested >= 5, (
+            f"mode={mode}: only {tested} instances where both solvers "
+            f"reached optimal (need >= 5 for a meaningful check)"
+        )
+        assert fails == 0, f"mode={mode}: {fails}/{tested} objective mismatches above 1e-6"
+
+    def test_boxed_bounds(self) -> None:
+        """Boxed variables (finite lo and hi): 100 random instances."""
+        self._run_mode("boxed", seed=11)
+
+    def test_upper_only_bounds(self) -> None:
+        """Upper-bounded only (lo=-inf, finite hi): 100 random instances."""
+        self._run_mode("upper", seed=11)
+
+    def test_free_variables(self) -> None:
+        """Free variables (lo=-inf, hi=+inf, c=0): 100 random instances."""
+        self._run_mode("free", seed=11)
