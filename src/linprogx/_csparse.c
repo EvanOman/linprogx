@@ -6191,6 +6191,54 @@ typedef struct {
     int32_t *inv_perm_col;  /* Q^-1: size m */
 
     int32_t  singular_step; /* -1 if nonsingular, else failing step index */
+
+    /* ---- Basis update eta file (product form of the inverse) ----
+     *
+     * Each update k stores:
+     *   eta_vectors[k*m .. (k+1)*m - 1] = alpha_k = B_{k-1}^{-1} * a_entering_k
+     *   eta_positions[k] = leaving_pos (original column index being replaced)
+     *
+     * Operator composition for FTRAN (solve B_k x = b):
+     *
+     *   B_k = B_0 E_1 E_2 ... E_k  where E_i replaces column p_i of B_{i-1}
+     *     with a_entering_i.  E_i has column j = e_j (j != p_i) and
+     *     column p_i = alpha_i.
+     *
+     *   B_k^{-1} = E_k^{-1} ... E_1^{-1} B_0^{-1}
+     *
+     *   E_i^{-1} = I + (e_{p_i} - alpha_i) e_{p_i}^T / alpha_i[p_i]
+     *
+     *   FTRAN steps:
+     *   1. w = B_0^{-1} b  (standard FTRAN: z=Pb, Lw=z, Uy=w, x=Qy)
+     *   2. For i = 1..k:  apply E_i^{-1}:
+     *        temp = w[p_i] / alpha_i[p_i]
+     *        for j != p_i:  w[j] -= alpha_i[j] * temp
+     *        w[p_i] = temp
+     *   3. Result: x = w
+     *
+     * Operator composition for BTRAN (solve B_k^T x = b):
+     *
+     *   B_k^{-T} = B_0^{-T} E_1^{-T} ... E_k^{-T}
+     *
+     *   E_i^{-T} = I + e_{p_i} (e_{p_i} - alpha_i)^T / alpha_i[p_i]
+     *
+     *   (E_i^{-T} v)[j] = v[j]                                   for j != p_i
+     *   (E_i^{-T} v)[p_i] = v[p_i] + (v[p_i] - alpha_i^T v) / alpha_i[p_i]
+     *
+     *   BTRAN steps:
+     *   1. v = b  (working copy)
+     *   2. For i = k..1:  apply E_i^{-T}:
+     *        dot = sum_j alpha_i[j] * v[j]
+     *        v[p_i] += (v[p_i] - dot) / alpha_i[p_i]
+     *   3. x = B_0^{-T} v  (standard BTRAN on modified v)
+     */
+    double  *eta_vectors;    /* flattened: eta_vectors[k*m .. (k+1)*m-1] */
+    int32_t *eta_positions;  /* leaving_pos for each update */
+    int32_t  n_updates;      /* number of accumulated updates */
+    int32_t  eta_cap;        /* allocated capacity for updates */
+    int32_t  orig_nnz_lu;    /* original nnzL + nnzU for refactor threshold */
+    double   max_abs_diag;   /* max |alpha_i[p_i]| across all updates */
+    double   min_abs_diag;   /* min |alpha_i[p_i]| across all updates */
 } LUContext;
 
 /* Allocate a pool entry; returns index or -1 on failure. */
@@ -6347,6 +6395,8 @@ static void lu_context_free(LUContext *ctx) {
     free(ctx->perm_col);
     free(ctx->inv_perm_row);
     free(ctx->inv_perm_col);
+    free(ctx->eta_vectors);
+    free(ctx->eta_positions);
     free(ctx);
 }
 
@@ -6964,6 +7014,15 @@ assemble:
         free(u_csc_pos);
     }
 
+    /* Initialize basis update eta file */
+    ctx->eta_vectors = NULL;
+    ctx->eta_positions = NULL;
+    ctx->n_updates = 0;
+    ctx->eta_cap = 0;
+    ctx->orig_nnz_lu = ctx->nnz_l + ctx->nnz_u;
+    ctx->max_abs_diag = 0.0;
+    ctx->min_abs_diag = 1e300;
+
     /* Cleanup temporaries and return */
     lu_active_free(&active);
     free(mult_arr); free(is_update);
@@ -7062,6 +7121,28 @@ static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
         x[ctx->perm_col[k]] = z[k];
     }
 
+    /* Step 5: Apply basis-update etas (product form of the inverse).
+     *
+     * After standard FTRAN, x = B_0^{-1} b. With k accumulated updates:
+     *   x_final = E_k^{-1} ... E_1^{-1} x
+     *
+     * Each E_i^{-1} acts on x as:
+     *   temp = x[pos_i] / alpha_i[pos_i]
+     *   x[j] -= alpha_i[j] * temp   for all j != pos_i
+     *   x[pos_i] = temp
+     */
+    for (int32_t upd = 0; upd < ctx->n_updates; upd++) {
+        int32_t pos = ctx->eta_positions[upd];
+        const double *alpha = ctx->eta_vectors + (size_t)upd * (size_t)m;
+        double temp = x[pos] / alpha[pos];
+        for (int32_t j = 0; j < m; j++) {
+            if (j != pos) {
+                x[j] -= alpha[j] * temp;
+            }
+        }
+        x[pos] = temp;
+    }
+
     free(z);
     free(w);
 }
@@ -7094,9 +7175,44 @@ static void lu_btran(const LUContext *ctx, const double *b, double *x) {
         return;
     }
 
-    /* Step 1: z = Q^T b, i.e., z[k] = b[perm_col[k]] */
+    /* Step 0: Apply basis-update etas BEFORE the standard BTRAN.
+     *
+     * With k accumulated updates:
+     *   x = B_0^{-T} E_1^{-T} ... E_k^{-T} b
+     *
+     * Apply etas to b in reverse order (k downto 1), producing v:
+     *   v = E_1^{-T} ... E_k^{-T} b
+     *
+     * Each E_i^{-T} acts on v as:
+     *   v[j] unchanged for j != pos_i
+     *   v[pos_i] += (v[pos_i] - dot(alpha_i, v)) / alpha_i[pos_i]
+     */
+    double *v_eta = NULL;
+    const double *b_eff = b;
+    if (ctx->n_updates > 0) {
+        v_eta = calloc((size_t)m, sizeof(double));
+        if (v_eta == NULL) {
+            memset(x, 0, (size_t)m * sizeof(double));
+            free(z);
+            free(w);
+            return;
+        }
+        memcpy(v_eta, b, (size_t)m * sizeof(double));
+        for (int32_t upd = ctx->n_updates - 1; upd >= 0; upd--) {
+            int32_t pos = ctx->eta_positions[upd];
+            const double *alpha = ctx->eta_vectors + (size_t)upd * (size_t)m;
+            double dot = 0.0;
+            for (int32_t j = 0; j < m; j++) {
+                dot += alpha[j] * v_eta[j];
+            }
+            v_eta[pos] += (v_eta[pos] - dot) / alpha[pos];
+        }
+        b_eff = v_eta;
+    }
+
+    /* Step 1: z = Q^T b_eff, i.e., z[k] = b_eff[perm_col[k]] */
     for (int32_t k = 0; k < m; k++) {
-        z[k] = b[ctx->perm_col[k]];
+        z[k] = b_eff[ctx->perm_col[k]];
     }
 
     /* Step 2: U^T w = z (forward solve with U transposed)
@@ -7214,6 +7330,122 @@ static void lu_btran(const LUContext *ctx, const double *b, double *x) {
 
     free(z);
     free(w);
+    free(v_eta);
+}
+
+/* ---- Basis-update functions ---- */
+
+/*
+ * lu_update: Forrest-Tomlin basis-change update (product form of the inverse).
+ *
+ * Replaces column `leaving_pos` of B with the entering column given in
+ * sparse form (entering_indices, entering_values, entering_nnz).
+ *
+ * Algorithm:
+ * 1. Build dense m-vector from sparse entering column.
+ * 2. FTRAN through current factorization (L, U, P, Q + accumulated etas)
+ *    to get alpha = B_current^{-1} * a_entering.
+ * 3. Check |alpha[leaving_pos]| >= threshold for singularity.
+ * 4. Store (leaving_pos, alpha) as a new eta entry.
+ *
+ * Returns 0 on success, -1 if the update is (near-)singular.
+ * On singularity, state is unchanged (skip-and-continue semantics).
+ */
+static int lu_update(LUContext *ctx,
+                     int32_t leaving_pos,
+                     const int32_t *entering_indices,
+                     const double *entering_values,
+                     int32_t entering_nnz) {
+    int32_t m = ctx->m;
+
+    /* Build dense entering column */
+    double *a_dense = calloc((size_t)m, sizeof(double));
+    double *alpha   = calloc((size_t)m, sizeof(double));
+    if (a_dense == NULL || alpha == NULL) {
+        free(a_dense);
+        free(alpha);
+        return -1;
+    }
+    for (int32_t k = 0; k < entering_nnz; k++) {
+        a_dense[entering_indices[k]] = entering_values[k];
+    }
+
+    /* FTRAN: alpha = B_current^{-1} * a_entering */
+    lu_ftran(ctx, a_dense, alpha);
+    free(a_dense);
+
+    /* Singularity check */
+    double pivot = alpha[leaving_pos];
+    double abs_pivot = fabs(pivot);
+
+    /* Find max diagonal for relative threshold */
+    double max_diag = ctx->max_abs_diag;
+    if (max_diag < 1.0) max_diag = 1.0;  /* floor for first update */
+
+    if (abs_pivot < 1e-11 * max_diag) {
+        /* Near-singular: leave state unchanged */
+        free(alpha);
+        return -1;
+    }
+
+    /* Grow eta storage if needed */
+    if (ctx->n_updates >= ctx->eta_cap) {
+        int32_t new_cap = ctx->eta_cap == 0 ? 16 : ctx->eta_cap * 2;
+        double *new_vectors = realloc(ctx->eta_vectors,
+                                       (size_t)new_cap * (size_t)m * sizeof(double));
+        int32_t *new_positions = realloc(ctx->eta_positions,
+                                          (size_t)new_cap * sizeof(int32_t));
+        if (new_vectors == NULL || new_positions == NULL) {
+            /* If one succeeded and the other failed, the old pointer is still
+             * valid (realloc guarantees this on failure). */
+            if (new_vectors != NULL) ctx->eta_vectors = new_vectors;
+            if (new_positions != NULL) ctx->eta_positions = new_positions;
+            free(alpha);
+            return -1;
+        }
+        ctx->eta_vectors = new_vectors;
+        ctx->eta_positions = new_positions;
+        ctx->eta_cap = new_cap;
+    }
+
+    /* Store eta entry */
+    memcpy(ctx->eta_vectors + (size_t)ctx->n_updates * (size_t)m,
+           alpha, (size_t)m * sizeof(double));
+    ctx->eta_positions[ctx->n_updates] = leaving_pos;
+    ctx->n_updates++;
+
+    /* Track diagonal statistics */
+    if (abs_pivot > ctx->max_abs_diag) ctx->max_abs_diag = abs_pivot;
+    if (abs_pivot < ctx->min_abs_diag) ctx->min_abs_diag = abs_pivot;
+
+    free(alpha);
+    return 0;
+}
+
+/*
+ * lu_should_refactor: predicate indicating the factorization should be
+ * recomputed from scratch.
+ *
+ * Triggers:
+ * - Number of accumulated updates >= 100
+ * - Diagonal growth ratio max/min > 1e8
+ * - Total eta storage > 2 * original nnz(L + U)
+ *
+ * Returns 1 if refactorization is recommended, 0 otherwise.
+ */
+static int lu_should_refactor(const LUContext *ctx) {
+    if (ctx->n_updates >= 100) return 1;
+
+    if (ctx->n_updates > 0 && ctx->min_abs_diag > 0.0) {
+        double ratio = ctx->max_abs_diag / ctx->min_abs_diag;
+        if (ratio > 1e8) return 1;
+    }
+
+    /* Total eta entries: n_updates * m (dense vectors) */
+    int64_t eta_fill = (int64_t)ctx->n_updates * (int64_t)ctx->m;
+    if (eta_fill > 2 * (int64_t)ctx->orig_nnz_lu) return 1;
+
+    return 0;
 }
 
 /* ---- Python test hooks for sparse LU ---- */
@@ -7526,6 +7758,287 @@ static PyObject *csparse_min_degree(PyObject *self, PyObject *args) {
     return result;
 }
 
+/*
+ * lu_update_test(indptr, indices, data, m, updates, rhs_list, transpose)
+ *
+ * Test hook for basis-change updates.
+ *
+ * indptr, indices, data: CSC format of the initial m x m basis matrix.
+ * updates: list of (leaving_pos, col_indices_list, col_values_list) triples.
+ * rhs_list: list of m-length lists (right-hand sides to solve after ALL updates).
+ * transpose: 0 for FTRAN, 1 for BTRAN.
+ *
+ * Returns (solutions, should_refactor, n_singular) where:
+ *   solutions: list of solution vectors (each m-length list)
+ *   should_refactor: 1 if lu_should_refactor fires, 0 otherwise
+ *   n_singular: number of updates that returned singular
+ *
+ * Returns None if the initial factorization is singular.
+ */
+static PyObject *csparse_lu_update_test(PyObject *self, PyObject *args) {
+    (void)self;
+    PyObject *indptr_obj, *indices_obj, *data_obj, *updates_obj, *rhs_list_obj;
+    int m_int, transpose;
+    if (!PyArg_ParseTuple(args, "OOOiOOi", &indptr_obj, &indices_obj,
+                          &data_obj, &m_int, &updates_obj, &rhs_list_obj,
+                          &transpose)) {
+        return NULL;
+    }
+    int32_t m = (int32_t)m_int;
+    if (m < 0 || m > 100000) {
+        PyErr_SetString(PyExc_ValueError, "m must be in [0, 100000]");
+        return NULL;
+    }
+
+    /* Parse CSC arrays */
+    int32_t *indptr = calloc((size_t)(m + 1), sizeof(int32_t));
+    if (indptr == NULL) { PyErr_NoMemory(); return NULL; }
+    {
+        Py_ssize_t *tmp = calloc((size_t)(m + 1), sizeof(Py_ssize_t));
+        if (tmp == NULL) { free(indptr); PyErr_NoMemory(); return NULL; }
+        if (fill_index_array(indptr_obj, m + 1, tmp, "indptr") != 0) {
+            free(indptr); free(tmp); return NULL;
+        }
+        for (int32_t i = 0; i <= m; i++) indptr[i] = (int32_t)tmp[i];
+        free(tmp);
+    }
+    int32_t nnz = indptr[m];
+    int32_t *indices = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(int32_t));
+    double  *data    = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(double));
+    if (indices == NULL || data == NULL) {
+        free(indptr); free(indices); free(data);
+        PyErr_NoMemory();
+        return NULL;
+    }
+    {
+        Py_ssize_t *tmp = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(Py_ssize_t));
+        if (tmp == NULL) { free(indptr); free(indices); free(data); PyErr_NoMemory(); return NULL; }
+        if (fill_index_array(indices_obj, nnz, tmp, "indices") != 0) {
+            free(indptr); free(indices); free(data); free(tmp); return NULL;
+        }
+        for (int32_t i = 0; i < nnz; i++) indices[i] = (int32_t)tmp[i];
+        free(tmp);
+    }
+    {
+        double *tmp = calloc((size_t)(nnz > 0 ? nnz : 1), sizeof(double));
+        if (tmp == NULL) { free(indptr); free(indices); free(data); PyErr_NoMemory(); return NULL; }
+        if (fill_double_array(data_obj, nnz, tmp, "data") != 0) {
+            free(indptr); free(indices); free(data); free(tmp); return NULL;
+        }
+        memcpy(data, tmp, (size_t)nnz * sizeof(double));
+        free(tmp);
+    }
+
+    /* Factorize */
+    int alloc_fail = 0;
+    LUContext *ctx;
+    Py_BEGIN_ALLOW_THREADS
+    ctx = lu_factorize(m, indptr, indices, data, 0.1, &alloc_fail);
+    Py_END_ALLOW_THREADS
+
+    free(indptr);
+    free(indices);
+    free(data);
+
+    if (ctx == NULL) {
+        if (alloc_fail) PyErr_NoMemory();
+        else PyErr_SetString(PyExc_RuntimeError, "LU factorization failed");
+        return NULL;
+    }
+
+    if (ctx->singular_step >= 0) {
+        lu_context_free(ctx);
+        Py_RETURN_NONE;
+    }
+
+    /* Parse and apply updates */
+    PyObject *updates_seq = PySequence_Fast(updates_obj, "updates must be a sequence");
+    if (updates_seq == NULL) { lu_context_free(ctx); return NULL; }
+    Py_ssize_t n_upd = PySequence_Fast_GET_SIZE(updates_seq);
+    int n_singular = 0;
+
+    for (Py_ssize_t u = 0; u < n_upd; u++) {
+        PyObject *upd_item = PySequence_Fast_GET_ITEM(updates_seq, u);
+        PyObject *upd_seq = PySequence_Fast(upd_item, "each update must be a (pos, indices, values) tuple");
+        if (upd_seq == NULL) {
+            Py_DECREF(updates_seq);
+            lu_context_free(ctx);
+            return NULL;
+        }
+        if (PySequence_Fast_GET_SIZE(upd_seq) != 3) {
+            Py_DECREF(upd_seq);
+            Py_DECREF(updates_seq);
+            lu_context_free(ctx);
+            PyErr_SetString(PyExc_ValueError, "each update must have 3 elements");
+            return NULL;
+        }
+
+        int32_t leaving_pos = (int32_t)PyLong_AsLong(
+            PySequence_Fast_GET_ITEM(upd_seq, 0));
+        if (PyErr_Occurred()) {
+            Py_DECREF(upd_seq);
+            Py_DECREF(updates_seq);
+            lu_context_free(ctx);
+            return NULL;
+        }
+
+        PyObject *col_idx_obj = PySequence_Fast_GET_ITEM(upd_seq, 1);
+        PyObject *col_val_obj = PySequence_Fast_GET_ITEM(upd_seq, 2);
+
+        PyObject *col_idx_seq = PySequence_Fast(col_idx_obj, "col_indices must be a sequence");
+        if (col_idx_seq == NULL) {
+            Py_DECREF(upd_seq);
+            Py_DECREF(updates_seq);
+            lu_context_free(ctx);
+            return NULL;
+        }
+        Py_ssize_t col_nnz = PySequence_Fast_GET_SIZE(col_idx_seq);
+
+        int32_t *col_indices = calloc((size_t)(col_nnz > 0 ? col_nnz : 1), sizeof(int32_t));
+        double  *col_values  = calloc((size_t)(col_nnz > 0 ? col_nnz : 1), sizeof(double));
+        if (col_indices == NULL || col_values == NULL) {
+            free(col_indices); free(col_values);
+            Py_DECREF(col_idx_seq);
+            Py_DECREF(upd_seq);
+            Py_DECREF(updates_seq);
+            lu_context_free(ctx);
+            PyErr_NoMemory();
+            return NULL;
+        }
+
+        for (Py_ssize_t k = 0; k < col_nnz; k++) {
+            col_indices[k] = (int32_t)PyLong_AsLong(
+                PySequence_Fast_GET_ITEM(col_idx_seq, k));
+        }
+        Py_DECREF(col_idx_seq);
+
+        PyObject *col_val_seq = PySequence_Fast(col_val_obj, "col_values must be a sequence");
+        if (col_val_seq == NULL) {
+            free(col_indices); free(col_values);
+            Py_DECREF(upd_seq);
+            Py_DECREF(updates_seq);
+            lu_context_free(ctx);
+            return NULL;
+        }
+        if (PySequence_Fast_GET_SIZE(col_val_seq) != col_nnz) {
+            free(col_indices); free(col_values);
+            Py_DECREF(col_val_seq);
+            Py_DECREF(upd_seq);
+            Py_DECREF(updates_seq);
+            lu_context_free(ctx);
+            PyErr_SetString(PyExc_ValueError, "col_indices and col_values length mismatch");
+            return NULL;
+        }
+        for (Py_ssize_t k = 0; k < col_nnz; k++) {
+            col_values[k] = PyFloat_AsDouble(
+                PySequence_Fast_GET_ITEM(col_val_seq, k));
+        }
+        Py_DECREF(col_val_seq);
+        Py_DECREF(upd_seq);
+
+        if (PyErr_Occurred()) {
+            free(col_indices); free(col_values);
+            Py_DECREF(updates_seq);
+            lu_context_free(ctx);
+            return NULL;
+        }
+
+        int rc;
+        Py_BEGIN_ALLOW_THREADS
+        rc = lu_update(ctx, leaving_pos, col_indices, col_values, (int32_t)col_nnz);
+        Py_END_ALLOW_THREADS
+
+        free(col_indices);
+        free(col_values);
+
+        if (rc != 0) {
+            n_singular++;
+        }
+    }
+    Py_DECREF(updates_seq);
+
+    /* Check should_refactor */
+    int should_refac = lu_should_refactor(ctx);
+
+    /* Solve with accumulated updates */
+    PyObject *rhs_seq = PySequence_Fast(rhs_list_obj, "rhs_list must be a sequence");
+    if (rhs_seq == NULL) { lu_context_free(ctx); return NULL; }
+    Py_ssize_t n_rhs = PySequence_Fast_GET_SIZE(rhs_seq);
+
+    PyObject *solutions = PyList_New(n_rhs);
+    if (solutions == NULL) { Py_DECREF(rhs_seq); lu_context_free(ctx); return NULL; }
+
+    double *b = calloc((size_t)m, sizeof(double));
+    double *x = calloc((size_t)m, sizeof(double));
+    if (b == NULL || x == NULL) {
+        free(b); free(x);
+        Py_DECREF(rhs_seq); Py_DECREF(solutions);
+        lu_context_free(ctx);
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    for (Py_ssize_t r = 0; r < n_rhs; r++) {
+        PyObject *rhs_item = PySequence_Fast_GET_ITEM(rhs_seq, r);
+        PyObject *rhs_inner = PySequence_Fast(rhs_item, "each rhs must be a sequence");
+        if (rhs_inner == NULL) {
+            free(b); free(x);
+            Py_DECREF(rhs_seq); Py_DECREF(solutions);
+            lu_context_free(ctx);
+            return NULL;
+        }
+        if (PySequence_Fast_GET_SIZE(rhs_inner) != m) {
+            Py_DECREF(rhs_inner);
+            free(b); free(x);
+            Py_DECREF(rhs_seq); Py_DECREF(solutions);
+            lu_context_free(ctx);
+            PyErr_SetString(PyExc_ValueError, "rhs length must match m");
+            return NULL;
+        }
+        for (int32_t i = 0; i < m; i++) {
+            PyObject *item = PySequence_Fast_GET_ITEM(rhs_inner, i);
+            b[i] = PyFloat_AsDouble(item);
+            if (PyErr_Occurred()) {
+                Py_DECREF(rhs_inner);
+                free(b); free(x);
+                Py_DECREF(rhs_seq); Py_DECREF(solutions);
+                lu_context_free(ctx);
+                return NULL;
+            }
+        }
+        Py_DECREF(rhs_inner);
+
+        Py_BEGIN_ALLOW_THREADS
+        if (transpose) {
+            lu_btran(ctx, b, x);
+        } else {
+            lu_ftran(ctx, b, x);
+        }
+        Py_END_ALLOW_THREADS
+
+        PyObject *x_list = PyList_New(m);
+        if (x_list == NULL) {
+            free(b); free(x);
+            Py_DECREF(rhs_seq); Py_DECREF(solutions);
+            lu_context_free(ctx);
+            return NULL;
+        }
+        for (int32_t i = 0; i < m; i++) {
+            PyList_SET_ITEM(x_list, i, PyFloat_FromDouble(x[i]));
+        }
+        PyList_SET_ITEM(solutions, r, x_list);
+    }
+
+    free(b);
+    free(x);
+    Py_DECREF(rhs_seq);
+    lu_context_free(ctx);
+
+    PyObject *ret = Py_BuildValue("(Oii)", solutions, should_refac, n_singular);
+    Py_DECREF(solutions);  /* Py_BuildValue("O") adds a ref; drop ours */
+    return ret;
+}
+
 static PyMethodDef module_methods[] = {
     {"min_degree", csparse_min_degree, METH_VARARGS,
      "Exact minimum-degree ordering of a symmetric CSC/CSR pattern (indptr, indices)."},
@@ -7533,6 +8046,8 @@ static PyMethodDef module_methods[] = {
      "Test hook: sparse LU factorize + FTRAN/BTRAN solve. Returns list of solution vectors, or None if singular."},
     {"lu_stats_test", csparse_lu_stats_test, METH_VARARGS,
      "Test hook: sparse LU stats. Returns (nnz_l, nnz_u, singular_step)."},
+    {"lu_update_test", csparse_lu_update_test, METH_VARARGS,
+     "Test hook: sparse LU basis-change update. Returns (solutions, should_refactor, n_singular)."},
     {NULL, NULL, 0, NULL}
 };
 

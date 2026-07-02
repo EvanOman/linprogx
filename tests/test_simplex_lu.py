@@ -334,3 +334,156 @@ class TestMultipleRHS:
             x_ours = np.array(result[i])
             res = _max_residual(A, x_ours, b)
             assert res <= _relative_tol(b), f"rhs {i}: residual {res} too large"
+
+
+# ---------------------------------------------------------------------------
+# Basis-change update tests (Milestone 2)
+# ---------------------------------------------------------------------------
+
+
+def _sparse_col(col: np.ndarray) -> tuple[list[int], list[float]]:
+    """Return (indices, values) for a dense column vector's nonzero entries."""
+    nz = np.nonzero(col)[0]
+    return nz.tolist(), col[nz].tolist()
+
+
+class TestUpdate:
+    """Tests for lu_update (Forrest-Tomlin / product-form basis updates)."""
+
+    def test_sequential_ftran_50_updates(self) -> None:
+        """Apply 50 column replacements and verify FTRAN against scipy."""
+        np.random.seed(4001)
+        m = 60
+        B = sp.random(m, m, density=0.05, format="csc", random_state=4001) + 2.0 * sp.eye(m)
+        B_dense = B.toarray()
+
+        rng = np.random.RandomState(4002)
+        updates = []
+        for _ in range(50):
+            # Pick a random column to replace with a random column
+            pos = rng.randint(0, m)
+            new_col = rng.randn(m) * 0.5
+            # Strengthen diagonal to keep nonsingular
+            new_col[pos] += 2.0
+            idx, vals = _sparse_col(new_col)
+            updates.append((pos, idx, vals))
+            B_dense[:, pos] = new_col
+
+        b = rng.randn(m)
+        result = _csparse.lu_update_test(*_csc_args(B), updates, [b.tolist()], 0)
+        assert result is not None, "initial factorization should not be singular"
+        solutions, should_refac, n_singular = result
+        x_ours = np.array(solutions[0])
+
+        # Verify against scipy (solve B_final x = b)
+        B_final = sp.csc_matrix(B_dense)
+        x_scipy = sla.spsolve(B_final, b)
+
+        # Check residual: B_final * x_ours = b
+        res = float(np.max(np.abs(B_final @ x_ours - b)))
+        tol = _relative_tol(b, base=1e-8)
+        assert res <= tol, f"FTRAN residual after 50 updates: {res} > {tol}"
+        assert np.allclose(x_ours, x_scipy, atol=1e-6), (
+            f"max diff from scipy: {np.max(np.abs(x_ours - x_scipy))}"
+        )
+
+    def test_sequential_btran_verification(self) -> None:
+        """Apply updates and verify BTRAN (B^T x = b) against scipy."""
+        np.random.seed(4010)
+        m = 40
+        B = sp.random(m, m, density=0.06, format="csc", random_state=4010) + 3.0 * sp.eye(m)
+        B_dense = B.toarray()
+
+        rng = np.random.RandomState(4011)
+        updates = []
+        for _ in range(20):
+            pos = rng.randint(0, m)
+            new_col = rng.randn(m) * 0.3
+            new_col[pos] += 3.0
+            idx, vals = _sparse_col(new_col)
+            updates.append((pos, idx, vals))
+            B_dense[:, pos] = new_col
+
+        b = rng.randn(m)
+        result = _csparse.lu_update_test(*_csc_args(B), updates, [b.tolist()], 1)
+        assert result is not None
+        solutions, _, _ = result
+        x_ours = np.array(solutions[0])
+
+        # Verify: B_final^T * x_ours = b
+        B_final = sp.csc_matrix(B_dense)
+        x_scipy = sla.spsolve(B_final.T.tocsc(), b)
+
+        res = float(np.max(np.abs(B_final.T @ x_ours - b)))
+        tol = _relative_tol(b, base=1e-8)
+        assert res <= tol, f"BTRAN residual after 20 updates: {res} > {tol}"
+        assert np.allclose(x_ours, x_scipy, atol=1e-6), (
+            f"BTRAN max diff from scipy: {np.max(np.abs(x_ours - x_scipy))}"
+        )
+
+    def test_should_refactor_fires_by_100(self) -> None:
+        """lu_should_refactor must fire by 100 updates."""
+        np.random.seed(4020)
+        m = 30
+        B = sp.random(m, m, density=0.08, format="csc", random_state=4020) + 5.0 * sp.eye(m)
+
+        rng = np.random.RandomState(4021)
+        updates = []
+        for _ in range(100):
+            pos = rng.randint(0, m)
+            new_col = rng.randn(m) * 0.2
+            new_col[pos] += 5.0
+            idx, vals = _sparse_col(new_col)
+            updates.append((pos, idx, vals))
+
+        b = rng.randn(m)
+        result = _csparse.lu_update_test(*_csc_args(B), updates, [b.tolist()], 0)
+        assert result is not None
+        _, should_refac, _ = result
+        assert should_refac == 1, "should_refactor must fire by 100 updates"
+
+    def test_singular_update_detection(self) -> None:
+        """Replacing a column with a duplicate of another column is singular."""
+        np.random.seed(4030)
+        m = 10
+        B = sp.eye(m, format="csc") * 2.0
+
+        # Replace column 3 with a copy of column 5 (makes B singular)
+        col5 = np.zeros(m)
+        col5[5] = 2.0  # column 5 of 2*I
+        idx, vals = _sparse_col(col5)
+        updates = [(3, idx, vals)]
+
+        b = np.ones(m)
+        result = _csparse.lu_update_test(*_csc_args(B), updates, [b.tolist()], 0)
+        assert result is not None
+        _, _, n_singular = result
+        assert n_singular >= 1, "singular update should be detected"
+
+    def test_update_determinism(self) -> None:
+        """Applying the same updates twice must give bit-identical results."""
+        np.random.seed(4040)
+        m = 50
+        B = sp.random(m, m, density=0.05, format="csc", random_state=4040) + 2.0 * sp.eye(m)
+
+        rng = np.random.RandomState(4041)
+        updates = []
+        for _ in range(25):
+            pos = rng.randint(0, m)
+            new_col = rng.randn(m) * 0.4
+            new_col[pos] += 2.0
+            idx, vals = _sparse_col(new_col)
+            updates.append((pos, idx, vals))
+
+        b = np.random.RandomState(4042).randn(m)
+        args = _csc_args(B)
+
+        result1 = _csparse.lu_update_test(*args, updates, [b.tolist()], 0)
+        result2 = _csparse.lu_update_test(*args, updates, [b.tolist()], 0)
+        assert result1 is not None and result2 is not None
+
+        x1 = np.array(result1[0][0])
+        x2 = np.array(result2[0][0])
+        assert np.array_equal(x1, x2), "LU update solve should be deterministic"
+        assert result1[1] == result2[1], "should_refactor should be deterministic"
+        assert result1[2] == result2[2], "n_singular should be deterministic"
