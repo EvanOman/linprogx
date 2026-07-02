@@ -556,6 +556,38 @@ def test_relaxed_amalgamation_reduces_supernode_count(
     assert len(relaxed) <= len(fundamental)
 
 
+def test_gondzio_correctors_preserve_solution_and_save_iterations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # the multiple-centrality correctors may only change the trajectory,
+    # not the answer: same optimal status and matching objective with the
+    # correctors off and on, and never more iterations with them on
+    from pathlib import Path
+
+    from scipy.io import loadmat
+
+    path = Path(__file__).parent / "data" / "lp_cre_a.mat"
+    raw = loadmat(path)["Problem"][0, 0]
+    aux = raw["aux"][0, 0]
+    A = raw["A"].tocsr().astype(float)
+    b = raw["b"].ravel().astype(float).tolist()
+    c = aux["c"].ravel().astype(float).tolist()
+    lo = aux["lo"].ravel().astype(float).tolist()
+    hi = aux["hi"].ravel().astype(float).tolist()
+
+    results = {}
+    for mcc in ("0", "2"):
+        monkeypatch.setenv("LINPROGX_IPM_MCC", mcc)
+        matrix = from_scipy_sparse(A)
+        results[mcc] = matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=200, tol=1e-9, feas_tol=2e-5)
+    assert results["0"]["status"] == "optimal"
+    assert results["2"]["status"] == "optimal"
+    obj0 = sum(v * coef for v, coef in zip(results["0"]["x"], c, strict=True))
+    obj2 = sum(v * coef for v, coef in zip(results["2"]["x"], c, strict=True))
+    assert abs(obj0 - obj2) <= 1e-5 * (1.0 + abs(obj0))
+    assert results["2"]["iterations"] <= results["0"]["iterations"]
+
+
 def test_supernodal_profile_reports_single_thread_blas(
     monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

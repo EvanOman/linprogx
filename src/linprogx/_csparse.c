@@ -33,8 +33,16 @@ static void ensure_blas_threads(void) {
 }
 static void ensure_supernodal_blas_threads(void) {
     /* The supernodal path issues many small panel BLAS calls; one OpenBLAS
-     * thread avoids thread-team overhead and measured faster on maros_r7. */
-    set_blas_threads(1);
+     * thread avoids thread-team overhead and measured faster on maros_r7,
+     * re-confirmed after relaxed amalgamation widened the panels. The env
+     * knob exists for re-probing when panel shapes change again. */
+    static int cached = -1;
+    if (cached < 0) {
+        const char *env = getenv("LINPROGX_SUPERNODAL_BLAS_THREADS");
+        int parsed = env != NULL ? atoi(env) : 0;
+        cached = parsed > 0 ? parsed : 1;
+    }
+    set_blas_threads(cached);
 }
 #endif
 #include <stddef.h>
@@ -4901,6 +4909,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     double *rhs_x = NULL, *tmp_x = NULL, *rhs_m = NULL, *aty = NULL, *ax = NULL;
     double *res_m = NULL, *corr_m = NULL;
     double *x_best = NULL, *y_best = NULL;
+    double *zero_m = NULL, *zero_n = NULL;
     unsigned char *bound_kind = NULL;
 
     c = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
@@ -4942,6 +4951,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     rhs_m = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     aty = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     ax = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    /* permanently-zero rhs vectors for pure recentering solves */
+    zero_m = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    zero_n = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
     bound_kind = calloc((size_t)(n > 0 ? n : 1), sizeof(unsigned char));
     if (c == NULL || b == NULL || lo == NULL || hi == NULL ||
         row_scale == NULL || col_scale == NULL ||
@@ -4954,6 +4966,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         dx == NULL || dy == NULL || dzl == NULL || dzu == NULL ||
         rhs_x == NULL || tmp_x == NULL || rhs_m == NULL || aty == NULL ||
         ax == NULL || res_m == NULL || corr_m == NULL ||
+        zero_m == NULL || zero_n == NULL ||
         x_best == NULL || y_best == NULL || bound_kind == NULL) {
         PyErr_NoMemory();
         goto done;
@@ -5230,6 +5243,13 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     Py_BEGIN_ALLOW_THREADS
     IpmNewton nw = {chol, &op, D, sl, su, zl, zu, bound_kind, rhs_x, tmp_x, rhs_m, aty,
                     res_m, corr_m};
+    int max_mcc = 2;
+    {
+        const char *mcc_env = getenv("LINPROGX_IPM_MCC");
+        if (mcc_env != NULL) {
+            max_mcc = atoi(mcc_env);
+        }
+    }
     for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
         iterations = iter;
         /* slacks, residuals, and the barrier parameter */
@@ -5413,7 +5433,14 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 }
             }
         }
-        if ((m >= 100 || n >= 100) && raw_pres > feas_tol && raw_pres <= 1e-3 &&
+        /* The raw_pres window is only a cost pre-filter: the polish itself
+         * re-checks bound violation, recomputed raw residual, and the
+         * Lagrangian gap before accepting. 1e-1 (not 1e-3) matters on
+         * badly row-scaled instances (osa_60) where the scaled residual
+         * converges many orders ahead of the original-unit one and the
+         * trajectory can break down within an iteration or two of the
+         * window opening. */
+        if ((m >= 100 || n >= 100) && raw_pres > feas_tol && raw_pres <= 1e-1 &&
             pres <= 1e-6 && dres <= 5e-6) {
             double cleaned_gap = 0.0;
             int certified = ipm_lagrangian_gap(c, b, lo, hi, bound_kind, m, n, x, y,
@@ -5428,6 +5455,18 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             }
             if (!certified && iter - last_cleanup_attempt >= 1 &&
                 (last_ap < 1e-6 || last_ad < 1e-6)) {
+                last_cleanup_attempt = iter;
+                if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                     &cleaned_gap, &dual_cleanup_rounds)) {
+                    certified = 1;
+                }
+            }
+            if (!certified && iter - last_cleanup_attempt >= 16) {
+                /* Without a step stall the trajectory may still break down
+                 * before ever stalling (osa_60 goes NaN two iterations
+                 * after entering this window), so also attempt the
+                 * min-norm cleanup on the same 16-iteration rate limit as
+                 * the relaxed-acceptance path. */
                 last_cleanup_attempt = iter;
                 if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
                                      &cleaned_gap, &dual_cleanup_rounds)) {
@@ -5647,6 +5686,105 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 }
             }
         }
+        /* Gondzio multiple centrality correctors: extend the trial step,
+         * project the trial complementarity products back into the
+         * [beta_min, beta_max] * sigma * mu hypercube, and add the pure
+         * recentering direction (zero primal/dual residual rhs) while it
+         * lengthens the steps. One back-solve per round is cheap against
+         * the full refactor a saved iteration avoids. Global constants;
+         * skipped once both steps are already long. */
+        for (int mcc = 0; mcc < max_mcc; mcc++) {
+            if (ap >= 0.9 && ad >= 0.9) {
+                break;
+            }
+            double ap_bar = ap + 0.08 < 1.0 ? ap + 0.08 : 1.0;
+            double ad_bar = ad + 0.08 < 1.0 ? ad + 0.08 : 1.0;
+            double target_lo = 0.1 * sigma * mu;
+            double target_hi = 10.0 * sigma * mu;
+            for (Py_ssize_t j = 0; j < n; j++) {
+                unsigned char kind = bound_kind[j];
+                double tl = 0.0;
+                double tu = 0.0;
+                if (kind & 1) {
+                    double v = (sl[j] + ap_bar * dx[j]) * (zl[j] + ad_bar * dzl[j]);
+                    if (v < target_lo) {
+                        tl = target_lo - v;
+                    } else if (v > target_hi) {
+                        tl = target_hi - v;
+                    }
+                }
+                if (kind & 2) {
+                    double v = (su[j] - ap_bar * dx[j]) * (zu[j] + ad_bar * dzu[j]);
+                    if (v < target_lo) {
+                        tu = target_lo - v;
+                    } else if (v > target_hi) {
+                        tu = target_hi - v;
+                    }
+                }
+                rcl[j] = tl;
+                rcu[j] = tu;
+            }
+            if (debug) {
+                struct timespec ts0, ts1;
+                clock_gettime(CLOCK_MONOTONIC, &ts0);
+                ipm_newton_solve(&nw, zero_m, zero_n, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
+                clock_gettime(CLOCK_MONOTONIC, &ts1);
+                t_newton += (double)(ts1.tv_sec - ts0.tv_sec) +
+                            1e-9 * (double)(ts1.tv_nsec - ts0.tv_nsec);
+            } else {
+                ipm_newton_solve(&nw, zero_m, zero_n, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
+            }
+            double ap_c = 1.0;
+            double ad_c = 1.0;
+            for (Py_ssize_t j = 0; j < n; j++) {
+                unsigned char kind = bound_kind[j];
+                double dxc = dx[j] + dx_a[j];
+                if ((kind & 1) && dxc < 0.0) {
+                    double step = -sl[j] / dxc;
+                    if (step < ap_c) {
+                        ap_c = step;
+                    }
+                }
+                if ((kind & 2) && dxc > 0.0) {
+                    double step = su[j] / dxc;
+                    if (step < ap_c) {
+                        ap_c = step;
+                    }
+                }
+                if (kind & 1) {
+                    double dzlc = dzl[j] + dzl_a[j];
+                    if (dzlc < 0.0) {
+                        double step = -zl[j] / dzlc;
+                        if (step < ad_c) {
+                            ad_c = step;
+                        }
+                    }
+                }
+                if (kind & 2) {
+                    double dzuc = dzu[j] + dzu_a[j];
+                    if (dzuc < 0.0) {
+                        double step = -zu[j] / dzuc;
+                        if (step < ad_c) {
+                            ad_c = step;
+                        }
+                    }
+                }
+            }
+            if (ap_c < ap || ad_c < ad || ap_c + ad_c < ap + ad + 0.01) {
+                break;
+            }
+            for (Py_ssize_t j = 0; j < n; j++) {
+                dx[j] += dx_a[j];
+                dzl[j] += dzl_a[j];
+                dzu[j] += dzu_a[j];
+            }
+            for (Py_ssize_t i = 0; i < m; i++) {
+                dy[i] += dy_a[i];
+            }
+            ap = ap_c;
+            ad = ad_c;
+        }
+
         ap *= 0.995;
         ad *= 0.995;
         last_ap = ap;
@@ -5741,6 +5879,55 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                                  &cleaned_gap, &dual_cleanup_rounds)) {
                 best_gap = cleaned_gap;
                 status = "optimal";
+            }
+        }
+        if (strcmp(status, "optimal") != 0 && (m >= 100 || n >= 100) &&
+            raw_pres > feas_tol && raw_pres <= 1e-1 &&
+            pres <= 1e-6 && dres <= 5e-6) {
+            /* Exit-path primal feasibility polish: the trajectory can break
+             * down (NaN step) within an iteration of the in-loop polish
+             * window opening, leaving a restored best iterate whose scaled
+             * residuals are excellent but whose original-unit residual is
+             * above eps. Same guarded correction as in-loop: it re-checks
+             * bound violation, recomputed raw residual, and the Lagrangian
+             * gap, so it can only gain a certificate, never fake one. */
+            scaled_op_matvec(&op, x, ax);
+            for (Py_ssize_t i = 0; i < m; i++) {
+                rp[i] = b[i] - ax[i];
+            }
+            scaled_op_transpose_matvec(&op, y, aty);
+            double cleaned_gap = 0.0;
+            int certified = ipm_lagrangian_gap(c, b, lo, hi, bound_kind, m, n, x, y,
+                                               aty, &cleaned_gap) &&
+                            cleaned_gap <= 1e-5;
+            if (!certified &&
+                ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                 &cleaned_gap, &dual_cleanup_rounds)) {
+                certified = 1;
+            }
+            if (!certified &&
+                ipm_dual_polish(&op, chol, c, b, lo, hi, bound_kind, m, n, x, D,
+                                tmp_x, rhs_m, dy, dx, &cleaned_gap)) {
+                memcpy(y, dy, (size_t)m * sizeof(double));
+                memcpy(aty, dx, (size_t)n * sizeof(double));
+                certified = 1;
+            }
+            if (certified) {
+                double polished_pres = pres;
+                double polished_raw_pres = raw_pres;
+                double polished_gap = cleaned_gap;
+                if (ipm_primal_polish(&op, chol, self, csc_vals, c, b, lo, hi,
+                                      bound_kind, row_scale, m, n, rp, y, aty,
+                                      refactor_supernodal, feas_tol, b_norm, x, D,
+                                      rhs_m, tmp_x, dx, &polished_pres,
+                                      &polished_raw_pres, &polished_gap)) {
+                    pres = polished_pres;
+                    raw_pres = polished_raw_pres;
+                    best_gap = polished_gap;
+                    best_pres = polished_pres;
+                    best_raw_pres = polished_raw_pres;
+                    status = "optimal";
+                }
             }
         }
     }
@@ -5867,6 +6054,8 @@ done:
     free(ax);
     free(res_m);
     free(corr_m);
+    free(zero_m);
+    free(zero_n);
     free(x_best);
     free(y_best);
     free(bound_kind);
