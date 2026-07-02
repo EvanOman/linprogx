@@ -397,6 +397,51 @@ these committed changes and characterized negative results:
   remaining HiGHS gaps (cre family dense-tail O(t^3) per iteration cannot
   be closed by IPM tuning).
 
+### Update 2026-07-02 (day session) — dual simplex BUILT AND ROUTED; 24/24 coverage
+
+The dual simplex is implemented through Milestone 5 and routed
+(commits fc780a0, b77d32a, 4f773f5, af8d628, ada543f, f305d18):
+
+- M1: threshold-Markowitz sparse LU over a pooled linked active submatrix
+  with dense-marker Schur updates and a dense-tail switch (m=1000 random
+  factorize+solve ~0.08-0.26s; the naive row-oriented update was 92s).
+  FTRAN/BTRAN oracled against scipy.splu; singularity flags; determinism.
+- M2: product-form-of-the-inverse updates (dense eta vectors), growth
+  triggers in lu_should_refactor. Sparse Forrest-Tomlin spikes remain the
+  planned efficiency upgrade — dense etas are O(m) per application and are
+  the pds_20/stocfor3 blocker (6 and 18 pivots/s).
+- M3+M4: bounded-variable dual simplex with identity-artificial cold start,
+  artificial big-M bounds for columns whose reduced cost points at an
+  infinite bound (post-verified inactive, one deterministic M retry), Devex
+  leaving selection, Harris two-pass ratio test, bound flips, hyper-sparse
+  pricing, singular-basis repair, adaptive drift-triggered refactorization,
+  and a MANDATORY exit check that verifies dual-sign consistency of every
+  nonbasic against its true bounds (this caught a silent 3%-suboptimal
+  "optimal" on 80bau3b before the artificial-bounds fix — one-sided columns
+  were placed dual-infeasible at the start).
+- Validated: 80bau3b optimal (6,851 pivots, obj to 5.4e-8 of IPM), degen3,
+  fit2p optimal; 450-instance randomized bound-kind regression tests.
+- **greenbea — the suite coverage miss — SOLVES: public worker optimal in
+  21.1s, residual 1.5e-8, objective -72555248.1298 matching HiGHS to the
+  cent.** Routing: `SparseSolver(algorithm="dual_simplex")` is public, and
+  the auto route attempts a dual-simplex rescue (rows<=4000, cols<=30000)
+  when the IPM fails to certify, before the kept-feasible-candidate exit.
+  Acceptance recomputes the postsolved residual against eps.
+- **Suite coverage is now 24/24 — linprogx EXCEEDS both HiGHS (23/24,
+  qap15 timeout) and Clarabel (23/24, ken_18 DualInfeasible) on coverage.**
+
+Known dual-simplex limitations (next levers):
+- woodw: crash-basis ill-conditioning (kappa ~1e19 on a FRESH factor);
+  needs Ruiz equilibration in the DS entry (IPM already equilibrates) or a
+  better crash. Not routed for it; IPM solves woodw anyway.
+- stocfor3/pds_20 scale: dense PFI etas + pricing are too slow (18 / 6
+  pivots/s). Sparse Forrest-Tomlin update + partial pricing are the path
+  to making DS the pds_20 weapon; until then PDHG keeps that route.
+- fit2p: presolve returns None (coverage gap in presolve, cosmetic here).
+- Official quiet-box 3-solver suite run is STILL PENDING (loadavg 9-16 all
+  night); the assets/ scoreboard predates everything in this handoff
+  section. Run it first thing on a quiet box and promote.
+
 ## SECOND LEVER — sparse revised simplex (larger, multi-session)
 
 Attacks pds_20 (fill-explosive, IPM can't factor) and the small
