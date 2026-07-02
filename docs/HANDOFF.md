@@ -343,6 +343,60 @@ simplex-favorable cases.
   sub-second instances; coverage 23/24 each (linprogx misses greenbea,
   HiGHS misses qap15) with osa_60 back in the linprogx column.
 
+### Update 2026-07-02 — parallel diagnosis session, gate + corrector economics
+
+Five parallel diagnosis passes over the HiGHS head-to-head losses produced
+these committed changes and characterized negative results:
+
+- Supernodal auto-gate now also fires on `prefix_flops >= 1e8` (stored in
+  `ctx->prefix_flops`): ken_18 (prefix 1.78e8, mean width 1.3) was misrouted
+  row-wise while forced supernodal measured a 3.1x faster refactor; loaded-box
+  ken_18 moved ~13-18s -> ~9s. All other suite instances are below 3e7 prefix
+  flops, so nothing else flips (cre_b 2.4e7 forced-supernodal is a known
+  regression; pilot87 3.2e6).
+- Gondzio correctors are now budgeted by the measured cumulative
+  refactor-to-affine-solve cost ratio (threshold 5.5, override
+  `LINPROGX_IPM_MCC_RATIO`). Measured populations: cre_b ~4.5, cre_d ~5,
+  osa_14 ~4.4 lose wall time to correctors; the instances above the gap
+  keep them. Recovered osa_14 2.26s -> 1.74s and cre_b/cre_d ~0.7s each.
+  maros_r7's true affine ratio is ~4.3-5.0 (earlier ~7 estimate conflated
+  per-call and per-solve costs) — its corrector wall effect was within
+  noise either way. NOTE: the gate is wall-clock based, so iteration
+  counts can vary run-to-run on a loaded box; the first flappy version
+  used per-iteration values and produced a 25s cre_b outlier before the
+  cumulative-sum fix.
+- NEGATIVE: supernodal-panel triangular solves (per-entry `snode_panel_lx`
+  indirection into CSC `Lx`) measured newton_solves 0.47s -> 0.75s on
+  maros_r7 with refactor time as the same-load control, and shifted
+  stocfor3's trajectory (36 -> 45 iterations) via summation-order changes.
+  For m in the low tens of thousands, y[] is cache-resident and the scalar
+  CSC solve's scatter is not the bottleneck; the indirection doubles memory
+  traffic instead. A real panel-solve win requires panel-contiguous value
+  storage (restructured Lx), a much larger change. Reverted; do not retry
+  the offset-indirection variant.
+- NEGATIVE: pilot87's 100 wasted post-certificate-eligible iterations
+  (eligible at iter 28, exits at 128) are dual-certificate-blocked: 335
+  one-sided columns carry reduced costs pointing at their infinite bound
+  (median 6.6e-7, max 2.9e-5). A numpy replication of the min-norm dual
+  cleanup DIVERGES on this set: correcting the 335 creates 1095 then 1790
+  violators (whack-a-mole via the min-norm dy perturbing all other
+  columns). Equality-targeted min-norm correction cannot close this; a
+  certificate fix needs an inequality-constrained (active-set/QP-style)
+  dual repair or a fundamentally better dual iterate. stocfor3 (19 wasted
+  iters) and 80bau3b (33 wasted) have the same shape but DO eventually
+  certify; woodw is structurally IPM-bound (dense-tail refactor per
+  iteration), not flippable without a simplex.
+- osa_14's 50 iterations are a structural Mehrotra stall (iters 6-42 barely
+  move mu); correctors cannot break it. Setup (min-degree 0.44s + colcounts
+  0.26s) is 52% of its tuned total — ordering cost is the next osa lever.
+- A full dual-simplex architecture plan (Markowitz LU + Forrest-Tomlin +
+  Devex + Harris ratio + EXPAND, ~2000 lines C across 6 milestones with
+  scipy-oracle characterization tests) is captured in the 2026-07-02 goal
+  session; targets pds_20 < 15s, greenbea certification, and the small
+  simplex-favorable instances. This remains the structural lever for the
+  remaining HiGHS gaps (cre family dense-tail O(t^3) per iteration cannot
+  be closed by IPM tuning).
+
 ## SECOND LEVER — sparse revised simplex (larger, multi-session)
 
 Attacks pds_20 (fill-explosive, IPM can't factor) and the small
