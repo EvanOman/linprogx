@@ -2114,6 +2114,7 @@ done:
 
 static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
+static PyObject *CSRMatrix_solve_eq_box_dual_simplex(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
 static PyObject *CSRMatrix_supernode_sizes(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_supernode_symbolic_structure(CSRMatrixObject *self, PyObject *args);
 
@@ -2132,6 +2133,7 @@ static PyMethodDef CSRMatrix_methods[] = {
     {"solve_eq_box_pdhg", (PyCFunction)CSRMatrix_solve_eq_box_pdhg, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with native PDHG."},
     {"normal_equations_solve", (PyCFunction)CSRMatrix_normal_equations_solve, METH_VARARGS, "Solve (A diag(d) A' + delta I) x = rhs with the native sparse Cholesky."},
     {"solve_eq_box_ipm", (PyCFunction)CSRMatrix_solve_eq_box_ipm, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with a native interior point method."},
+    {"solve_eq_box_dual_simplex", (PyCFunction)CSRMatrix_solve_eq_box_dual_simplex, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with bounded-variable dual simplex."},
     {"supernode_sizes", (PyCFunction)CSRMatrix_supernode_sizes, METH_NOARGS, "Test hook: fundamental supernode sizes of the Cholesky factor of A A'."},
     {"supernode_symbolic_structure", (PyCFunction)CSRMatrix_supernode_symbolic_structure, METH_NOARGS, "Test hook: supernodal row lists and descendant update maps."},
     {NULL}
@@ -7446,6 +7448,784 @@ static int lu_should_refactor(const LUContext *ctx) {
     if (eta_fill > 2 * (int64_t)ctx->orig_nnz_lu) return 1;
 
     return 0;
+}
+
+/* ---- Bounded-variable dual simplex Phase-2 ---- */
+
+/*
+ * Helper: build CSC representation of the m x m basis matrix from A's CSC
+ * arrays and the basis column index array.
+ *
+ * b_indptr[m+1], b_indices[b_nnz], b_values[b_nnz] are preallocated by caller.
+ * Returns total nnz of the basis matrix.
+ */
+static int32_t ds_build_basis_csc(
+    int32_t m,
+    const Py_ssize_t *a_csc_indptr,
+    const Py_ssize_t *a_csc_rows,
+    const double *a_csc_data,
+    const int32_t *basis,
+    int32_t *b_indptr,
+    int32_t *b_indices,
+    double *b_values)
+{
+    int32_t pos = 0;
+    b_indptr[0] = 0;
+    for (int32_t k = 0; k < m; k++) {
+        int32_t j = basis[k];
+        for (Py_ssize_t p = a_csc_indptr[j]; p < a_csc_indptr[j + 1]; p++) {
+            b_indices[pos] = (int32_t)a_csc_rows[p];
+            b_values[pos] = a_csc_data[p];
+            pos++;
+        }
+        b_indptr[k + 1] = pos;
+    }
+    return pos;
+}
+
+/*
+ * Helper: factorize the current basis. Returns LUContext* or NULL on failure.
+ * Caller must free with lu_context_free.
+ */
+static LUContext *ds_factorize_basis(
+    int32_t m,
+    const Py_ssize_t *a_csc_indptr,
+    const Py_ssize_t *a_csc_rows,
+    const double *a_csc_data,
+    const int32_t *basis,
+    int32_t *b_indptr,
+    int32_t *b_indices,
+    double *b_values)
+{
+    ds_build_basis_csc(m, a_csc_indptr, a_csc_rows, a_csc_data,
+                       basis, b_indptr, b_indices, b_values);
+    int alloc_fail = 0;
+    LUContext *lu = lu_factorize(m, b_indptr, b_indices, b_values, 0.1,
+                                  &alloc_fail);
+    return lu;
+}
+
+/* Bound classification constants */
+#define DS_BOUND_LO    0   /* nonbasic at lower bound */
+#define DS_BOUND_HI    1   /* nonbasic at upper bound */
+#define DS_BOUND_FREE  2   /* nonbasic free variable at zero */
+#define DS_BOUND_FIXED 3   /* lo == hi, variable is fixed */
+#define DS_BOUND_BASIC 4   /* in the basis */
+
+/*
+ * CSRMatrix_solve_eq_box_dual_simplex
+ *
+ * Solve  min c'x  subject to  Ax = b,  lo <= x <= hi
+ * using a bounded-variable dual simplex (Phase-2 only).
+ *
+ * Returns a dict with the same keys as solve_eq_box_ipm:
+ *   status, x, y, objective, iterations, max_primal_residual
+ *
+ * Sign convention for the dual ratio test:
+ *
+ *   Leaving variable i has violation:
+ *     sigma = +1  if x_B[i] < lo[basis[i]]  (below lower bound)
+ *     sigma = -1  if x_B[i] > hi[basis[i]]  (above upper bound)
+ *
+ *   Dual variables update: y_new = y - theta_d * sigma * rho
+ *   where rho = B^{-T} e_i  (row i of B^{-1}).
+ *
+ *   Reduced cost update (primal-derived sign convention):
+ *     r_j_new = r_j + theta_d * sigma * alpha_j
+ *   where alpha_j = rho^T a_j  (pivot row entry).
+ *
+ *   For the entering column j*, r_{j*}_new = 0:
+ *     theta_d = -r_{j*} / (sigma * alpha_{j*})  >= 0
+ *
+ *   Admissibility conditions (from primal feasibility):
+ *     j at lower bound (r_j >= 0):  sigma * alpha_j < 0
+ *     j at upper bound (r_j <= 0):  sigma * alpha_j > 0
+ *
+ *   Entering j* = argmin over admissible j of { |r_j| / |alpha_j| }
+ *
+ *   After pivot:
+ *     Leaving variable gets reduced cost theta_d * sigma:
+ *       sigma=+1 -> r_leaving = +theta_d >= 0 (at lower bound, dual feasible)
+ *       sigma=-1 -> r_leaving = -theta_d <= 0 (at upper bound, dual feasible)
+ *
+ *   Primal step: FTRAN entering column -> alpha_col = B^{-1} a_{j*}
+ *     dx_{j*} = (x_B[i] - bound_leaving) / alpha_col[i]
+ *     x_B[k] -= alpha_col[k] * dx_{j*}  for all k
+ *     x_{j*}_new = bound_{j*} + dx_{j*}
+ *
+ *   NOTE: Bound-flip ratio test is SKIPPED for Milestone 3 (correctness first).
+ *   This can cause more pivots than necessary on problems with many finite
+ *   bounds on both sides, but does not affect correctness.
+ */
+static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
+    CSRMatrixObject *self, PyObject *args, PyObject *kwds)
+{
+    PyObject *c_obj, *b_obj, *lo_obj, *hi_obj;
+    Py_ssize_t max_iter_arg = 0;
+    double tol = 1e-8;
+    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", NULL};
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwds, "OOOO|nd", kwlist,
+            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter_arg, &tol)) {
+        return NULL;
+    }
+    if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError, "matrix too large for 32-bit factorization");
+        return NULL;
+    }
+    Py_ssize_t m_s = self->rows;
+    Py_ssize_t n_s = self->cols;
+    int32_t m = (int32_t)m_s;
+    int32_t n = (int32_t)n_s;
+    Py_ssize_t max_iter = max_iter_arg > 0 ? max_iter_arg
+                          : (20 * (m_s + n_s) < 20000 ? 20 * (m_s + n_s) : 20000);
+
+    PyObject *result = NULL;
+    const char *status = "numerical_error";
+    Py_ssize_t iterations = 0;
+    LUContext *lu = NULL;
+
+    /* ---- Allocate working arrays ---- */
+    double *c   = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    double *b   = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *lo  = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    double *hi  = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    double *x   = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    double *y   = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *r   = calloc((size_t)(n > 0 ? n : 1), sizeof(double));   /* reduced costs */
+    double *x_B = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *rhs = calloc((size_t)(m > 0 ? m : 1), sizeof(double));   /* b - A_N x_N */
+    double *rho = calloc((size_t)(m > 0 ? m : 1), sizeof(double));   /* BTRAN workspace */
+    double *alpha_col = calloc((size_t)(m > 0 ? m : 1), sizeof(double)); /* FTRAN of entering col */
+    double *e_i = calloc((size_t)(m > 0 ? m : 1), sizeof(double));   /* unit vector */
+    double *c_B = calloc((size_t)(m > 0 ? m : 1), sizeof(double));   /* basic costs */
+    int32_t *basis     = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+    int32_t *basis_pos = calloc((size_t)(n > 0 ? n : 1), sizeof(int32_t)); /* basis_pos[j] = position in basis, or -1 */
+    int8_t  *bound_status = calloc((size_t)(n > 0 ? n : 1), sizeof(int8_t));
+    /* Basis CSC workspace (max nnz = A's nnz) */
+    int32_t b_nnz_max = (int32_t)(self->nnz > 0 ? self->nnz : 1);
+    int32_t *b_indptr  = calloc((size_t)(m + 1), sizeof(int32_t));
+    int32_t *b_indices = calloc((size_t)b_nnz_max, sizeof(int32_t));
+    double  *b_values  = calloc((size_t)b_nnz_max, sizeof(double));
+    /* Column count array for crash */
+    int32_t *col_count = calloc((size_t)(n > 0 ? n : 1), sizeof(int32_t));
+    int32_t *col_order = calloc((size_t)(n > 0 ? n : 1), sizeof(int32_t));
+
+    if (c == NULL || b == NULL || lo == NULL || hi == NULL ||
+        x == NULL || y == NULL || r == NULL || x_B == NULL || rhs == NULL ||
+        rho == NULL || alpha_col == NULL || e_i == NULL || c_B == NULL ||
+        basis == NULL || basis_pos == NULL || bound_status == NULL ||
+        b_indptr == NULL || b_indices == NULL || b_values == NULL ||
+        col_count == NULL || col_order == NULL) {
+        PyErr_NoMemory();
+        goto done;
+    }
+
+    /* Parse input arrays */
+    if (fill_double_array(c_obj, n_s, c, "c") != 0 ||
+        fill_double_array(b_obj, m_s, b, "b") != 0 ||
+        fill_double_array(lo_obj, n_s, lo, "lo") != 0 ||
+        fill_double_array(hi_obj, n_s, hi, "hi") != 0) {
+        goto done;
+    }
+
+    /* ============================================================
+     * 1. CRASH BASIS: greedy triangular crash
+     * ============================================================
+     * Scan columns by nondecreasing column count. Take a column
+     * into the basis if its max-|value| row is uncovered.
+     */
+    {
+        /* Compute column counts from CSC */
+        for (int32_t j = 0; j < n; j++) {
+            col_count[j] = (int32_t)(self->csc_indptr[j + 1] - self->csc_indptr[j]);
+            col_order[j] = j;
+        }
+        /* Sort col_order by nondecreasing col_count (insertion sort, n typically small) */
+        for (int32_t i = 1; i < n; i++) {
+            int32_t key = col_order[i];
+            int32_t key_cnt = col_count[key];
+            int32_t j = i - 1;
+            while (j >= 0 && col_count[col_order[j]] > key_cnt) {
+                col_order[j + 1] = col_order[j];
+                j--;
+            }
+            col_order[j + 1] = key;
+        }
+
+        /* Track covered rows */
+        int8_t *row_covered = calloc((size_t)(m > 0 ? m : 1), sizeof(int8_t));
+        if (row_covered == NULL) { PyErr_NoMemory(); goto done; }
+
+        int32_t n_basis = 0;
+        for (int32_t idx = 0; idx < n && n_basis < m; idx++) {
+            int32_t j = col_order[idx];
+            /* Find row with max |value| in column j that is uncovered */
+            int32_t best_row = -1;
+            double best_abs = 0.0;
+            for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                int32_t row = (int32_t)self->csc_rows[p];
+                if (!row_covered[row]) {
+                    double av = fabs(self->csc_data[p]);
+                    if (av > best_abs) {
+                        best_abs = av;
+                        best_row = row;
+                    }
+                }
+            }
+            if (best_row >= 0 && best_abs > 1e-12) {
+                basis[n_basis] = j;
+                row_covered[best_row] = 1;
+                n_basis++;
+            }
+        }
+
+        /* If crash didn't fill the basis, fill remaining slots with any available columns */
+        if (n_basis < m) {
+            /* Mark basis columns */
+            int8_t *col_used = calloc((size_t)(n > 0 ? n : 1), sizeof(int8_t));
+            if (col_used == NULL) { free(row_covered); PyErr_NoMemory(); goto done; }
+            for (int32_t k = 0; k < n_basis; k++) col_used[basis[k]] = 1;
+
+            for (int32_t j = 0; j < n && n_basis < m; j++) {
+                if (!col_used[j]) {
+                    basis[n_basis] = j;
+                    n_basis++;
+                }
+            }
+            free(col_used);
+        }
+        free(row_covered);
+
+        if (n_basis < m) {
+            /* Not enough columns -- impossible for m <= n but guard */
+            status = "numerical_error";
+            goto build_result;
+        }
+    }
+
+    /* ============================================================
+     * 2. LU FACTORIZE the crash basis
+     * ============================================================
+     * If singular, try swapping out failing columns for alternatives.
+     */
+    {
+        lu = ds_factorize_basis(m, self->csc_indptr, self->csc_rows, self->csc_data,
+                                basis, b_indptr, b_indices, b_values);
+        if (lu == NULL || lu->singular_step >= 0) {
+            /* Try to repair: swap singular columns with unused ones */
+            int8_t *col_in_basis = calloc((size_t)(n > 0 ? n : 1), sizeof(int8_t));
+            if (col_in_basis == NULL) { PyErr_NoMemory(); goto done; }
+            for (int32_t k = 0; k < m; k++) col_in_basis[basis[k]] = 1;
+
+            int repaired = 0;
+            for (int round = 0; round < 5 && !repaired; round++) {
+                lu_context_free(lu);
+                lu = NULL;
+
+                /* Find a column to swap in for the failing position */
+                int32_t fail_pos = -1;
+                {
+                    LUContext *test_lu = ds_factorize_basis(
+                        m, self->csc_indptr, self->csc_rows, self->csc_data,
+                        basis, b_indptr, b_indices, b_values);
+                    if (test_lu == NULL) { free(col_in_basis); PyErr_NoMemory(); goto done; }
+                    if (test_lu->singular_step < 0) {
+                        lu = test_lu;
+                        repaired = 1;
+                        break;
+                    }
+                    fail_pos = test_lu->singular_step;
+                    lu_context_free(test_lu);
+                }
+
+                if (fail_pos >= 0 && fail_pos < m) {
+                    /* Try replacing basis[fail_pos] with an unused column */
+                    int32_t old_col = basis[fail_pos];
+                    int found = 0;
+                    for (int32_t j = 0; j < n && !found; j++) {
+                        if (!col_in_basis[j]) {
+                            basis[fail_pos] = j;
+                            col_in_basis[j] = 1;
+                            col_in_basis[old_col] = 0;
+                            found = 1;
+                        }
+                    }
+                    if (!found) break;
+                } else {
+                    break;
+                }
+            }
+            free(col_in_basis);
+
+            if (!repaired) {
+                lu = ds_factorize_basis(m, self->csc_indptr, self->csc_rows, self->csc_data,
+                                        basis, b_indptr, b_indices, b_values);
+                if (lu == NULL || lu->singular_step >= 0) {
+                    status = "numerical_error";
+                    goto build_result;
+                }
+            }
+        }
+    }
+
+    /* Initialize basis_pos */
+    for (int32_t j = 0; j < n; j++) basis_pos[j] = -1;
+    for (int32_t k = 0; k < m; k++) basis_pos[basis[k]] = k;
+
+    /* ============================================================
+     * 3. NONBASIC ASSIGNMENT for dual feasibility
+     * ============================================================
+     * Compute y = B^{-T} c_B, then r_j = c_j - a_j^T y.
+     * Place nonbasic j at lo if r_j >= 0, at hi if r_j < 0.
+     * Free columns with |r_j| <= tol: pin at 0.
+     * Free columns with |r_j| > tol: return dual_infeasible_start.
+     * Fixed columns (lo==hi): sit at their value.
+     */
+    for (int32_t k = 0; k < m; k++) c_B[k] = c[basis[k]];
+    lu_btran(lu, c_B, y);
+
+    for (int32_t j = 0; j < n; j++) {
+        if (basis_pos[j] >= 0) {
+            bound_status[j] = DS_BOUND_BASIC;
+            continue;
+        }
+        /* Compute r_j = c_j - a_j^T y */
+        double rj = c[j];
+        for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+            rj -= self->csc_data[p] * y[(int32_t)self->csc_rows[p]];
+        }
+        r[j] = rj;
+
+        int lo_finite = isfinite(lo[j]);
+        int hi_finite = isfinite(hi[j]);
+
+        if (lo_finite && hi_finite && fabs(lo[j] - hi[j]) < 1e-14) {
+            /* Fixed variable */
+            bound_status[j] = DS_BOUND_FIXED;
+            x[j] = lo[j];
+        } else if (!lo_finite && !hi_finite) {
+            /* Free variable */
+            if (fabs(rj) <= tol) {
+                bound_status[j] = DS_BOUND_FREE;
+                x[j] = 0.0;
+            } else {
+                status = "dual_infeasible_start";
+                goto build_result;
+            }
+        } else if (rj >= 0.0 && lo_finite) {
+            bound_status[j] = DS_BOUND_LO;
+            x[j] = lo[j];
+        } else if (rj < 0.0 && hi_finite) {
+            bound_status[j] = DS_BOUND_HI;
+            x[j] = hi[j];
+        } else if (lo_finite) {
+            /* Only lower bound finite, but r < 0: dual infeasible for half-open */
+            bound_status[j] = DS_BOUND_LO;
+            x[j] = lo[j];
+        } else {
+            /* Only upper bound finite, but r >= 0: dual infeasible for half-open */
+            bound_status[j] = DS_BOUND_HI;
+            x[j] = hi[j];
+        }
+    }
+
+    /* ============================================================
+     * 4. MAIN DUAL SIMPLEX LOOP
+     * ============================================================ */
+    {
+        int consecutive_degenerate = 0;
+        int use_bland = 0;
+
+        for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
+            iterations = iter;
+
+            /* ---- 4a. Compute x_B = B^{-1}(b - A_N x_N) ---- */
+            /* rhs = b */
+            memcpy(rhs, b, (size_t)m * sizeof(double));
+            /* rhs -= A_N x_N (subtract nonbasic contributions) */
+            for (int32_t j = 0; j < n; j++) {
+                if (basis_pos[j] >= 0) continue; /* skip basic */
+                if (x[j] == 0.0) continue; /* skip zero nonbasics */
+                double xj = x[j];
+                /* Use CSC: column j of A */
+                for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                    rhs[(int32_t)self->csc_rows[p]] -= self->csc_data[p] * xj;
+                }
+            }
+            lu_ftran(lu, rhs, x_B);
+
+            /* ---- 4b. Find leaving variable: max bound violation ---- */
+            int32_t leaving_basis_pos = -1;
+            double max_violation = 0.0;
+            int leaving_sigma = 0; /* +1 = below lo, -1 = above hi */
+            for (int32_t k = 0; k < m; k++) {
+                int32_t j = basis[k];
+                double viol;
+                if (isfinite(lo[j]) && x_B[k] < lo[j] - tol) {
+                    viol = lo[j] - x_B[k];
+                    if (viol > max_violation) {
+                        max_violation = viol;
+                        leaving_basis_pos = k;
+                        leaving_sigma = 1;
+                    }
+                }
+                if (isfinite(hi[j]) && x_B[k] > hi[j] + tol) {
+                    viol = x_B[k] - hi[j];
+                    if (viol > max_violation) {
+                        max_violation = viol;
+                        leaving_basis_pos = k;
+                        leaving_sigma = -1;
+                    }
+                }
+            }
+
+            if (leaving_basis_pos < 0) {
+                /* No bound violation: OPTIMAL */
+                status = "optimal";
+                iterations = iter;
+                break;
+            }
+
+            /* ---- 4c. Compute rho = BTRAN(e_leaving) ---- */
+            memset(e_i, 0, (size_t)m * sizeof(double));
+            e_i[leaving_basis_pos] = 1.0;
+            lu_btran(lu, e_i, rho);
+
+            /* ---- 4d. Dual ratio test ---- */
+            int32_t entering_col = -1;
+            double best_ratio = 1e300;
+            double entering_alpha_row = 0.0;
+
+            for (int32_t j = 0; j < n; j++) {
+                if (basis_pos[j] >= 0) continue; /* skip basic */
+                if (bound_status[j] == DS_BOUND_FIXED) continue; /* skip fixed */
+
+                /* alpha_j = rho^T a_j */
+                double alpha_j = 0.0;
+                for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                    alpha_j += rho[(int32_t)self->csc_rows[p]] * self->csc_data[p];
+                }
+
+                if (fabs(alpha_j) < 1e-12) continue; /* skip tiny pivots */
+
+                /* Check admissibility (primal-derived sign conditions).
+                 *
+                 * For the entering variable to move x_B[p] toward feasibility:
+                 *   x_B_new[p] = x_B[p] - alpha_q * dx_entering
+                 * Need: sigma * (-alpha_q * dx_entering) > 0
+                 *
+                 * sigma=+1 (x_B[p] too low, want increase):
+                 *   q at lo (dx > 0): need alpha_q < 0  => sigma*alpha_q < 0
+                 *   q at hi (dx < 0): need alpha_q > 0  => sigma*alpha_q > 0
+                 * sigma=-1 (x_B[p] too high, want decrease):
+                 *   q at lo (dx > 0): need alpha_q > 0  => sigma*alpha_q < 0
+                 *   q at hi (dx < 0): need alpha_q < 0  => sigma*alpha_q > 0
+                 *
+                 * Summary:
+                 *   q at lo: sigma * alpha_q < 0
+                 *   q at hi: sigma * alpha_q > 0
+                 */
+                int admissible = 0;
+                if (bound_status[j] == DS_BOUND_LO && leaving_sigma * alpha_j < 0.0) {
+                    admissible = 1;
+                } else if (bound_status[j] == DS_BOUND_HI && leaving_sigma * alpha_j > 0.0) {
+                    admissible = 1;
+                } else if (bound_status[j] == DS_BOUND_FREE) {
+                    /* Free variable: admissible regardless of sign */
+                    admissible = 1;
+                }
+
+                if (!admissible) continue;
+
+                double ratio = fabs(r[j]) / fabs(alpha_j);
+
+                if (use_bland) {
+                    /* Bland's rule: pick smallest index admissible */
+                    if (entering_col < 0 || j < entering_col) {
+                        entering_col = j;
+                        entering_alpha_row = alpha_j;
+                        best_ratio = ratio;
+                    }
+                } else {
+                    if (ratio < best_ratio) {
+                        best_ratio = ratio;
+                        entering_col = j;
+                        entering_alpha_row = alpha_j;
+                    }
+                }
+            }
+
+            if (entering_col < 0) {
+                /* No admissible entering column: primal infeasible */
+                status = "infeasible";
+                iterations = iter;
+                break;
+            }
+
+            /* ---- 4e. Compute dual step theta_d ---- */
+            /* theta_d = -r_q / (sigma * alpha_q)  >= 0  (primal-derived sign convention) */
+            double theta_d = -r[entering_col] / ((double)leaving_sigma * entering_alpha_row);
+
+            /* ---- 4f. FTRAN entering column: alpha_col = B^{-1} a_entering ---- */
+            {
+                /* Build dense entering column from A's CSC */
+                double *a_entering = calloc((size_t)m, sizeof(double));
+                if (a_entering == NULL) { PyErr_NoMemory(); goto done; }
+                for (Py_ssize_t p = self->csc_indptr[entering_col]; p < self->csc_indptr[entering_col + 1]; p++) {
+                    a_entering[(int32_t)self->csc_rows[p]] = self->csc_data[p];
+                }
+                lu_ftran(lu, a_entering, alpha_col);
+                free(a_entering);
+            }
+
+            /* ---- 4g. Primal step ---- */
+            double bound_leaving;
+            if (leaving_sigma == 1) {
+                bound_leaving = lo[basis[leaving_basis_pos]];
+            } else {
+                bound_leaving = hi[basis[leaving_basis_pos]];
+            }
+            double pivot = alpha_col[leaving_basis_pos];
+            if (fabs(pivot) < 1e-12) {
+                /* Degenerate pivot: skip (shouldn't happen with good ratio test) */
+                status = "numerical_error";
+                iterations = iter;
+                break;
+            }
+            double dx_entering = (x_B[leaving_basis_pos] - bound_leaving) / pivot;
+
+            /* Update basic variable values */
+            for (int32_t k = 0; k < m; k++) {
+                x_B[k] -= alpha_col[k] * dx_entering;
+            }
+
+            /* Entering variable's new value */
+            double entering_old_x = x[entering_col];
+            double entering_new_x = entering_old_x + dx_entering;
+
+            /* ---- 4h. Update reduced costs ---- */
+            for (int32_t j = 0; j < n; j++) {
+                if (basis_pos[j] >= 0) continue;
+                if (bound_status[j] == DS_BOUND_FIXED) continue;
+                if (j == entering_col) continue;
+
+                double alpha_j = 0.0;
+                for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                    alpha_j += rho[(int32_t)self->csc_rows[p]] * self->csc_data[p];
+                }
+                r[j] += theta_d * (double)leaving_sigma * alpha_j;
+            }
+            /* Leaving variable gets a reduced cost */
+            double r_leaving = theta_d * (double)leaving_sigma;
+
+            /* Entering variable's reduced cost is exactly zero */
+            r[entering_col] = 0.0;
+
+            /* ---- 4i. Basis bookkeeping ---- */
+            int32_t leaving_col = basis[leaving_basis_pos];
+
+            /* Set leaving variable's bound status and value */
+            if (leaving_sigma == 1) {
+                bound_status[leaving_col] = DS_BOUND_LO;
+                x[leaving_col] = lo[leaving_col];
+            } else {
+                bound_status[leaving_col] = DS_BOUND_HI;
+                x[leaving_col] = hi[leaving_col];
+            }
+            r[leaving_col] = r_leaving;
+            basis_pos[leaving_col] = -1;
+
+            /* Entering variable becomes basic */
+            basis[leaving_basis_pos] = entering_col;
+            basis_pos[entering_col] = leaving_basis_pos;
+            bound_status[entering_col] = DS_BOUND_BASIC;
+            x[entering_col] = entering_new_x;
+
+            /* ---- 4j. LU update ---- */
+            {
+                int32_t *ent_idx = NULL;
+                double *ent_val = NULL;
+                Py_ssize_t col_start = self->csc_indptr[entering_col];
+                Py_ssize_t col_end   = self->csc_indptr[entering_col + 1];
+                int32_t ent_nnz = (int32_t)(col_end - col_start);
+                ent_idx = calloc((size_t)(ent_nnz > 0 ? ent_nnz : 1), sizeof(int32_t));
+                ent_val = calloc((size_t)(ent_nnz > 0 ? ent_nnz : 1), sizeof(double));
+                if (ent_idx == NULL || ent_val == NULL) {
+                    free(ent_idx); free(ent_val);
+                    PyErr_NoMemory(); goto done;
+                }
+                for (int32_t k = 0; k < ent_nnz; k++) {
+                    ent_idx[k] = (int32_t)self->csc_rows[col_start + k];
+                    ent_val[k] = self->csc_data[col_start + k];
+                }
+                int rc = lu_update(lu, leaving_basis_pos, ent_idx, ent_val, ent_nnz);
+                free(ent_idx);
+                free(ent_val);
+
+                if (rc != 0) {
+                    /* LU update rejected (singular): refactorize from current basis */
+                    lu_context_free(lu);
+                    lu = ds_factorize_basis(m, self->csc_indptr, self->csc_rows,
+                                            self->csc_data, basis,
+                                            b_indptr, b_indices, b_values);
+                    if (lu == NULL || lu->singular_step >= 0) {
+                        status = "numerical_error";
+                        iterations = iter;
+                        break;
+                    }
+                }
+            }
+
+            /* ---- 4k. Refactorize periodically ---- */
+            if (lu_should_refactor(lu) || (iter > 0 && iter % 100 == 0)) {
+                lu_context_free(lu);
+                lu = ds_factorize_basis(m, self->csc_indptr, self->csc_rows,
+                                        self->csc_data, basis,
+                                        b_indptr, b_indices, b_values);
+                if (lu == NULL || lu->singular_step >= 0) {
+                    status = "numerical_error";
+                    iterations = iter;
+                    break;
+                }
+                /* Recompute x_B, y, r from scratch to curb error drift */
+                for (int32_t k = 0; k < m; k++) c_B[k] = c[basis[k]];
+                lu_btran(lu, c_B, y);
+
+                for (int32_t j = 0; j < n; j++) {
+                    if (basis_pos[j] >= 0) continue;
+                    if (bound_status[j] == DS_BOUND_FIXED) continue;
+                    double rj = c[j];
+                    for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                        rj -= self->csc_data[p] * y[(int32_t)self->csc_rows[p]];
+                    }
+                    r[j] = rj;
+                }
+            }
+
+            /* ---- 4l. Anti-cycling ---- */
+            if (theta_d < 1e-12) {
+                consecutive_degenerate++;
+                if (consecutive_degenerate >= 200) {
+                    use_bland = 1;
+                }
+            } else {
+                consecutive_degenerate = 0;
+                use_bland = 0;
+            }
+
+            iterations = iter + 1;
+        }
+
+        /* Check iteration limit */
+        if (iterations >= max_iter && strcmp(status, "optimal") != 0 &&
+            strcmp(status, "infeasible") != 0) {
+            status = "iteration_limit";
+        }
+    }
+
+    /* ============================================================
+     * 5. EXIT: compute final x, verify residuals
+     * ============================================================ */
+
+    /* If optimal, refactorize and recompute everything from scratch */
+    if (strcmp(status, "optimal") == 0) {
+        lu_context_free(lu);
+        lu = ds_factorize_basis(m, self->csc_indptr, self->csc_rows, self->csc_data,
+                                basis, b_indptr, b_indices, b_values);
+        if (lu == NULL || lu->singular_step >= 0) {
+            status = "numerical_error";
+        } else {
+            /* Recompute x_B */
+            memcpy(rhs, b, (size_t)m * sizeof(double));
+            for (int32_t j = 0; j < n; j++) {
+                if (basis_pos[j] >= 0) continue;
+                if (x[j] == 0.0) continue;
+                double xj = x[j];
+                for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                    rhs[(int32_t)self->csc_rows[p]] -= self->csc_data[p] * xj;
+                }
+            }
+            lu_ftran(lu, rhs, x_B);
+            for (int32_t k = 0; k < m; k++) {
+                x[basis[k]] = x_B[k];
+            }
+
+            /* Recompute y */
+            for (int32_t k = 0; k < m; k++) c_B[k] = c[basis[k]];
+            lu_btran(lu, c_B, y);
+
+            /* Recompute r */
+            for (int32_t j = 0; j < n; j++) {
+                if (basis_pos[j] >= 0) { r[j] = 0.0; continue; }
+                double rj = c[j];
+                for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+                    rj -= self->csc_data[p] * y[(int32_t)self->csc_rows[p]];
+                }
+                r[j] = rj;
+            }
+        }
+    } else {
+        /* For non-optimal exits, still set x from x_B */
+        for (int32_t k = 0; k < m; k++) {
+            x[basis[k]] = x_B[k];
+        }
+    }
+
+build_result:
+    {
+        /* Compute objective and max primal residual */
+        double objective = 0.0;
+        double max_residual = 0.0;
+
+        for (int32_t j = 0; j < n; j++) {
+            objective += c[j] * x[j];
+        }
+
+        /* Primal residual: max |A x - b| */
+        for (int32_t i = 0; i < m; i++) {
+            double row_sum = 0.0;
+            for (Py_ssize_t p = self->indptr[i]; p < self->indptr[i + 1]; p++) {
+                row_sum += self->data[p] * x[(int32_t)self->indices[p]];
+            }
+            double res = fabs(row_sum - b[i]);
+            if (res > max_residual) max_residual = res;
+        }
+
+        PyObject *x_list = PyList_New(n_s);
+        PyObject *y_list = PyList_New(m_s);
+        if (x_list == NULL || y_list == NULL) {
+            Py_XDECREF(x_list);
+            Py_XDECREF(y_list);
+            goto done;
+        }
+        for (int32_t j = 0; j < n; j++) {
+            PyList_SET_ITEM(x_list, j, PyFloat_FromDouble(x[j]));
+        }
+        for (int32_t i = 0; i < m; i++) {
+            PyList_SET_ITEM(y_list, i, PyFloat_FromDouble(y[i]));
+        }
+
+        result = Py_BuildValue(
+            "{s:s,s:d,s:d,s:n,s:N,s:N}",
+            "status", status,
+            "objective", objective,
+            "max_primal_residual", max_residual,
+            "iterations", iterations,
+            "x", x_list,
+            "y", y_list);
+    }
+
+done:
+    lu_context_free(lu);
+    free(c); free(b); free(lo); free(hi);
+    free(x); free(y); free(r);
+    free(x_B); free(rhs); free(rho);
+    free(alpha_col); free(e_i); free(c_B);
+    free(basis); free(basis_pos); free(bound_status);
+    free(b_indptr); free(b_indices); free(b_values);
+    free(col_count); free(col_order);
+    return result;
 }
 
 /* ---- Python test hooks for sparse LU ---- */
