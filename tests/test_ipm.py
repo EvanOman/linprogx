@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-from typing import Literal, cast
 
 import numpy as np
 import pytest
@@ -139,6 +138,23 @@ class TestSolveEqBoxIpm:
         assert result["objective"] == pytest.approx(4.0, abs=1e-6)
         assert result["x"] == pytest.approx([2.0, 1.0], abs=1e-6)
         assert result["max_primal_residual"] < 1e-8
+
+    def test_supernodal_kwarg_uses_ipm_path(self) -> None:
+        matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
+
+        result = matrix.solve_eq_box_ipm(
+            [1.0, 2.0],
+            [3.0],
+            [0.0, 0.0],
+            [2.0, 3.0],
+            max_iter=60,
+            tol=1e-9,
+            supernodal=True,
+        )
+
+        assert result["status"] == "optimal"
+        assert result["objective"] == pytest.approx(4.0, abs=1e-6)
+        assert result["x"] == pytest.approx([2.0, 1.0], abs=1e-6)
 
     def test_respects_active_lower_bound(self) -> None:
         matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
@@ -347,7 +363,7 @@ class TestAlgorithmEquivalence:
         objectives = {}
         for algorithm in ("ipm", "pdhg", "simplex"):
             result = SparseSolver(
-                algorithm=cast('Literal["ipm", "pdhg", "simplex"]', algorithm),
+                algorithm=algorithm,
                 eps=1e-7 if algorithm != "simplex" else 1e-9,
                 max_iterations=50_000,
                 check_interval=5_000,
@@ -461,6 +477,62 @@ def test_normal_equations_dense_tail_matches_dense_reference(
     assert residual <= 1e-10
 
 
+def test_normal_equations_supernodal_factor_matches_dense_reference() -> None:
+    rng = np.random.default_rng(15)
+    m, n = 48, 120
+    A = (
+        scipy.sparse.random(
+            m,
+            n,
+            density=0.08,
+            random_state=rng,
+            data_rvs=lambda size: rng.uniform(-1.5, 1.5, size),
+        ).tocsr()
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    )
+    matrix = from_scipy_sparse(scipy.sparse.csr_matrix(A))
+    d = rng.uniform(0.25, 2.0, n)
+    rhs = rng.uniform(-1, 1, m)
+    delta = 1e-7
+
+    out = np.array(matrix.normal_equations_solve(d.tolist(), rhs.tolist(), delta, True))
+
+    G = (A @ scipy.sparse.diags(d) @ A.T).toarray() + delta * np.eye(m)
+    residual = np.max(np.abs(G @ out - rhs))
+    assert residual <= 1e-10
+
+
+def test_supernodal_profile_reports_single_thread_blas(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    rng = np.random.default_rng(16)
+    m, n = 48, 120
+    A = (
+        scipy.sparse.random(
+            m,
+            n,
+            density=0.08,
+            random_state=rng,
+            data_rvs=lambda size: rng.uniform(-1.5, 1.5, size),
+        ).tocsr()
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    )
+    matrix = from_scipy_sparse(scipy.sparse.csr_matrix(A))
+    d = rng.uniform(0.25, 2.0, n)
+    rhs = rng.uniform(-1, 1, m)
+    monkeypatch.setenv("LINPROGX_SUPERNODAL_PROFILE", "1")
+
+    matrix.normal_equations_solve(d.tolist(), rhs.tolist(), 1e-7, True)
+
+    captured = capfd.readouterr()
+    assert "supernodal profile:" in captured.err
+    assert "blas_threads=1" in captured.err
+
+
 def test_ipm_threads_kwarg_bit_identical() -> None:
     # the threaded tail GEMM partitions rows in 4-aligned chunks so each
     # output element is computed wholly by one thread in the same order
@@ -531,6 +603,97 @@ def _build_sparse_csr(m: int, n: int, per_col: int, seed: int) -> scipy.sparse.c
     return scipy.sparse.csr_matrix((data, (rows, cols)), shape=(m, n))
 
 
+def _reference_supernode_symbolic(
+    A: scipy.sparse.csr_matrix,
+) -> list[tuple[int, list[int], list[tuple[int, list[int], list[int], list[int], list[int]]]]]:
+    G = (A @ A.T).tocsc()
+    G.setdiag(1.0)
+    G.eliminate_zeros()
+    perm = np.array(_csparse.min_degree(G.indptr.tolist(), G.indices.tolist()))
+    Gp = G[perm][:, perm].tocsc()
+    m = Gp.shape[0]
+    parent = np.full(m, -1, dtype=np.int64)
+    ancestor = np.full(m, -1, dtype=np.int64)
+    for k in range(m):
+        for p in range(Gp.indptr[k], Gp.indptr[k + 1]):
+            i = int(Gp.indices[p])
+            while i != -1 and i < k:
+                nxt = int(ancestor[i])
+                ancestor[i] = k
+                if nxt == -1:
+                    parent[i] = k
+                i = nxt
+
+    col_rows: list[np.ndarray] = []
+    below = [set[int]() for _ in range(m)]
+    for k in range(m):
+        reach: set[int] = set()
+        for p in range(Gp.indptr[k], Gp.indptr[k + 1]):
+            i = int(Gp.indices[p])
+            while i < k and i not in reach:
+                reach.add(i)
+                i = int(parent[i])
+        for i in reach:
+            below[i].add(k)
+        below[k].add(k)
+    for rows in below:
+        col_rows.append(np.array(sorted(rows), dtype=np.int64))
+
+    nchild = np.zeros(m, dtype=np.int64)
+    for p in parent:
+        if p >= 0:
+            nchild[p] += 1
+    starts: list[int] = []
+    for j in range(m):
+        merges_previous = (
+            j > 0
+            and parent[j - 1] == j
+            and nchild[j] == 1
+            and len(col_rows[j - 1]) == len(col_rows[j]) + 1
+        )
+        if not merges_previous:
+            starts.append(j)
+    starts.append(m)
+
+    out: list[
+        tuple[int, list[int], list[tuple[int, list[int], list[int], list[int], list[int]]]]
+    ] = []
+    snode_rows = [col_rows[starts[s]].tolist() for s in range(len(starts) - 1)]
+    for s, rows_s_list in enumerate(snode_rows):
+        j0, j1 = starts[s], starts[s + 1]
+        rows_s = np.array(rows_s_list, dtype=np.int64)
+        updates: list[tuple[int, list[int], list[int], list[int], list[int]]] = []
+        for source in range(s):
+            k0, k1 = starts[source], starts[source + 1]
+            width = k1 - k0
+            rows_k = np.array(snode_rows[source], dtype=np.int64)
+            pivot_source_positions: list[int] = []
+            pivot_columns: list[int] = []
+            target_source_positions: list[int] = []
+            target_row_positions: list[int] = []
+            for pos in range(width, len(rows_k)):
+                row = int(rows_k[pos])
+                if j0 <= row < j1:
+                    pivot_source_positions.append(pos)
+                    pivot_columns.append(row - j0)
+                target_pos = int(np.searchsorted(rows_s, row))
+                if target_pos < len(rows_s) and int(rows_s[target_pos]) == row:
+                    target_source_positions.append(pos)
+                    target_row_positions.append(target_pos)
+            if pivot_source_positions and target_source_positions:
+                updates.append(
+                    (
+                        source,
+                        pivot_source_positions,
+                        pivot_columns,
+                        target_source_positions,
+                        target_row_positions,
+                    )
+                )
+        out.append((j0, rows_s_list, updates))
+    return out
+
+
 def test_supernode_partition_covers_all_columns() -> None:
     # the fundamental supernode sizes must tile the columns exactly
     A = _build_sparse_csr(40, 160, 4, seed=11)
@@ -564,3 +727,27 @@ def test_supernode_partition_on_cre_a_fixture() -> None:
     sizes = from_scipy_sparse(A).supernode_sizes()
     assert sum(sizes) == A.shape[0]
     assert max(sizes) > 1
+
+
+def test_supernode_symbolic_updates_match_reference() -> None:
+    rng = np.random.default_rng(1)
+    m, n = 32, 96
+    random_part = scipy.sparse.random(
+        m,
+        n,
+        density=0.06,
+        random_state=rng,
+        data_rvs=lambda size: rng.uniform(0.5, 2.0, size),
+    ).tocsr()
+    A = (
+        random_part
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    ).tocsr()
+
+    expected = _reference_supernode_symbolic(A)
+    actual = from_scipy_sparse(A).supernode_symbolic_structure()
+
+    assert actual == expected
+    assert sum(len(updates) for _, _, updates in actual) > 0

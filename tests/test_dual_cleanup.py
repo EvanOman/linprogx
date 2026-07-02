@@ -17,7 +17,8 @@ import pytest
 import scipy.sparse as sp
 from scipy.io import loadmat
 
-from linprogx.sparse import SparseLPProblem, SparseSolver, from_scipy_sparse
+from linprogx.presolve import postsolve_x, presolve_eq_box
+from linprogx.sparse import SparseLPProblem, SparseSolver, csr_matrix, from_scipy_sparse
 
 CRE_A_PATH = Path(__file__).parent / "data" / "lp_cre_a.mat"
 CRE_A_PUBLISHED_OBJECTIVE = 23595407.06  # Gurobi at 1e-8 (github.com/SkyLiu0/NETLIB)
@@ -37,40 +38,65 @@ def load_cre_a():
 
 def test_dual_cleanup_certifies_cre_a_ipm() -> None:
     A, b, c, lo, hi = load_cre_a()
-    matrix = from_scipy_sparse(A)
+    reduction = presolve_eq_box(
+        A.shape[0],
+        A.shape[1],
+        A.indptr.tolist(),
+        A.indices.tolist(),
+        A.data.tolist(),
+        b.tolist(),
+        c.tolist(),
+        lo.tolist(),
+        hi.tolist(),
+    )
+    assert reduction is not None
+    matrix = csr_matrix(
+        reduction.rows, reduction.cols, reduction.indptr, reduction.indices, reduction.data
+    )
     result = matrix.solve_eq_box_ipm(
-        c.tolist(), b.tolist(), lo.tolist(), hi.tolist(), max_iter=200, tol=1e-9
+        reduction.c,
+        reduction.b,
+        reduction.lo,
+        reduction.hi,
+        max_iter=200,
+        tol=1e-9,
+        feas_tol=2e-5,
     )
 
     assert result["status"] == "optimal"
     assert result["dual_cleanup_rounds"] >= 1
-    # the stall-gated early acceptance certifies mid-run instead of
-    # crawling to the iteration limit
-    assert result["iterations"] < 150
-    rel_err = abs(result["objective"] - CRE_A_PUBLISHED_OBJECTIVE) / (
-        1.0 + abs(CRE_A_PUBLISHED_OBJECTIVE)
-    )
+    # Dual cleanup should fire in-loop once residuals are small enough;
+    # waiting for post-exit cleanup burns several extra factorizations.
+    assert result["iterations"] <= 36
+    x = np.array(postsolve_x([float(value) for value in result["x"]], reduction))
+    rel_err = abs(float(c @ x) - CRE_A_PUBLISHED_OBJECTIVE) / (1.0 + abs(CRE_A_PUBLISHED_OBJECTIVE))
     assert rel_err <= 1e-5
+    assert float(np.max(np.abs(A @ x - b))) <= 2e-5
 
     # independent soundness audit of the returned dual point: any
     # wrong-signed reduced cost must be tiny (the certificate's 1e-9
     # scaled tolerance maps to <=1e-6 relative in raw units), and the
     # Lagrangian bound built from the well-signed terms must close the
     # gap to the primal objective
-    x = np.array(result["x"])
     y = np.array(result["y"])
-    r = c - A.T @ y
-    cscale = 1.0 + np.abs(c)
-    inf_hi = hi >= 1e308
-    inf_lo = lo <= -1e308
+    reduced_a = sp.csr_matrix(
+        (reduction.data, reduction.indices, reduction.indptr),
+        shape=(reduction.rows, reduction.cols),
+    )
+    r = np.array(reduction.c) - reduced_a.T @ y
+    cscale = 1.0 + np.abs(reduction.c)
+    reduced_lo = np.array(reduction.lo)
+    reduced_hi = np.array(reduction.hi)
+    inf_hi = reduced_hi >= 1e308
+    inf_lo = reduced_lo <= -1e308
     bad_neg = (r < 0) & inf_hi
     bad_pos = (r > 0) & inf_lo
     assert np.all(np.abs(r[bad_neg]) <= 1e-6 * cscale[bad_neg])
     assert np.all(np.abs(r[bad_pos]) <= 1e-6 * cscale[bad_pos])
-    dobj = float(b @ y)
-    dobj += float(np.sum(np.where((r > 0) & ~inf_lo, r * lo, 0.0)))
-    dobj += float(np.sum(np.where((r < 0) & ~inf_hi, r * hi, 0.0)))
-    pobj = float(c @ x)
+    dobj = float(np.array(reduction.b) @ y)
+    dobj += float(np.sum(np.where((r > 0) & ~inf_lo, r * reduced_lo, 0.0)))
+    dobj += float(np.sum(np.where((r < 0) & ~inf_hi, r * reduced_hi, 0.0)))
+    pobj = float(np.array(reduction.c) @ np.array(result["x"]))
     assert abs(pobj - dobj) / (1.0 + abs(pobj)) <= 2e-5
 
 
@@ -93,6 +119,30 @@ def test_dual_cleanup_certifies_cre_a_auto_path() -> None:
     assert result.solution.status.value == "optimal"
     obj = float(c @ np.array(result.solution.x))
     assert abs(obj - CRE_A_PUBLISHED_OBJECTIVE) / (1.0 + abs(CRE_A_PUBLISHED_OBJECTIVE)) <= 1e-4
+
+
+def test_auto_ipm_polishes_raw_feasibility_before_falling_back() -> None:
+    A, b, c, lo, hi = load_cre_a()
+    bounds = [
+        (lb if lb > -1e308 else None, ub if ub < 1e308 else None)
+        for lb, ub in zip(lo, hi, strict=True)
+    ]
+    result = SparseSolver(algorithm="auto", eps=1e-9).solve(
+        SparseLPProblem(
+            c=c.tolist(),
+            A_eq=from_scipy_sparse(A),
+            b_eq=b.tolist(),
+            objective="min",
+            bounds=bounds,
+            name="cre_a",
+        )
+    )
+
+    x = np.array(result.solution.x)
+    residual = float(np.max(np.abs(A @ x - b)))
+    assert result.backend == "native-c-sparse-ipm"
+    assert result.solution.status.value == "optimal"
+    assert residual <= 1e-9
 
 
 def test_dual_cleanup_idle_on_clean_problem() -> None:

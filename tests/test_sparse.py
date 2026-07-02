@@ -145,6 +145,31 @@ def test_sparse_pdhg_equality_bounds_path() -> None:
     assert result.solution.x == pytest.approx([2.0, 1.0], abs=1e-3)
 
 
+def test_sparse_pdhg_accepts_public_threads_option() -> None:
+    a_eq = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
+
+    result = SparseSolver(
+        algorithm="pdhg",
+        eps=1e-5,
+        max_iterations=5_000,
+        objective_scale=1.0,
+        check_interval=5_000,
+        threads=4,
+    ).solve(
+        SparseLPProblem(
+            [1.0, 2.0],
+            A_eq=a_eq,
+            b_eq=[3.0],
+            objective="min",
+            bounds=[(0.0, 2.0), (0.0, 3.0)],
+        )
+    )
+
+    assert result.backend == "native-c-sparse-pdhg"
+    assert result.solution.status == Status.OPTIMAL
+    assert result.solution.objective_value == pytest.approx(4.0, abs=1e-3)
+
+
 def test_sparse_pdhg_respects_active_lower_bound() -> None:
     a_eq = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
 
@@ -191,6 +216,102 @@ def test_sparse_pdhg_zero_iteration_uses_projected_zero_start() -> None:
     assert result.solution.status == Status.OPTIMAL
     assert result.solution.objective_value == pytest.approx(0.0)
     assert result.solution.x == pytest.approx([0.0, 0.0])
+
+
+class _FallbackMatrix:
+    shape = (1, 1)
+
+    def __init__(self) -> None:
+        self.pdhg_calls = 0
+
+    def solve_eq_box_ipm(self, *args: object, **kwargs: object) -> dict[str, object]:
+        return {
+            "status": "iteration_limit",
+            "objective": 1.0,
+            "max_primal_residual": 0.0,
+            "rel_primal_residual": 0.0,
+            "rel_dual_residual": 1e-4,
+            "mu": 1e-8,
+            "iterations": 12,
+            "x": [1.0],
+            "y": [0.0],
+        }
+
+    def solve_eq_box_pdhg(self, *args: object, **kwargs: object) -> dict[str, object]:
+        self.pdhg_calls += 1
+        return {
+            "status": "iteration_limit",
+            "objective": 0.0,
+            "max_primal_residual": 9.0,
+            "iterations": 50,
+            "objective_scale": 1.0,
+            "x": [10.0],
+            "y": [0.0],
+        }
+
+    def matvec(self, x: list[float]) -> list[float]:
+        return [x[0]]
+
+
+class _PdhgThreadMatrix:
+    shape = (1, 1)
+
+    def __init__(self) -> None:
+        self.threads: int | None = None
+
+    def solve_eq_box_pdhg(self, *args: object, **kwargs: object) -> dict[str, object]:
+        threads = kwargs["threads"]
+        assert isinstance(threads, int)
+        self.threads = threads
+        return {
+            "status": "optimal",
+            "objective": 1.0,
+            "max_primal_residual": 0.0,
+            "iterations": 1,
+            "objective_scale": 1.0,
+            "x": [1.0],
+            "y": [0.0],
+        }
+
+    def matvec(self, x: list[float]) -> list[float]:
+        return [x[0]]
+
+
+def test_auto_skips_pdhg_when_ipm_candidate_is_feasible_but_uncertified() -> None:
+    matrix = _FallbackMatrix()
+
+    result = SparseSolver(algorithm="auto", eps=1e-6, presolve=False).solve(
+        SparseLPProblem(
+            [1.0],
+            A_eq=matrix,
+            b_eq=[1.0],
+            objective="min",
+            bounds=[(0.0, None)],
+        )
+    )
+
+    assert result.backend == "native-c-sparse-ipm"
+    assert result.solution.status == Status.ITERATION_LIMIT
+    assert result.solution.x == [1.0]
+    assert "best feasible IPM candidate" in result.solution.message
+    assert matrix.pdhg_calls == 0
+
+
+def test_pdhg_public_route_defaults_to_four_threads() -> None:
+    matrix = _PdhgThreadMatrix()
+
+    result = SparseSolver(algorithm="pdhg", eps=1e-6, presolve=False).solve(
+        SparseLPProblem(
+            [1.0],
+            A_eq=matrix,
+            b_eq=[1.0],
+            objective="min",
+            bounds=[(0.0, None)],
+        )
+    )
+
+    assert result.solution.status == Status.OPTIMAL
+    assert matrix.threads == 4
 
 
 def test_sparse_problem_validation() -> None:
@@ -373,3 +494,101 @@ def test_pdhg_threads_kwarg_bit_identical() -> None:
     assert r1["iterations"] == r4["iterations"]
     assert r1["x"] == r4["x"]
     assert r1["y"] == r4["y"]
+
+
+def test_pdhg_profile_env_emits_timing_summary(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
+    monkeypatch.setenv("LINPROGX_PDHG_PROFILE", "1")
+
+    result = matrix.solve_eq_box_pdhg(
+        [1.0, 2.0],
+        [3.0],
+        [0.0, 0.0],
+        [2.0, 3.0],
+        max_iter=4,
+        tol=1e-12,
+        check_interval=4,
+    )
+
+    captured = capfd.readouterr()
+    assert result["iterations"] == 4
+    assert "pdhg profile:" in captured.err
+    assert "iterations=4" in captured.err
+    assert "trial_primal=" in captured.err
+    assert "trial_dual=" in captured.err
+
+
+def test_pdhg_thread_pool_grows_and_reports_capacity(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
+    monkeypatch.setenv("LINPROGX_PDHG_PROFILE", "1")
+    kwargs = dict(max_iter=4, tol=1e-12, check_interval=4)
+
+    matrix.solve_eq_box_pdhg(
+        [1.0, 2.0],
+        [3.0],
+        [0.0, 0.0],
+        [2.0, 3.0],
+        **kwargs,
+        threads=2,
+    )
+    capfd.readouterr()
+
+    matrix.solve_eq_box_pdhg(
+        [1.0, 2.0],
+        [3.0],
+        [0.0, 0.0],
+        [2.0, 3.0],
+        **kwargs,
+        threads=4,
+    )
+
+    captured = capfd.readouterr()
+    assert "threads=4" in captured.err
+    assert "pool_threads=4" in captured.err
+
+
+def test_pdhg_cleanup_stops_early_when_certificate_is_close() -> None:
+    import numpy as np
+    import scipy.sparse
+
+    from linprogx.sparse import from_scipy_sparse
+
+    rng = np.random.default_rng(0)
+    rows, cols = 50, 160
+    matrix_data = scipy.sparse.random(
+        rows,
+        cols,
+        density=0.06,
+        random_state=rng,
+        data_rvs=lambda size: rng.uniform(-2.0, 2.0, size),
+    ).tocsr()
+    matrix_data = (
+        matrix_data
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(rows), scipy.sparse.csr_matrix((rows, cols - rows))]
+        ).tocsr()
+    )
+    x_feas = rng.uniform(0.0, 2.0, cols)
+    x_feas[rng.random(cols) < 0.35] = 0.0
+    b = matrix_data @ x_feas
+    c = rng.uniform(0.1, 2.0, cols)
+    matrix = from_scipy_sparse(matrix_data)
+
+    result = matrix.solve_eq_box_pdhg(
+        c.tolist(),
+        b.tolist(),
+        [0.0] * cols,
+        [float("inf")] * cols,
+        max_iter=900,
+        tol=1e-5,
+        check_interval=64,
+        threads=1,
+    )
+
+    assert result["status"] == "optimal"
+    assert result["iterations"] <= 640
+    assert result["max_primal_residual"] <= 1e-5

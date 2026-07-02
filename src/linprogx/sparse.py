@@ -16,6 +16,11 @@ from linprogx.types import ObjectiveSense, Solution, Status
 SparseSense = Literal["<=", ">=", "="]
 
 
+def _max_equality_residual(matrix: Any, x: list[float], b: list[float]) -> float:
+    ax = matrix.matvec(x)
+    return max((abs(float(lhs) - rhs) for lhs, rhs in zip(ax, b, strict=True)), default=0.0)
+
+
 @dataclass(frozen=True)
 class SparseLPProblem:
     c: list[float]
@@ -87,6 +92,7 @@ class SparseSolver:
     #: back to PDHG if the ordering or the factor turns out too expensive
     #: (minimum-degree work budget and a factor-flops cap).
     AUTO_IPM_MAX_ROWS = 50_000
+    DEFAULT_PDHG_THREADS = 4
 
     def __init__(
         self,
@@ -97,13 +103,18 @@ class SparseSolver:
         objective_scale: float | None = None,
         check_interval: int | None = None,
         presolve: bool = True,
+        threads: int | None = None,
     ) -> None:
+        if threads is not None and threads < 0:
+            msg = "threads must be nonnegative"
+            raise ValueError(msg)
         self.eps = eps
         self.max_iterations = max_iterations
         self.algorithm = algorithm
         self.objective_scale = objective_scale
         self.check_interval = check_interval
         self.presolve = presolve
+        self.threads = threads
 
     def solve(self, problem: SparseLPProblem) -> SparseSolveResult:
         start = time.perf_counter()
@@ -159,6 +170,7 @@ class SparseSolver:
             chosen = "ipm" if rows <= self.AUTO_IPM_MAX_ROWS else "pdhg"
 
         result = None
+        feasible_ipm_candidate: tuple[list[float], float, int, float] | None = None
         if chosen == "ipm":
             result = matrix.solve_eq_box_ipm(
                 solve_c,
@@ -167,7 +179,27 @@ class SparseSolver:
                 solve_hi,
                 max_iter=min(self.max_iterations, 200),
                 tol=min(self.eps, 1e-9),
+                threads=0 if self.threads is None else self.threads,
+                feas_tol=self.eps,
             )
+            if result["status"] == "optimal":
+                candidate_x = [float(value) for value in result["x"]]
+                if reduction is not None:
+                    candidate_x = postsolve_x(candidate_x, reduction)
+                if _max_equality_residual(problem.A_eq, candidate_x, b) > self.eps:
+                    result["status"] = "raw_feasibility_failure"
+            elif result["status"] != "factor_too_dense":
+                candidate_x = [float(value) for value in result["x"]]
+                if reduction is not None:
+                    candidate_x = postsolve_x(candidate_x, reduction)
+                candidate_residual = _max_equality_residual(problem.A_eq, candidate_x, b)
+                if candidate_residual <= self.eps:
+                    feasible_ipm_candidate = (
+                        candidate_x,
+                        sum(v * coef for v, coef in zip(candidate_x, problem.c, strict=True)),
+                        int(result["iterations"]),
+                        candidate_residual,
+                    )
             if result["status"] != "optimal" and result["status"] != "factor_too_dense":
                 # The fast BLAS dpotrf tail factor lacks the hand
                 # kernel's per-pivot floor, so on degenerate endgames it
@@ -190,7 +222,9 @@ class SparseSolver:
                         rhi,
                         max_iter=min(self.max_iterations, 200),
                         tol=min(self.eps, 1e-9),
+                        threads=0 if self.threads is None else self.threads,
                         blas=False,
+                        feas_tol=self.eps,
                     )
                     if retry_result["status"] == "optimal":
                         is_raw = rmatrix is problem.A_eq and reduction is not None
@@ -200,7 +234,9 @@ class SparseSolver:
                         else:
                             rx = postsolve_x(rx, reduction) if reduction is not None else rx
                             objective = sum(v * coef for v, coef in zip(rx, problem.c, strict=True))
-                        residual = float(retry_result["max_primal_residual"])
+                        residual = _max_equality_residual(problem.A_eq, rx, b)
+                        if residual > self.eps:
+                            continue
                         return Solution(
                             Status.OPTIMAL,
                             x=rx,
@@ -211,6 +247,18 @@ class SparseSolver:
                                 f"max equality residual {residual:.3e}"
                             ),
                         ), "native-c-sparse-ipm"
+                if algorithm == "auto" and feasible_ipm_candidate is not None:
+                    fx, fobj, fiters, fresidual = feasible_ipm_candidate
+                    return Solution(
+                        Status.ITERATION_LIMIT,
+                        fobj,
+                        fx,
+                        message=(
+                            "native sparse auto kept the best feasible IPM candidate; "
+                            f"max equality residual {fresidual:.3e}"
+                        ),
+                        iterations=fiters,
+                    ), "native-c-sparse-ipm"
             if result["status"] != "optimal" and (
                 algorithm == "auto" or result["status"] == "factor_too_dense"
             ):
@@ -227,6 +275,7 @@ class SparseSolver:
                 tol=self.eps,
                 check_interval=self.check_interval or 250,
                 objective_scale=0.0 if self.objective_scale is None else self.objective_scale,
+                threads=self.DEFAULT_PDHG_THREADS if self.threads is None else self.threads,
             )
         backend = f"native-c-sparse-{chosen}"
 
@@ -236,13 +285,33 @@ class SparseSolver:
             x = postsolve_x(x, reduction)
             objective = sum(value * coef for value, coef in zip(x, problem.c, strict=True))
 
-        status = Status.OPTIMAL if result["status"] == "optimal" else Status.ITERATION_LIMIT
-        residual = float(result["max_primal_residual"])
+        residual = _max_equality_residual(problem.A_eq, x, b)
+        status = (
+            Status.OPTIMAL
+            if result["status"] == "optimal" and residual <= self.eps
+            else Status.ITERATION_LIMIT
+        )
         presolve_note = (
             f"; presolve removed {reduction.removed_rows} rows and {reduction.removed_cols} cols"
             if reduction is not None
             else ""
         )
+        if (
+            status != Status.OPTIMAL
+            and feasible_ipm_candidate is not None
+            and residual > feasible_ipm_candidate[3]
+        ):
+            x, objective, iterations, residual = feasible_ipm_candidate
+            return Solution(
+                Status.ITERATION_LIMIT,
+                objective,
+                x,
+                message=(
+                    "native sparse auto kept the best feasible IPM candidate after "
+                    f"fallback failed; max equality residual {residual:.3e}{presolve_note}"
+                ),
+                iterations=iterations,
+            ), "native-c-sparse-ipm"
         if chosen == "ipm":
             verb = "converged" if status == Status.OPTIMAL else "hit the iteration limit"
             message = (

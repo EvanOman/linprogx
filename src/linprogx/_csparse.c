@@ -11,15 +11,30 @@
 /* Fortran LAPACK (LP64, column-major), declared directly so no
  * lapacke header is required. OpenBLAS exports these symbols. */
 extern void dpotrf_(const char *uplo, const int *n, double *a, const int *lda, int *info);
+extern void dgemm_(const char *transa, const char *transb, const int *m, const int *n,
+                   const int *k, const double *alpha, const double *a, const int *lda,
+                   const double *b, const int *ldb, const double *beta, double *c,
+                   const int *ldc);
+extern void dtrsm_(const char *side, const char *uplo, const char *transa,
+                   const char *diag, const int *m, const int *n, const double *alpha,
+                   const double *a, const int *lda, double *b, const int *ldb);
 extern void openblas_set_num_threads(int n);
-static int g_blas_threads_set = 0;
-static void ensure_blas_threads(void) {
-    if (!g_blas_threads_set) {
-        /* 4 threads measured fastest on the dense-tail sizes (1000-1600);
-         * the full core count oversubscribes and is erratic. */
-        openblas_set_num_threads(4);
-        g_blas_threads_set = 1;
+static int g_blas_threads_current = 0;
+static void set_blas_threads(int n) {
+    if (g_blas_threads_current != n) {
+        openblas_set_num_threads(n);
+        g_blas_threads_current = n;
     }
+}
+static void ensure_blas_threads(void) {
+    /* 4 threads measured fastest on the monolithic dense-tail sizes
+     * (1000-1600); the full core count oversubscribes and is erratic. */
+    set_blas_threads(4);
+}
+static void ensure_supernodal_blas_threads(void) {
+    /* The supernodal path issues many small panel BLAS calls; one OpenBLAS
+     * thread avoids thread-team overhead and measured faster on maros_r7. */
+    set_blas_threads(1);
 }
 #endif
 #include <stddef.h>
@@ -27,6 +42,12 @@ static void ensure_blas_threads(void) {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static double linprogx_monotonic_seconds(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
 
 typedef struct {
     PyObject_HEAD
@@ -123,7 +144,8 @@ typedef void (*pool_job_fn)(void *ctx, int tid, int nthreads);
 
 typedef struct {
     pthread_t workers[POOL_MAX_THREADS - 1];
-    int nthreads;             /* total, including the calling thread */
+    int pool_threads;         /* created capacity, including caller */
+    int active_threads;       /* threads participating in this job */
     int started;
     pool_job_fn fn;
     void *ctx;
@@ -142,13 +164,14 @@ static int g_tail_use_blas = 1;
 
 typedef struct {
     int tid;
+    int start_generation;
 } PoolWorkerArg;
 
 static PoolWorkerArg g_pool_args[POOL_MAX_THREADS - 1];
 
 static void *pool_worker_main(void *arg) {
     PoolWorkerArg *wa = (PoolWorkerArg *)arg;
-    int seen = 0;
+    int seen = wa->start_generation;
     for (;;) {
         int spins = 0;
         while (atomic_load_explicit(&g_pool.generation, memory_order_acquire) == seen) {
@@ -161,7 +184,10 @@ static void *pool_worker_main(void *arg) {
             }
         }
         seen = atomic_load_explicit(&g_pool.generation, memory_order_acquire);
-        g_pool.fn(g_pool.ctx, wa->tid, g_pool.nthreads);
+        int active_threads = g_pool.active_threads;
+        if (wa->tid < active_threads) {
+            g_pool.fn(g_pool.ctx, wa->tid, active_threads);
+        }
         atomic_fetch_add_explicit(&g_pool.done_count, 1, memory_order_release);
     }
 }
@@ -174,21 +200,35 @@ static int pool_ensure(int nthreads) {
         return 1;
     }
     if (g_pool.started) {
-        return g_pool.nthreads < nthreads ? g_pool.nthreads : nthreads;
+        if (g_pool.pool_threads < nthreads) {
+            int have = g_pool.pool_threads;
+            int start_generation = atomic_load_explicit(&g_pool.generation, memory_order_acquire);
+            for (int t = have - 1; t < nthreads - 1; t++) {
+                g_pool_args[t].tid = t + 1;
+                g_pool_args[t].start_generation = start_generation;
+                if (pthread_create(&g_pool.workers[t], NULL, pool_worker_main,
+                                   &g_pool_args[t]) != 0) {
+                    break;
+                }
+                g_pool.pool_threads = t + 2;
+            }
+        }
+        return g_pool.pool_threads < nthreads ? g_pool.pool_threads : nthreads;
     }
-    g_pool.nthreads = nthreads;
+    g_pool.pool_threads = 1;
+    g_pool.active_threads = 1;
     atomic_store(&g_pool.generation, 0);
     atomic_store(&g_pool.shutdown, 0);
     for (int t = 0; t < nthreads - 1; t++) {
         g_pool_args[t].tid = t + 1;
+        g_pool_args[t].start_generation = 0;
         if (pthread_create(&g_pool.workers[t], NULL, pool_worker_main, &g_pool_args[t]) != 0) {
-            /* failed mid-way: fall back to however many we got */
-            g_pool.nthreads = t + 1;
             break;
         }
+        g_pool.pool_threads = t + 2;
     }
     g_pool.started = 1;
-    return g_pool.nthreads;
+    return g_pool.pool_threads < nthreads ? g_pool.pool_threads : nthreads;
 }
 
 static void pool_run(pool_job_fn fn, void *ctx) {
@@ -197,18 +237,18 @@ static void pool_run(pool_job_fn fn, void *ctx) {
         fn(ctx, 0, 1);
         return;
     }
-    if (n > g_pool.nthreads) {
-        n = g_pool.nthreads;
+    if (n > g_pool.pool_threads) {
+        n = g_pool.pool_threads;
     }
     g_pool.fn = fn;
     g_pool.ctx = ctx;
-    g_pool.nthreads = g_pool.nthreads; /* fixed at start */
+    g_pool.active_threads = n;
     atomic_store_explicit(&g_pool.done_count, 0, memory_order_relaxed);
     atomic_fetch_add_explicit(&g_pool.generation, 1, memory_order_release);
-    fn(ctx, 0, g_pool.nthreads);
+    fn(ctx, 0, n);
     int spins = 0;
     while (atomic_load_explicit(&g_pool.done_count, memory_order_acquire) <
-           g_pool.nthreads - 1) {
+           g_pool.pool_threads - 1) {
         if (++spins > 4096) {
             sched_yield();
             spins = 0;
@@ -272,6 +312,14 @@ typedef struct {
     double *out;
 } MatvecJob;
 
+typedef struct {
+    const ScaledOp *op;
+    const double *y;
+    const double *x;
+    double *out;
+    double *x_sum;
+} TransposeAccumJob;
+
 static void matvec_job(void *vctx, int tid, int nthreads) {
     MatvecJob *ctx = (MatvecJob *)vctx;
     const ScaledOp *op = ctx->op;
@@ -320,6 +368,39 @@ static void transpose_matvec_job(void *vctx, int tid, int nthreads) {
 static void scaled_op_transpose_matvec(const ScaledOp *op, const double *restrict y, double *restrict out) {
     MatvecJob ctx = {op, (const double *)y, out};
     pool_run(transpose_matvec_job, &ctx);
+}
+
+static void transpose_matvec_accum_x_job(void *vctx, int tid, int nthreads) {
+    TransposeAccumJob *ctx = (TransposeAccumJob *)vctx;
+    const ScaledOp *op = ctx->op;
+    const Py_ssize_t *restrict col_start = op->col_start;
+    const int32_t *restrict row_index = op->row_index;
+    const double *restrict csc_data = op->csc_data;
+    const double *restrict y = ctx->y;
+    const double *restrict x = ctx->x;
+    double *restrict out = ctx->out;
+    double *restrict x_sum = ctx->x_sum;
+    Py_ssize_t begin, end_col;
+    pool_range(col_start, op->cols, tid, nthreads, &begin, &end_col);
+    for (Py_ssize_t col = begin; col < end_col; col++) {
+        double total = 0.0;
+        Py_ssize_t end = col_start[col + 1];
+        for (Py_ssize_t offset = col_start[col]; offset < end; offset++) {
+            total += csc_data[offset] * y[row_index[offset]];
+        }
+        out[col] = total;
+        x_sum[col] += x[col];
+    }
+}
+
+static void scaled_op_transpose_matvec_accum_x(
+    const ScaledOp *op,
+    const double *restrict y,
+    double *restrict out,
+    const double *restrict x,
+    double *restrict x_sum) {
+    TransposeAccumJob ctx = {op, y, x, out, x_sum};
+    pool_run(transpose_matvec_accum_x_job, &ctx);
 }
 
 static double l2_norm(const double *values, Py_ssize_t count) {
@@ -1103,12 +1184,32 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     double *y_restart = NULL;
     double *best_x = NULL;
     double *best_y = NULL;
+    double *cleanup_x = NULL;
+    double *cleanup_ax = NULL;
+    double *cleanup_aty = NULL;
     double *plateau_kkt_buf = NULL;
     double *operator_data = NULL;
     double *operator_csc_data = NULL;
     int32_t *op_col_index = NULL;
     int32_t *op_row_index = NULL;
     unsigned char *bound_kind = NULL;
+    int pdhg_profile = getenv("LINPROGX_PDHG_PROFILE") != NULL;
+    double profile_start = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
+    double profile_setup = 0.0;
+    double profile_norm = 0.0;
+    double profile_initial_eval = 0.0;
+    double profile_loop = 0.0;
+    double profile_step = 0.0;
+    double profile_trial_primal = 0.0;
+    double profile_trial_col_reduce = 0.0;
+    double profile_trial_dual = 0.0;
+    double profile_trial_row_reduce = 0.0;
+    double profile_trial_serial = 0.0;
+    double profile_transpose = 0.0;
+    double profile_accumulate = 0.0;
+    double profile_eval = 0.0;
+    double profile_restart = 0.0;
+    double profile_cleanup = 0.0;
 
     c = calloc((size_t)self->cols, sizeof(double));
     b = calloc((size_t)self->rows, sizeof(double));
@@ -1135,6 +1236,9 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     y_restart = calloc((size_t)self->rows, sizeof(double));
     best_x = calloc((size_t)self->cols, sizeof(double));
     best_y = calloc((size_t)self->rows, sizeof(double));
+    cleanup_x = calloc((size_t)self->cols, sizeof(double));
+    cleanup_ax = calloc((size_t)self->rows, sizeof(double));
+    cleanup_aty = calloc((size_t)self->cols, sizeof(double));
     operator_data = calloc((size_t)self->nnz, sizeof(double));
     operator_csc_data = calloc((size_t)self->nnz, sizeof(double));
     op_col_index = calloc((size_t)self->nnz, sizeof(int32_t));
@@ -1152,6 +1256,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         x_sum == NULL || y_sum == NULL || avg_x == NULL || avg_y == NULL ||
         x_restart == NULL || y_restart == NULL ||
         best_x == NULL || best_y == NULL ||
+        cleanup_x == NULL || cleanup_ax == NULL || cleanup_aty == NULL ||
         operator_data == NULL || operator_csc_data == NULL ||
         op_col_index == NULL || op_row_index == NULL || bound_kind == NULL) {
         PyErr_NoMemory();
@@ -1283,8 +1388,15 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         operator_csc_data,
     };
 
+    if (pdhg_profile) {
+        profile_setup = linprogx_monotonic_seconds() - profile_start;
+    }
     double norm;
+    double profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
     norm = estimate_scaled_operator_norm(&op);
+    if (pdhg_profile) {
+        profile_norm += linprogx_monotonic_seconds() - profile_phase;
+    }
     if (norm < 0.0) {
         PyErr_NoMemory();
         goto done;
@@ -1364,9 +1476,13 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     for (Py_ssize_t i = 0; i < plateau_buf_size; i++) {
         plateau_kkt_buf[i] = INFINITY;
     }
+    profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
     evaluate_kkt(
         &op, x, y, c, b, lo, hi, bound_kind,
         col_scale, row_scale, scaled_b, b_l2, c_l2, ax, aty, &final_ev);
+    if (pdhg_profile) {
+        profile_initial_eval += linprogx_monotonic_seconds() - profile_phase;
+    }
 
     if (kkt_terminated(&final_ev, tol, c_inf)) {
         status = "optimal";
@@ -1390,6 +1506,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 g_kernel_threads = 1;
             }
         }
+        double profile_loop_start = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
         Py_BEGIN_ALLOW_THREADS
         double mu_start = final_ev.kkt;
         double mu_last = final_ev.kkt;
@@ -1402,6 +1519,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
              * and retry. Accepted steps may grow eta slightly. */
             double shrink = 1.0 - pow((double)iter + 1.0, -0.3);
             double grow = 1.0 + pow((double)iter + 1.0, -0.6);
+            double profile_step_start = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
             for (int trial = 0; trial < 60; trial++) {
                 step_trials++;
                 double trial_tau = eta / omega;
@@ -1417,22 +1535,39 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 if (g_kernel_threads > 1) {
                     PrimalTrialJob pjob = {self->cols, trial_tau, scaled_lo, scaled_hi,
                                            aty, scaled_c, x, xbar, dxsq_col};
+                    profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
                     pool_run(primal_trial_job, &pjob);
+                    if (pdhg_profile) {
+                        profile_trial_primal += linprogx_monotonic_seconds() - profile_phase;
+                    }
                     const double *restrict dxsq = dxsq_col;
+                    profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
                     for (Py_ssize_t col = 0; col < self->cols; col++) {
                         dx_sq += dxsq[col];
+                    }
+                    if (pdhg_profile) {
+                        profile_trial_col_reduce += linprogx_monotonic_seconds() - profile_phase;
                     }
                     DualTrialJob djob = {self->rows, trial_sigma, &op, xbar, ax,
                                          scaled_b, y, ax_trial, y_trial, dysq_row,
                                          inter_row};
+                    profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
                     pool_run(dual_trial_job, &djob);
+                    if (pdhg_profile) {
+                        profile_trial_dual += linprogx_monotonic_seconds() - profile_phase;
+                    }
                     const double *restrict dysq = dysq_row;
                     const double *restrict inter = inter_row;
+                    profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
                     for (Py_ssize_t row = 0; row < self->rows; row++) {
                         dy_sq += dysq[row];
                         interaction += inter[row];
                     }
+                    if (pdhg_profile) {
+                        profile_trial_row_reduce += linprogx_monotonic_seconds() - profile_phase;
+                    }
                 } else {
+                    profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
                     const double *restrict lo_v = scaled_lo;
                     const double *restrict hi_v = scaled_hi;
                     const double *restrict g_v = aty;
@@ -1469,6 +1604,9 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                         dy_sq += dy * dy;
                         interaction += dy * (axr - ax[row]);
                     }
+                    if (pdhg_profile) {
+                        profile_trial_serial += linprogx_monotonic_seconds() - profile_phase;
+                    }
                 }
                 double movement = 0.5 * omega * dx_sq + 0.5 * dy_sq / omega;
                 double inter_abs = fabs(interaction);
@@ -1489,6 +1627,9 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 }
                 eta = shrink * eta_bar;
             }
+            if (pdhg_profile) {
+                profile_step += linprogx_monotonic_seconds() - profile_step_start;
+            }
             {
                 double *swap = x;
                 x = xbar;
@@ -1504,19 +1645,25 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 ax = ax_trial;
                 ax_trial = swap;
             }
-            scaled_op_transpose_matvec(&op, y, aty);
-            for (Py_ssize_t col = 0; col < self->cols; col++) {
-                x_sum[col] += x[col];
+            profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
+            scaled_op_transpose_matvec_accum_x(&op, y, aty, x, x_sum);
+            if (pdhg_profile) {
+                profile_transpose += linprogx_monotonic_seconds() - profile_phase;
             }
+            profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
             for (Py_ssize_t row = 0; row < self->rows; row++) {
                 y_sum[row] += y[row];
             }
             navg++;
             iterations = iter;
+            if (pdhg_profile) {
+                profile_accumulate += linprogx_monotonic_seconds() - profile_phase;
+            }
             if (iter % eval_interval != 0 && iter != max_iter) {
                 continue;
             }
 
+            profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
             KKTEval ev_current;
             KKTEval ev_average;
             evaluate_kkt(
@@ -1534,6 +1681,9 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             evaluate_kkt(
                 &op, avg_x, avg_y, c, b, lo, hi, bound_kind,
                 col_scale, row_scale, scaled_b, b_l2, c_l2, ax_trial, xbar, &ev_average);
+            if (pdhg_profile) {
+                profile_eval += linprogx_monotonic_seconds() - profile_phase;
+            }
             int best_is_average = ev_average.kkt < ev_current.kkt;
             KKTEval ev_best = best_is_average ? ev_average : ev_current;
 
@@ -1564,6 +1714,55 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 final_ev = ev_best;
                 status = "optimal";
                 break;
+            }
+            {
+                double gap_tol = tol *
+                    (1.0 + fabs(ev_best.primal_obj) + fabs(ev_best.dual_obj));
+                double dual_tol = tol * (1.0 + c_inf);
+                /* CGLS cleanup is a cheap polish on small/medium systems but
+                 * can cost more than the saved PDHG iterations on large LPs. */
+                if (self->rows <= 5000 &&
+                    ev_best.primal_res_max <= 10.0 * tol &&
+                    ev_best.dual_res_inf <= dual_tol &&
+                    fabs(ev_best.gap) <= gap_tol) {
+                    const double *cand_x = best_is_average ? avg_x : x;
+                    const double *cand_y = best_is_average ? avg_y : y;
+                    for (Py_ssize_t col = 0; col < self->cols; col++) {
+                        cleanup_x[col] = cand_x[col] * col_scale[col];
+                    }
+                    double cleanup_max = ev_best.primal_res_max;
+                    double cleanup_l2 = ev_best.primal_res_l2;
+                    profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
+                    active_set_cgls_cleanup(
+                        self, cleanup_x, b, lo, hi, bound_kind, tol,
+                        &cleanup_max, &cleanup_l2);
+                    if (pdhg_profile) {
+                        profile_cleanup += linprogx_monotonic_seconds() - profile_phase;
+                    }
+                    if (cleanup_max <= tol) {
+                        for (Py_ssize_t col = 0; col < self->cols; col++) {
+                            cleanup_x[col] /= col_scale[col];
+                        }
+                        KKTEval cleanup_ev;
+                        evaluate_kkt(
+                            &op, cleanup_x, cand_y, c, b, lo, hi, bound_kind,
+                            col_scale, row_scale, scaled_b, b_l2, c_l2,
+                            cleanup_ax, cleanup_aty, &cleanup_ev);
+                        if (kkt_terminated(&cleanup_ev, tol, c_inf)) {
+                            for (Py_ssize_t col = 0; col < self->cols; col++) {
+                                x[col] = cleanup_x[col];
+                            }
+                            if (best_is_average) {
+                                for (Py_ssize_t row = 0; row < self->rows; row++) {
+                                    y[row] = avg_y[row];
+                                }
+                            }
+                            final_ev = cleanup_ev;
+                            status = "optimal";
+                            break;
+                        }
+                    }
+                }
             }
 
             /* Plateau detection: if over the last plateau_window evals
@@ -1630,6 +1829,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             }
             mu_last = ev_best.kkt;
             if (do_restart) {
+                double profile_restart_start = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
                 const double *cand_x = best_is_average ? avg_x : x;
                 const double *cand_y = best_is_average ? avg_y : y;
                 if (adaptive_weight == 1) {
@@ -1741,9 +1941,15 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                 restarts++;
                 mu_start = ev_best.kkt;
                 mu_last = ev_best.kkt;
+                if (pdhg_profile) {
+                    profile_restart += linprogx_monotonic_seconds() - profile_restart_start;
+                }
             }
         }
         Py_END_ALLOW_THREADS
+        if (pdhg_profile) {
+            profile_loop += linprogx_monotonic_seconds() - profile_loop_start;
+        }
     }
 
     double max_residual = final_ev.primal_res_max;
@@ -1754,9 +1960,13 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     }
 
     if (max_residual > tol) {
+        profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
         Py_BEGIN_ALLOW_THREADS
         active_set_cgls_cleanup(self, x, b, lo, hi, bound_kind, tol, &max_residual, &l2_residual);
         Py_END_ALLOW_THREADS
+        if (pdhg_profile) {
+            profile_cleanup += linprogx_monotonic_seconds() - profile_phase;
+        }
     }
     /* Status follows the project's feasibility-based convention: the KKT
      * test can stop the loop early, but a primal-feasible final point is
@@ -1768,6 +1978,24 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     double objective = 0.0;
     for (Py_ssize_t col = 0; col < self->cols; col++) {
         objective += c[col] * x[col];
+    }
+
+    if (pdhg_profile) {
+        double profile_total = linprogx_monotonic_seconds() - profile_start;
+        fprintf(stderr,
+            "pdhg profile: rows=%zd cols=%zd nnz=%zd iterations=%zd restarts=%zd "
+            "trials=%zd threads=%d pool_threads=%d status=%s total=%.6f setup=%.6f norm=%.6f "
+            "initial_eval=%.6f loop=%.6f step=%.6f transpose=%.6f accumulate=%.6f "
+            "eval=%.6f restart=%.6f cleanup=%.6f trial_primal=%.6f "
+            "trial_col_reduce=%.6f trial_dual=%.6f trial_row_reduce=%.6f "
+            "trial_serial=%.6f\n",
+            self->rows, self->cols, self->nnz, iterations, restarts, step_trials,
+            g_kernel_threads, g_pool.started ? g_pool.pool_threads : g_kernel_threads,
+            status, profile_total, profile_setup, profile_norm,
+            profile_initial_eval, profile_loop, profile_step, profile_transpose,
+            profile_accumulate, profile_eval, profile_restart, profile_cleanup,
+            profile_trial_primal, profile_trial_col_reduce, profile_trial_dual,
+            profile_trial_row_reduce, profile_trial_serial);
     }
 
     {
@@ -1865,6 +2093,9 @@ done:
     free(y_restart);
     free(best_x);
     free(best_y);
+    free(cleanup_x);
+    free(cleanup_ax);
+    free(cleanup_aty);
     free(operator_data);
     free(operator_csc_data);
     free(op_col_index);
@@ -1876,6 +2107,7 @@ done:
 static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
 static PyObject *CSRMatrix_supernode_sizes(CSRMatrixObject *self, PyObject *args);
+static PyObject *CSRMatrix_supernode_symbolic_structure(CSRMatrixObject *self, PyObject *args);
 
 static PyGetSetDef CSRMatrix_getset[] = {
     {"shape", (getter)CSRMatrix_shape, NULL, "matrix shape", NULL},
@@ -1893,6 +2125,7 @@ static PyMethodDef CSRMatrix_methods[] = {
     {"normal_equations_solve", (PyCFunction)CSRMatrix_normal_equations_solve, METH_VARARGS, "Solve (A diag(d) A' + delta I) x = rhs with the native sparse Cholesky."},
     {"solve_eq_box_ipm", (PyCFunction)CSRMatrix_solve_eq_box_ipm, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with a native interior point method."},
     {"supernode_sizes", (PyCFunction)CSRMatrix_supernode_sizes, METH_NOARGS, "Test hook: fundamental supernode sizes of the Cholesky factor of A A'."},
+    {"supernode_symbolic_structure", (PyCFunction)CSRMatrix_supernode_symbolic_structure, METH_NOARGS, "Test hook: supernodal row lists and descendant update maps."},
     {NULL}
 };
 
@@ -2304,7 +2537,39 @@ typedef struct {
      * supernodal numeric factor; computed but not yet used by refactor. */
     int32_t n_snodes;
     int32_t *snode_start;
+    int snode_symbolic_ready;
+    int32_t *col_snode;          /* column -> supernode id */
+    Py_ssize_t *snode_row_ptr;   /* row lists for each supernode panel */
+    int32_t *snode_rows;
+    Py_ssize_t *snode_panel_ptr; /* row-major (row position, column) -> Lx offset */
+    Py_ssize_t *snode_panel_lx;
+    Py_ssize_t *snode_panel_cx;
+    Py_ssize_t *snode_update_ptr; /* target supernode -> update range */
+    Py_ssize_t n_snode_updates;
+    struct SNodeUpdate *snode_updates;
+    int32_t *snode_update_pivot_srcpos;
+    int32_t *snode_update_pivot_col;
+    int32_t *snode_update_target_srcpos;
+    int32_t *snode_update_target_rowpos;
+    Py_ssize_t snode_panel_cap;
+    double *snode_panel;
+    Py_ssize_t snode_update_a_cap;
+    Py_ssize_t snode_update_b_cap;
+    Py_ssize_t snode_update_c_cap;
+    double *snode_update_a;
+    double *snode_update_b;
+    double *snode_update_c;
 } CholContext;
+
+typedef struct SNodeUpdate {
+    int32_t source;
+    int32_t pivot_col_first;
+    int pivot_cols_contiguous;
+    Py_ssize_t pivot_begin;
+    Py_ssize_t pivot_end;
+    Py_ssize_t target_begin;
+    Py_ssize_t target_end;
+} SNodeUpdate;
 
 static void chol_free(CholContext *ctx) {
     if (ctx == NULL) {
@@ -2335,6 +2600,22 @@ static void chol_free(CholContext *ctx) {
     free(ctx->cap_rhs);
     free(ctx->Tdense);
     free(ctx->snode_start);
+    free(ctx->col_snode);
+    free(ctx->snode_row_ptr);
+    free(ctx->snode_rows);
+    free(ctx->snode_panel_ptr);
+    free(ctx->snode_panel_lx);
+    free(ctx->snode_panel_cx);
+    free(ctx->snode_update_ptr);
+    free(ctx->snode_updates);
+    free(ctx->snode_update_pivot_srcpos);
+    free(ctx->snode_update_pivot_col);
+    free(ctx->snode_update_target_srcpos);
+    free(ctx->snode_update_target_rowpos);
+    free(ctx->snode_panel);
+    free(ctx->snode_update_a);
+    free(ctx->snode_update_b);
+    free(ctx->snode_update_c);
     free(ctx);
 }
 
@@ -2383,6 +2664,315 @@ static int32_t chol_ereach(const CholContext *ctx, int32_t k) {
         }
     }
     return top;
+}
+
+static Py_ssize_t int32_lower_bound(const int32_t *values, Py_ssize_t n, int32_t target) {
+    Py_ssize_t lo = 0;
+    Py_ssize_t hi = n;
+    while (lo < hi) {
+        Py_ssize_t mid = lo + (hi - lo) / 2;
+        if (values[mid] < target) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+static void chol_count_snode_update_maps(
+    const CholContext *ctx, int32_t source, int32_t target,
+    Py_ssize_t *pivot_count, Py_ssize_t *target_count) {
+    int32_t k0 = ctx->snode_start[source];
+    int32_t k1 = ctx->snode_start[source + 1];
+    int32_t j0 = ctx->snode_start[target];
+    int32_t j1 = ctx->snode_start[target + 1];
+    Py_ssize_t src_begin = ctx->snode_row_ptr[source];
+    Py_ssize_t src_end = ctx->snode_row_ptr[source + 1];
+    Py_ssize_t target_begin = ctx->snode_row_ptr[target];
+    Py_ssize_t target_len = ctx->snode_row_ptr[target + 1] - target_begin;
+    const int32_t *src_rows = ctx->snode_rows + src_begin;
+    const int32_t *target_rows = ctx->snode_rows + target_begin;
+    Py_ssize_t pc = 0;
+    Py_ssize_t tc = 0;
+    for (Py_ssize_t pos = k1 - k0; pos < src_end - src_begin; pos++) {
+        int32_t row = src_rows[pos];
+        if (row >= j0 && row < j1) {
+            pc++;
+        }
+        Py_ssize_t target_pos = int32_lower_bound(target_rows, target_len, row);
+        if (target_pos < target_len && target_rows[target_pos] == row) {
+            tc++;
+        }
+    }
+    *pivot_count = pc;
+    *target_count = tc;
+}
+
+static void chol_fill_snode_update_maps(
+    CholContext *ctx, SNodeUpdate *update, int32_t target,
+    Py_ssize_t *pivot_at, Py_ssize_t *target_at) {
+    int32_t source = update->source;
+    int32_t k0 = ctx->snode_start[source];
+    int32_t k1 = ctx->snode_start[source + 1];
+    int32_t j0 = ctx->snode_start[target];
+    int32_t j1 = ctx->snode_start[target + 1];
+    Py_ssize_t src_begin = ctx->snode_row_ptr[source];
+    Py_ssize_t src_end = ctx->snode_row_ptr[source + 1];
+    Py_ssize_t target_begin = ctx->snode_row_ptr[target];
+    Py_ssize_t target_len = ctx->snode_row_ptr[target + 1] - target_begin;
+    const int32_t *src_rows = ctx->snode_rows + src_begin;
+    const int32_t *target_rows = ctx->snode_rows + target_begin;
+    for (Py_ssize_t pos = k1 - k0; pos < src_end - src_begin; pos++) {
+        int32_t row = src_rows[pos];
+        if (row >= j0 && row < j1) {
+            ctx->snode_update_pivot_srcpos[*pivot_at] = (int32_t)pos;
+            ctx->snode_update_pivot_col[*pivot_at] = row - j0;
+            (*pivot_at)++;
+        }
+        Py_ssize_t target_pos = int32_lower_bound(target_rows, target_len, row);
+        if (target_pos < target_len && target_rows[target_pos] == row) {
+            ctx->snode_update_target_srcpos[*target_at] = (int32_t)pos;
+            ctx->snode_update_target_rowpos[*target_at] = (int32_t)target_pos;
+            (*target_at)++;
+        }
+    }
+    Py_ssize_t pc = update->pivot_end - update->pivot_begin;
+    update->pivot_col_first = pc > 0 ? ctx->snode_update_pivot_col[update->pivot_begin] : 0;
+    update->pivot_cols_contiguous = pc > 0;
+    for (Py_ssize_t i = 0; i < pc; i++) {
+        if (ctx->snode_update_pivot_col[update->pivot_begin + i] !=
+            update->pivot_col_first + (int32_t)i) {
+            update->pivot_cols_contiguous = 0;
+            break;
+        }
+    }
+}
+
+static int chol_build_supernode_symbolic(CholContext *ctx) {
+    int32_t m = ctx->m;
+    int32_t ns = ctx->n_snodes;
+    int32_t *mark = NULL;
+    Py_ssize_t *update_count = NULL;
+    Py_ssize_t *cursor = NULL;
+
+    ctx->col_snode = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+    ctx->snode_row_ptr = calloc((size_t)ns + 1, sizeof(Py_ssize_t));
+    ctx->snode_panel_ptr = calloc((size_t)ns + 1, sizeof(Py_ssize_t));
+    if (ctx->col_snode == NULL || ctx->snode_row_ptr == NULL ||
+        ctx->snode_panel_ptr == NULL) {
+        goto fail;
+    }
+    for (int32_t s = 0; s < ns; s++) {
+        int32_t j0 = ctx->snode_start[s];
+        int32_t j1 = ctx->snode_start[s + 1];
+        Py_ssize_t nr = ctx->Lp[j0 + 1] - ctx->Lp[j0];
+        Py_ssize_t panel_n = nr * (Py_ssize_t)(j1 - j0);
+        if (panel_n > ctx->snode_panel_cap) {
+            ctx->snode_panel_cap = panel_n;
+        }
+        for (int32_t j = j0; j < j1; j++) {
+            ctx->col_snode[j] = s;
+        }
+        ctx->snode_row_ptr[s + 1] = ctx->snode_row_ptr[s] + nr;
+        ctx->snode_panel_ptr[s + 1] =
+            ctx->snode_panel_ptr[s] + nr * (Py_ssize_t)(j1 - j0);
+    }
+    ctx->snode_panel = calloc((size_t)(ctx->snode_panel_cap > 0 ?
+                                       ctx->snode_panel_cap : 1),
+                              sizeof(double));
+    ctx->snode_rows = calloc((size_t)(ctx->snode_row_ptr[ns] > 0 ?
+                                      ctx->snode_row_ptr[ns] : 1),
+                             sizeof(int32_t));
+    ctx->snode_panel_lx = calloc((size_t)(ctx->snode_panel_ptr[ns] > 0 ?
+                                          ctx->snode_panel_ptr[ns] : 1),
+                                 sizeof(Py_ssize_t));
+    ctx->snode_panel_cx = calloc((size_t)(ctx->snode_panel_ptr[ns] > 0 ?
+                                          ctx->snode_panel_ptr[ns] : 1),
+                                 sizeof(Py_ssize_t));
+    if (ctx->snode_panel == NULL || ctx->snode_rows == NULL ||
+        ctx->snode_panel_lx == NULL || ctx->snode_panel_cx == NULL) {
+        goto fail;
+    }
+    for (int32_t s = 0; s < ns; s++) {
+        int32_t j0 = ctx->snode_start[s];
+        int32_t j1 = ctx->snode_start[s + 1];
+        int32_t w = j1 - j0;
+        Py_ssize_t nr = ctx->snode_row_ptr[s + 1] - ctx->snode_row_ptr[s];
+        int32_t *rows = ctx->snode_rows + ctx->snode_row_ptr[s];
+        memcpy(rows, ctx->Li + ctx->Lp[j0], (size_t)nr * sizeof(int32_t));
+        if (nr < w) {
+            goto fail;
+        }
+        for (int32_t c = 0; c < w; c++) {
+            if (rows[c] != j0 + c) {
+                goto fail;
+            }
+        }
+        Py_ssize_t panel_base = ctx->snode_panel_ptr[s];
+        for (int32_t c = 0; c < w; c++) {
+            int32_t col = j0 + c;
+            for (Py_ssize_t rpos = 0; rpos < nr; rpos++) {
+                Py_ssize_t dst = panel_base + rpos * (Py_ssize_t)w + c;
+                ctx->snode_panel_cx[dst] = chol_find_offset(ctx, rows[rpos], col);
+                if (rpos < c) {
+                    ctx->snode_panel_lx[dst] = -1;
+                    continue;
+                }
+                Py_ssize_t lx = ctx->Lp[col] + (rpos - c);
+                if (lx >= ctx->Lp[col + 1] || ctx->Li[lx] != rows[rpos]) {
+                    goto fail;
+                }
+                ctx->snode_panel_lx[dst] = lx;
+            }
+        }
+    }
+
+    mark = calloc((size_t)(ns > 0 ? ns : 1), sizeof(int32_t));
+    update_count = calloc((size_t)(ns > 0 ? ns : 1), sizeof(Py_ssize_t));
+    if (mark == NULL || update_count == NULL) {
+        goto fail;
+    }
+    for (int32_t source = 0; source < ns; source++) {
+        int32_t k0 = ctx->snode_start[source];
+        int32_t k1 = ctx->snode_start[source + 1];
+        Py_ssize_t begin = ctx->snode_row_ptr[source];
+        Py_ssize_t end = ctx->snode_row_ptr[source + 1];
+        int32_t *rows = ctx->snode_rows + begin;
+        for (Py_ssize_t pos = k1 - k0; pos < end - begin; pos++) {
+            int32_t target = ctx->col_snode[rows[pos]];
+            if (target > source && mark[target] != source + 1) {
+                mark[target] = source + 1;
+                update_count[target]++;
+            }
+        }
+    }
+    ctx->snode_update_ptr = calloc((size_t)ns + 1, sizeof(Py_ssize_t));
+    if (ctx->snode_update_ptr == NULL) {
+        goto fail;
+    }
+    for (int32_t s = 0; s < ns; s++) {
+        ctx->snode_update_ptr[s + 1] = ctx->snode_update_ptr[s] + update_count[s];
+    }
+    ctx->n_snode_updates = ctx->snode_update_ptr[ns];
+    ctx->snode_updates = calloc((size_t)(ctx->n_snode_updates > 0 ?
+                                         ctx->n_snode_updates : 1),
+                                sizeof(SNodeUpdate));
+    cursor = calloc((size_t)(ns > 0 ? ns : 1), sizeof(Py_ssize_t));
+    if (ctx->snode_updates == NULL || cursor == NULL) {
+        goto fail;
+    }
+    memcpy(cursor, ctx->snode_update_ptr, (size_t)ns * sizeof(Py_ssize_t));
+    memset(mark, 0, (size_t)ns * sizeof(int32_t));
+    for (int32_t source = 0; source < ns; source++) {
+        int32_t k0 = ctx->snode_start[source];
+        int32_t k1 = ctx->snode_start[source + 1];
+        Py_ssize_t begin = ctx->snode_row_ptr[source];
+        Py_ssize_t end = ctx->snode_row_ptr[source + 1];
+        int32_t *rows = ctx->snode_rows + begin;
+        for (Py_ssize_t pos = k1 - k0; pos < end - begin; pos++) {
+            int32_t target = ctx->col_snode[rows[pos]];
+            if (target > source && mark[target] != source + 1) {
+                mark[target] = source + 1;
+                Py_ssize_t id = cursor[target]++;
+                ctx->snode_updates[id].source = source;
+            }
+        }
+    }
+
+    Py_ssize_t pivot_total = 0;
+    Py_ssize_t target_total = 0;
+    for (int32_t target = 0; target < ns; target++) {
+        for (Py_ssize_t u = ctx->snode_update_ptr[target];
+             u < ctx->snode_update_ptr[target + 1]; u++) {
+            Py_ssize_t pc = 0;
+            Py_ssize_t tc = 0;
+            chol_count_snode_update_maps(
+                ctx, ctx->snode_updates[u].source, target, &pc, &tc);
+            if (pc <= 0 || tc <= 0) {
+                goto fail;
+            }
+            int32_t source = ctx->snode_updates[u].source;
+            Py_ssize_t wk = (Py_ssize_t)(ctx->snode_start[source + 1] -
+                                         ctx->snode_start[source]);
+            Py_ssize_t a_need = pc * wk;
+            Py_ssize_t b_need = tc * wk;
+            Py_ssize_t c_need = pc * tc;
+            if (a_need > ctx->snode_update_a_cap) {
+                ctx->snode_update_a_cap = a_need;
+            }
+            if (b_need > ctx->snode_update_b_cap) {
+                ctx->snode_update_b_cap = b_need;
+            }
+            if (c_need > ctx->snode_update_c_cap) {
+                ctx->snode_update_c_cap = c_need;
+            }
+            ctx->snode_updates[u].pivot_begin = pivot_total;
+            pivot_total += pc;
+            ctx->snode_updates[u].pivot_end = pivot_total;
+            ctx->snode_updates[u].target_begin = target_total;
+            target_total += tc;
+            ctx->snode_updates[u].target_end = target_total;
+        }
+    }
+    ctx->snode_update_pivot_srcpos = calloc((size_t)(pivot_total > 0 ? pivot_total : 1),
+                                           sizeof(int32_t));
+    ctx->snode_update_pivot_col = calloc((size_t)(pivot_total > 0 ? pivot_total : 1),
+                                        sizeof(int32_t));
+    ctx->snode_update_target_srcpos = calloc((size_t)(target_total > 0 ? target_total : 1),
+                                            sizeof(int32_t));
+    ctx->snode_update_target_rowpos = calloc((size_t)(target_total > 0 ? target_total : 1),
+                                            sizeof(int32_t));
+    ctx->snode_update_a = calloc((size_t)(ctx->snode_update_a_cap > 0 ?
+                                          ctx->snode_update_a_cap : 1),
+                                 sizeof(double));
+    ctx->snode_update_b = calloc((size_t)(ctx->snode_update_b_cap > 0 ?
+                                          ctx->snode_update_b_cap : 1),
+                                 sizeof(double));
+    ctx->snode_update_c = calloc((size_t)(ctx->snode_update_c_cap > 0 ?
+                                          ctx->snode_update_c_cap : 1),
+                                 sizeof(double));
+    if (ctx->snode_update_pivot_srcpos == NULL || ctx->snode_update_pivot_col == NULL ||
+        ctx->snode_update_target_srcpos == NULL || ctx->snode_update_target_rowpos == NULL ||
+        ctx->snode_update_a == NULL || ctx->snode_update_b == NULL ||
+        ctx->snode_update_c == NULL) {
+        goto fail;
+    }
+    pivot_total = 0;
+    target_total = 0;
+    for (int32_t target = 0; target < ns; target++) {
+        for (Py_ssize_t u = ctx->snode_update_ptr[target];
+             u < ctx->snode_update_ptr[target + 1]; u++) {
+            chol_fill_snode_update_maps(
+                ctx, &ctx->snode_updates[u], target, &pivot_total, &target_total);
+        }
+    }
+
+    free(mark);
+    free(update_count);
+    free(cursor);
+    return 0;
+
+fail:
+    free(mark);
+    free(update_count);
+    free(cursor);
+    return -1;
+}
+
+static int chol_ensure_supernode_symbolic(CholContext *ctx) {
+    if (ctx->snode_symbolic_ready > 0) {
+        return 0;
+    }
+    if (ctx->snode_symbolic_ready < 0) {
+        return -1;
+    }
+    if (chol_build_supernode_symbolic(ctx) != 0) {
+        ctx->snode_symbolic_ready = -1;
+        return -1;
+    }
+    ctx->snode_symbolic_ready = 1;
+    return 0;
 }
 
 /* Build everything that depends only on the sparsity pattern of A.
@@ -2767,6 +3357,7 @@ static CholContext *chol_setup(
                     m, ns, (double)m / (double)ns, big);
         }
     }
+    SETUP_MARK("supernodes");
 
     /* --- dense-tail selection by a two-speed cost model. Splitting the
      * factor at column s costs (sum_{j<s} colcount[j]^2) scalar flops on
@@ -2997,6 +3588,337 @@ static void tail_dense_chol(double *M, Py_ssize_t t) {
     }
 }
 
+static void supernode_diag_chol(double *M, Py_ssize_t w) {
+#ifdef LINPROGX_HAVE_BLAS
+    if (g_tail_use_blas && w >= 64 && w <= INT32_MAX) {
+        ensure_supernodal_blas_threads();
+        int blas_n = (int)w;
+        int blas_info = 0;
+        for (Py_ssize_t i = 0; i < w; i++) {
+            M[i * w + i] += 1e-11 * (1.0 + fabs(M[i * w + i]));
+        }
+        dpotrf_("U", &blas_n, M, &blas_n, &blas_info);
+        if (blas_info == 0) {
+            return;
+        }
+    }
+#endif
+    tail_dense_chol(M, w);
+}
+
+static void chol_assemble_normal(
+    CholContext *ctx, CSRMatrixObject *A, const double *csc_values,
+    const double *D, double delta) {
+    int32_t m = ctx->m;
+    memset(ctx->Cx, 0, (size_t)ctx->Cp[m] * sizeof(double));
+    Py_ssize_t at = 0;
+    for (Py_ssize_t t = 0; t < A->cols; t++) {
+        if (ctx->col_is_dense[t]) {
+            continue;
+        }
+        double dt = D[t];
+        for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
+            double vp = csc_values[p] * dt;
+            for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
+                ctx->Cx[ctx->pair_offset[at++]] += vp * csc_values[q];
+            }
+        }
+    }
+    for (int32_t k = 0; k < m; k++) {
+        ctx->Cx[ctx->diag_offset[k]] += delta;
+    }
+}
+
+static void chol_refactor_dense_columns(
+    CholContext *ctx, CSRMatrixObject *A, const double *csc_values, const double *D) {
+    int32_t m = ctx->m;
+    if (ctx->n_dense <= 0) {
+        return;
+    }
+    Py_ssize_t kd = ctx->n_dense;
+    for (Py_ssize_t j = 0; j < kd; j++) {
+        int32_t t = ctx->dense_cols[j];
+        double scale = sqrt(D[t] > 0.0 ? D[t] : 0.0);
+        double *u = ctx->Umat + j * m;
+        memset(u, 0, (size_t)m * sizeof(double));
+        for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
+            u[A->csc_rows[p]] = csc_values[p] * scale;
+        }
+        chol_solve_sparse(ctx, u, ctx->Wmat + j * m);
+    }
+    for (Py_ssize_t j = 0; j < kd; j++) {
+        const double *uj = ctx->Umat + j * m;
+        for (Py_ssize_t i2 = j; i2 < kd; i2++) {
+            const double *wi = ctx->Wmat + i2 * m;
+            double total = 0.0;
+            for (int32_t r = 0; r < m; r++) {
+                total += uj[r] * wi[r];
+            }
+            /* column-major lower triangle: entry (i2, j) */
+            ctx->cap[j * kd + i2] = total + (i2 == j ? 1.0 : 0.0);
+        }
+    }
+    dense_chol_factor(ctx->cap, kd);
+}
+
+static void chol_refactor_supernodal(
+    CholContext *ctx, CSRMatrixObject *A, const double *csc_values,
+    const double *D, double delta) {
+#ifdef LINPROGX_HAVE_BLAS
+    ensure_supernodal_blas_threads();
+    int blas_threads = 1;
+#else
+    int blas_threads = 0;
+#endif
+    int profile = getenv("LINPROGX_SUPERNODAL_PROFILE") != NULL;
+    double t0 = profile ? setup_clock() : 0.0;
+    double t_assemble = 0.0, t_panel = 0.0, t_gather = 0.0, t_gemm = 0.0;
+    double t_scatter_update = 0.0, t_scalar_update = 0.0, t_chol = 0.0;
+    double t_trsm = 0.0, t_scatter_lx = 0.0, t_dense = 0.0;
+    Py_ssize_t blas_updates = 0, scalar_updates = 0;
+    chol_assemble_normal(ctx, A, csc_values, D, delta);
+    if (profile) {
+        double t1 = setup_clock();
+        t_assemble += t1 - t0;
+        t0 = t1;
+    }
+    for (int32_t s = 0; s < ctx->n_snodes; s++) {
+        int32_t j0 = ctx->snode_start[s];
+        int32_t j1 = ctx->snode_start[s + 1];
+        int32_t w = j1 - j0;
+        Py_ssize_t row_begin = ctx->snode_row_ptr[s];
+        Py_ssize_t row_end = ctx->snode_row_ptr[s + 1];
+        Py_ssize_t nr = row_end - row_begin;
+        double *F = ctx->snode_panel;
+        memset(F, 0, (size_t)(nr * (Py_ssize_t)w) * sizeof(double));
+
+        Py_ssize_t panel_base = ctx->snode_panel_ptr[s];
+        for (Py_ssize_t rpos = 0; rpos < nr; rpos++) {
+            for (int32_t c = 0; c < w; c++) {
+                Py_ssize_t offset = ctx->snode_panel_cx[panel_base + rpos * (Py_ssize_t)w + c];
+                if (offset >= 0) {
+                    F[rpos * (Py_ssize_t)w + c] = ctx->Cx[offset];
+                }
+            }
+        }
+        if (profile) {
+            double t1 = setup_clock();
+            t_panel += t1 - t0;
+            t0 = t1;
+        }
+
+        for (Py_ssize_t uid = ctx->snode_update_ptr[s];
+             uid < ctx->snode_update_ptr[s + 1]; uid++) {
+            SNodeUpdate *update = &ctx->snode_updates[uid];
+            int32_t source = update->source;
+            int32_t k0 = ctx->snode_start[source];
+            int32_t k1 = ctx->snode_start[source + 1];
+            int32_t wk = k1 - k0;
+            Py_ssize_t source_panel = ctx->snode_panel_ptr[source];
+            Py_ssize_t pc = update->pivot_end - update->pivot_begin;
+            Py_ssize_t tc = update->target_end - update->target_begin;
+            int used_blas = 0;
+#ifdef LINPROGX_HAVE_BLAS
+            if (pc > 0 && tc > 0 && wk > 0 && pc <= INT32_MAX && tc <= INT32_MAX &&
+                wk <= INT32_MAX && pc * tc * (Py_ssize_t)wk >= 32768) {
+                ensure_supernodal_blas_threads();
+                double *Abuf = ctx->snode_update_a;
+                double *Bbuf = ctx->snode_update_b;
+                double *Cbuf = ctx->snode_update_c;
+                for (Py_ssize_t pi = 0; pi < pc; pi++) {
+                    int32_t pivot_srcpos =
+                        ctx->snode_update_pivot_srcpos[update->pivot_begin + pi];
+                    for (int32_t c = 0; c < wk; c++) {
+                        Py_ssize_t lx = ctx->snode_panel_lx[
+                            source_panel + (Py_ssize_t)pivot_srcpos * wk + c];
+                        Abuf[(Py_ssize_t)c + pi * (Py_ssize_t)wk] = ctx->Lx[lx];
+                    }
+                }
+                for (Py_ssize_t ti = 0; ti < tc; ti++) {
+                    int32_t target_srcpos =
+                        ctx->snode_update_target_srcpos[update->target_begin + ti];
+                    for (int32_t c = 0; c < wk; c++) {
+                        Py_ssize_t lx = ctx->snode_panel_lx[
+                            source_panel + (Py_ssize_t)target_srcpos * wk + c];
+                        Bbuf[(Py_ssize_t)c + ti * (Py_ssize_t)wk] = ctx->Lx[lx];
+                    }
+                }
+                if (profile) {
+                    double t1 = setup_clock();
+                    t_gather += t1 - t0;
+                    t0 = t1;
+                }
+                int blas_m = (int)pc;
+                int blas_n = (int)tc;
+                int blas_k = wk;
+                int lda = wk;
+                int ldb = wk;
+                int ldc = (int)pc;
+                double alpha = 1.0;
+                double beta = 0.0;
+                dgemm_("T", "N", &blas_m, &blas_n, &blas_k, &alpha,
+                       Abuf, &lda, Bbuf, &ldb, &beta, Cbuf, &ldc);
+                if (profile) {
+                    double t1 = setup_clock();
+                    t_gemm += t1 - t0;
+                    t0 = t1;
+                }
+                if (update->pivot_cols_contiguous) {
+                    int32_t pivot_col_first = update->pivot_col_first;
+                    for (Py_ssize_t ti = 0; ti < tc; ti++) {
+                        int32_t target_rowpos =
+                            ctx->snode_update_target_rowpos[update->target_begin + ti];
+                        double *frow = F + (Py_ssize_t)target_rowpos * w + pivot_col_first;
+                        const double *crow = Cbuf + ti * pc;
+                        for (Py_ssize_t pi = 0; pi < pc; pi++) {
+                            frow[pi] -= crow[pi];
+                        }
+                    }
+                } else {
+                    for (Py_ssize_t ti = 0; ti < tc; ti++) {
+                        int32_t target_rowpos =
+                            ctx->snode_update_target_rowpos[update->target_begin + ti];
+                        for (Py_ssize_t pi = 0; pi < pc; pi++) {
+                            int32_t pivot_col =
+                                ctx->snode_update_pivot_col[update->pivot_begin + pi];
+                            F[(Py_ssize_t)target_rowpos * w + pivot_col] -=
+                                Cbuf[pi + ti * pc];
+                        }
+                    }
+                }
+                if (profile) {
+                    double t1 = setup_clock();
+                    t_scatter_update += t1 - t0;
+                    t0 = t1;
+                }
+                blas_updates++;
+                used_blas = 1;
+            }
+#endif
+            if (!used_blas) {
+                scalar_updates++;
+                if (wk == 1) {
+                    for (Py_ssize_t ti = update->target_begin; ti < update->target_end; ti++) {
+                        int32_t target_srcpos = ctx->snode_update_target_srcpos[ti];
+                        int32_t target_rowpos = ctx->snode_update_target_rowpos[ti];
+                        double bval = ctx->Lx[ctx->snode_panel_lx[
+                            source_panel + (Py_ssize_t)target_srcpos]];
+                        if (update->pivot_cols_contiguous) {
+                            double *frow =
+                                F + (Py_ssize_t)target_rowpos * w + update->pivot_col_first;
+                            for (Py_ssize_t pi = update->pivot_begin; pi < update->pivot_end;
+                                 pi++) {
+                                int32_t pivot_srcpos = ctx->snode_update_pivot_srcpos[pi];
+                                Py_ssize_t local = pi - update->pivot_begin;
+                                double aval = ctx->Lx[ctx->snode_panel_lx[
+                                    source_panel + (Py_ssize_t)pivot_srcpos]];
+                                frow[local] -= bval * aval;
+                            }
+                        } else {
+                            for (Py_ssize_t pi = update->pivot_begin; pi < update->pivot_end;
+                                 pi++) {
+                                int32_t pivot_srcpos = ctx->snode_update_pivot_srcpos[pi];
+                                int32_t pivot_col = ctx->snode_update_pivot_col[pi];
+                                double aval = ctx->Lx[ctx->snode_panel_lx[
+                                    source_panel + (Py_ssize_t)pivot_srcpos]];
+                                F[(Py_ssize_t)target_rowpos * w + pivot_col] -= bval * aval;
+                            }
+                        }
+                    }
+                } else {
+                    for (Py_ssize_t ti = update->target_begin; ti < update->target_end; ti++) {
+                        int32_t target_srcpos = ctx->snode_update_target_srcpos[ti];
+                        int32_t target_rowpos = ctx->snode_update_target_rowpos[ti];
+                        for (Py_ssize_t pi = update->pivot_begin; pi < update->pivot_end; pi++) {
+                            int32_t pivot_srcpos = ctx->snode_update_pivot_srcpos[pi];
+                            int32_t pivot_col = ctx->snode_update_pivot_col[pi];
+                            double total = 0.0;
+                            for (int32_t c = 0; c < wk; c++) {
+                                Py_ssize_t b_lx = ctx->snode_panel_lx[
+                                    source_panel + (Py_ssize_t)target_srcpos * wk + c];
+                                Py_ssize_t a_lx = ctx->snode_panel_lx[
+                                    source_panel + (Py_ssize_t)pivot_srcpos * wk + c];
+                                total += ctx->Lx[b_lx] * ctx->Lx[a_lx];
+                            }
+                            F[(Py_ssize_t)target_rowpos * w + pivot_col] -= total;
+                        }
+                    }
+                }
+                if (profile) {
+                    double t1 = setup_clock();
+                    t_scalar_update += t1 - t0;
+                    t0 = t1;
+                }
+            }
+        }
+
+        supernode_diag_chol(F, w);
+        if (profile) {
+            double t1 = setup_clock();
+            t_chol += t1 - t0;
+            t0 = t1;
+        }
+        Py_ssize_t off_rows = nr - w;
+        int used_trsm = 0;
+#ifdef LINPROGX_HAVE_BLAS
+        if (off_rows > 0 && w >= 16 && w <= INT32_MAX && off_rows <= INT32_MAX) {
+            ensure_supernodal_blas_threads();
+            int blas_m = w;
+            int blas_n = (int)off_rows;
+            int lda = w;
+            int ldb = w;
+            double alpha = 1.0;
+            dtrsm_("L", "U", "T", "N", &blas_m, &blas_n, &alpha,
+                   F, &lda, F + (Py_ssize_t)w * w, &ldb);
+            used_trsm = 1;
+        }
+#endif
+        if (!used_trsm) {
+            for (Py_ssize_t rpos = w; rpos < nr; rpos++) {
+                for (int32_t c = 0; c < w; c++) {
+                    double total = F[rpos * (Py_ssize_t)w + c];
+                    for (int32_t p = 0; p < c; p++) {
+                        total -= F[rpos * (Py_ssize_t)w + p] * F[(Py_ssize_t)c * w + p];
+                    }
+                    F[rpos * (Py_ssize_t)w + c] = total / F[(Py_ssize_t)c * w + c];
+                }
+            }
+        }
+        if (profile) {
+            double t1 = setup_clock();
+            t_trsm += t1 - t0;
+            t0 = t1;
+        }
+
+        for (Py_ssize_t rpos = 0; rpos < nr; rpos++) {
+            for (int32_t c = 0; c < w; c++) {
+                Py_ssize_t lx = ctx->snode_panel_lx[panel_base + rpos * (Py_ssize_t)w + c];
+                if (lx >= 0) {
+                    ctx->Lx[lx] = F[rpos * (Py_ssize_t)w + c];
+                }
+            }
+        }
+        if (profile) {
+            double t1 = setup_clock();
+            t_scatter_lx += t1 - t0;
+            t0 = t1;
+        }
+    }
+    chol_refactor_dense_columns(ctx, A, csc_values, D);
+    if (profile) {
+        double t1 = setup_clock();
+        t_dense += t1 - t0;
+        fprintf(stderr,
+                "supernodal profile: assemble=%.4f panel=%.4f gather=%.4f "
+                "gemm=%.4f update_scatter=%.4f scalar_update=%.4f chol=%.4f "
+                "trsm=%.4f lx_scatter=%.4f dense=%.4f blas_updates=%zd "
+                "scalar_updates=%zd blas_threads=%d\n",
+                t_assemble, t_panel, t_gather, t_gemm, t_scatter_update,
+                t_scalar_update, t_chol, t_trsm, t_scatter_lx, t_dense,
+                blas_updates, scalar_updates, blas_threads);
+    }
+}
+
 /* Numeric refactorization with diagonal D and regularization delta, using
  * the provided CSC value array (so callers can factor a rescaled operator
  * over the same pattern). Tiny or negative pivots are boosted (dynamic
@@ -3005,25 +3927,7 @@ static void chol_refactor(
     CholContext *ctx, CSRMatrixObject *A, const double *csc_values,
     const double *D, double delta) {
     int32_t m = ctx->m;
-    memset(ctx->Cx, 0, (size_t)ctx->Cp[m] * sizeof(double));
-    {
-        Py_ssize_t at = 0;
-        for (Py_ssize_t t = 0; t < A->cols; t++) {
-            if (ctx->col_is_dense[t]) {
-                continue;
-            }
-            double dt = D[t];
-            for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
-                double vp = csc_values[p] * dt;
-                for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
-                    ctx->Cx[ctx->pair_offset[at++]] += vp * csc_values[q];
-                }
-            }
-        }
-    }
-    for (int32_t k = 0; k < m; k++) {
-        ctx->Cx[ctx->diag_offset[k]] += delta;
-    }
+    chol_assemble_normal(ctx, A, csc_values, D, delta);
 
     /* up-looking Cholesky over the fixed pattern; rows in the dense
      * tail keep their sparse prefix processing but accumulate their
@@ -3141,32 +4045,25 @@ static void chol_refactor(
 
     /* Dense-column low-rank data: U = A_dense sqrt(D_dense),
      * W = M_s^-1 U, capacitance C = I + U'W (dense Cholesky). */
-    if (ctx->n_dense > 0) {
-        Py_ssize_t kd = ctx->n_dense;
-        for (Py_ssize_t j = 0; j < kd; j++) {
-            int32_t t = ctx->dense_cols[j];
-            double scale = sqrt(D[t] > 0.0 ? D[t] : 0.0);
-            double *u = ctx->Umat + j * m;
-            memset(u, 0, (size_t)m * sizeof(double));
-            for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
-                u[A->csc_rows[p]] = csc_values[p] * scale;
-            }
-            chol_solve_sparse(ctx, u, ctx->Wmat + j * m);
-        }
-        for (Py_ssize_t j = 0; j < kd; j++) {
-            const double *uj = ctx->Umat + j * m;
-            for (Py_ssize_t i2 = j; i2 < kd; i2++) {
-                const double *wi = ctx->Wmat + i2 * m;
-                double total = 0.0;
-                for (int32_t r = 0; r < m; r++) {
-                    total += uj[r] * wi[r];
-                }
-                /* column-major lower triangle: entry (i2, j) */
-                ctx->cap[j * kd + i2] = total + (i2 == j ? 1.0 : 0.0);
-            }
-        }
-        dense_chol_factor(ctx->cap, kd);
+    chol_refactor_dense_columns(ctx, A, csc_values, D);
+}
+
+static void chol_refactor_mode(
+    CholContext *ctx, CSRMatrixObject *A, const double *csc_values,
+    const double *D, double delta, int use_supernodal) {
+    if (use_supernodal && chol_ensure_supernode_symbolic(ctx) == 0) {
+        chol_refactor_supernodal(ctx, A, csc_values, D, delta);
+    } else {
+        chol_refactor(ctx, A, csc_values, D, delta);
     }
+}
+
+static int chol_auto_supernodal(const CholContext *ctx) {
+    if (ctx->n_snodes <= 0 || ctx->tail_len < 512) {
+        return 0;
+    }
+    double mean_width = (double)ctx->m / (double)ctx->n_snodes;
+    return mean_width >= 4.0;
 }
 
 /* y = (A D A' + delta I) x using the assembled (permuted) matrix. */
@@ -3312,12 +4209,126 @@ static PyObject *CSRMatrix_supernode_sizes(CSRMatrixObject *self, PyObject *args
     return sizes;
 }
 
+static PyObject *int32_list_from_slice(const int32_t *values, Py_ssize_t n) {
+    PyObject *out = PyList_New(n);
+    if (out == NULL) {
+        return NULL;
+    }
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *item = PyLong_FromLong((long)values[i]);
+        if (item == NULL) {
+            Py_DECREF(out);
+            return NULL;
+        }
+        PyList_SET_ITEM(out, i, item);
+    }
+    return out;
+}
+
+static PyObject *CSRMatrix_supernode_symbolic_structure(CSRMatrixObject *self, PyObject *args) {
+    (void)args;
+    if (self->rows > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError, "matrix too large for the 32-bit factorization");
+        return NULL;
+    }
+    int too_dense = 0;
+    CholContext *ctx = chol_setup(self, 0.0, 1000000000000LL, &too_dense);
+    if (ctx == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "chol_setup failed");
+        return NULL;
+    }
+    if (chol_ensure_supernode_symbolic(ctx) != 0) {
+        chol_free(ctx);
+        PyErr_SetString(PyExc_RuntimeError, "supernode symbolic setup failed");
+        return NULL;
+    }
+    PyObject *result = PyList_New(ctx->n_snodes);
+    if (result == NULL) {
+        chol_free(ctx);
+        return NULL;
+    }
+    for (int32_t s = 0; s < ctx->n_snodes; s++) {
+        int32_t j0 = ctx->snode_start[s];
+        Py_ssize_t row_begin = ctx->snode_row_ptr[s];
+        Py_ssize_t row_len = ctx->snode_row_ptr[s + 1] - row_begin;
+        Py_ssize_t update_begin = ctx->snode_update_ptr[s];
+        Py_ssize_t update_len = ctx->snode_update_ptr[s + 1] - update_begin;
+
+        PyObject *start_obj = PyLong_FromLong((long)j0);
+        PyObject *rows = int32_list_from_slice(ctx->snode_rows + row_begin, row_len);
+        PyObject *updates = PyList_New(update_len);
+        PyObject *node = NULL;
+        if (start_obj == NULL || rows == NULL || updates == NULL) {
+            Py_XDECREF(start_obj);
+            Py_XDECREF(rows);
+            Py_XDECREF(updates);
+            Py_DECREF(result);
+            chol_free(ctx);
+            return NULL;
+        }
+        for (Py_ssize_t i = 0; i < update_len; i++) {
+            SNodeUpdate *update = &ctx->snode_updates[update_begin + i];
+            Py_ssize_t pb = update->pivot_begin;
+            Py_ssize_t pc = update->pivot_end - update->pivot_begin;
+            Py_ssize_t tb = update->target_begin;
+            Py_ssize_t tc = update->target_end - update->target_begin;
+            PyObject *source_obj = PyLong_FromLong((long)update->source);
+            PyObject *pivot_src = int32_list_from_slice(
+                ctx->snode_update_pivot_srcpos + pb, pc);
+            PyObject *pivot_col = int32_list_from_slice(
+                ctx->snode_update_pivot_col + pb, pc);
+            PyObject *target_src = int32_list_from_slice(
+                ctx->snode_update_target_srcpos + tb, tc);
+            PyObject *target_row = int32_list_from_slice(
+                ctx->snode_update_target_rowpos + tb, tc);
+            PyObject *update_tuple = PyTuple_New(5);
+            if (source_obj == NULL || pivot_src == NULL || pivot_col == NULL ||
+                target_src == NULL || target_row == NULL || update_tuple == NULL) {
+                Py_XDECREF(source_obj);
+                Py_XDECREF(pivot_src);
+                Py_XDECREF(pivot_col);
+                Py_XDECREF(target_src);
+                Py_XDECREF(target_row);
+                Py_XDECREF(update_tuple);
+                Py_DECREF(start_obj);
+                Py_DECREF(rows);
+                Py_DECREF(updates);
+                Py_DECREF(result);
+                chol_free(ctx);
+                return NULL;
+            }
+            PyTuple_SET_ITEM(update_tuple, 0, source_obj);
+            PyTuple_SET_ITEM(update_tuple, 1, pivot_src);
+            PyTuple_SET_ITEM(update_tuple, 2, pivot_col);
+            PyTuple_SET_ITEM(update_tuple, 3, target_src);
+            PyTuple_SET_ITEM(update_tuple, 4, target_row);
+            PyList_SET_ITEM(updates, i, update_tuple);
+        }
+        node = PyTuple_New(3);
+        if (node == NULL) {
+            Py_DECREF(start_obj);
+            Py_DECREF(rows);
+            Py_DECREF(updates);
+            Py_DECREF(result);
+            chol_free(ctx);
+            return NULL;
+        }
+        PyTuple_SET_ITEM(node, 0, start_obj);
+        PyTuple_SET_ITEM(node, 1, rows);
+        PyTuple_SET_ITEM(node, 2, updates);
+        PyList_SET_ITEM(result, s, node);
+    }
+    chol_free(ctx);
+    return result;
+}
+
 /* Test hook: solve (A D A' + delta I) x = rhs with the native Cholesky. */
 static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObject *args) {
     PyObject *d_obj;
     PyObject *rhs_obj;
     double delta = 0.0;
-    if (!PyArg_ParseTuple(args, "OO|d", &d_obj, &rhs_obj, &delta)) {
+    int use_supernodal = 0;
+    if (!PyArg_ParseTuple(args, "OO|dp", &d_obj, &rhs_obj, &delta, &use_supernodal)) {
         return NULL;
     }
     if (self->rows > INT32_MAX) {
@@ -3339,7 +4350,7 @@ static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObjec
     Py_BEGIN_ALLOW_THREADS
     ctx = chol_setup(self, 0.0, 0, NULL);
     if (ctx != NULL) {
-        chol_refactor(ctx, self, self->csc_data, d, delta);
+        chol_refactor_mode(ctx, self, self->csc_data, d, delta, use_supernodal);
         chol_solve(ctx, rhs, out);
     }
     Py_END_ALLOW_THREADS
@@ -3436,6 +4447,165 @@ static void ipm_newton_solve(
         dzl[j] = (nw->bound_kind[j] & 1) ? (rcl[j] - nw->zl[j] * step) / nw->sl[j] : 0.0;
         dzu[j] = (nw->bound_kind[j] & 2) ? (rcu[j] + nw->zu[j] * step) / nw->su[j] : 0.0;
     }
+}
+
+static int ipm_lagrangian_gap(const double *c, const double *b, const double *lo,
+                              const double *hi, const unsigned char *bound_kind,
+                              Py_ssize_t m, Py_ssize_t n, const double *x,
+                              const double *y, const double *aty, double *gap_out) {
+    double pobj = 0.0;
+    double dobj = 0.0;
+    int certifiable = 1;
+    for (Py_ssize_t j = 0; j < n; j++) {
+        unsigned char kind = bound_kind[j];
+        double r = c[j] - aty[j];
+        pobj += c[j] * x[j];
+        if (kind == 4) {
+            dobj += r * x[j];
+            continue;
+        }
+        if (r > 0.0) {
+            if (kind & 1) {
+                dobj += r * lo[j];
+            } else if (r > 1e-9 * (1.0 + fabs(c[j]))) {
+                certifiable = 0;
+                break;
+            }
+        } else if (r < 0.0) {
+            if (kind & 2) {
+                dobj += r * hi[j];
+            } else if (-r > 1e-9 * (1.0 + fabs(c[j]))) {
+                certifiable = 0;
+                break;
+            }
+        }
+    }
+    if (!certifiable) {
+        return 0;
+    }
+    for (Py_ssize_t i = 0; i < m; i++) {
+        dobj += b[i] * y[i];
+    }
+    *gap_out = fabs(pobj - dobj) / (1.0 + fabs(pobj) + fabs(dobj));
+    return 1;
+}
+
+static double ipm_raw_primal_residual(const double *rp, const double *row_scale,
+                                      Py_ssize_t m) {
+    double max_residual = 0.0;
+    for (Py_ssize_t i = 0; i < m; i++) {
+        double scale = row_scale[i];
+        double residual = fabs(scale != 0.0 ? rp[i] / scale : rp[i]);
+        if (residual > max_residual) {
+            max_residual = residual;
+        }
+    }
+    return max_residual;
+}
+
+static int ipm_dual_polish(const ScaledOp *op, CholContext *chol, const double *c,
+                           const double *b, const double *lo, const double *hi,
+                           const unsigned char *bound_kind, Py_ssize_t m, Py_ssize_t n,
+                           const double *x, const double *D, double *tmp_x,
+                           double *rhs_m, double *candidate_y, double *candidate_aty,
+                           double *gap_out) {
+    for (Py_ssize_t j = 0; j < n; j++) {
+        tmp_x[j] = D[j] * c[j];
+    }
+    scaled_op_matvec(op, tmp_x, rhs_m);
+    chol_solve(chol, rhs_m, candidate_y);
+    scaled_op_transpose_matvec(op, candidate_y, candidate_aty);
+    double gap = INFINITY;
+    if (!ipm_lagrangian_gap(c, b, lo, hi, bound_kind, m, n, x, candidate_y,
+                            candidate_aty, &gap)) {
+        return 0;
+    }
+    if (gap <= 1e-5) {
+        *gap_out = gap;
+        return 1;
+    }
+    return 0;
+}
+
+static int ipm_primal_polish(
+    const ScaledOp *op, CholContext *chol, CSRMatrixObject *A,
+    const double *csc_vals, const double *c, const double *b, const double *lo,
+    const double *hi, const unsigned char *bound_kind, const double *row_scale,
+    Py_ssize_t m, Py_ssize_t n, const double *rp, const double *y,
+    const double *aty, int refactor_supernodal, double feas_tol, double b_norm,
+    double *x, double *D, double *rhs_m, double *candidate_x, double *candidate_aty,
+    double *pres_out, double *raw_pres_out, double *gap_out) {
+    for (Py_ssize_t j = 0; j < n; j++) {
+        unsigned char kind = bound_kind[j];
+        if (kind == 4) {
+            D[j] = 0.0;
+            continue;
+        }
+        double weight = 1.0;
+        if (kind & 1) {
+            double slack = x[j] - lo[j];
+            if (slack < weight) {
+                weight = slack;
+            }
+        }
+        if (kind & 2) {
+            double slack = hi[j] - x[j];
+            if (slack < weight) {
+                weight = slack;
+            }
+        }
+        if (!isfinite(weight) || weight > 1.0) {
+            weight = 1.0;
+        }
+        if (weight < 1e-14) {
+            weight = 1e-14;
+        }
+        D[j] = weight;
+    }
+    chol_refactor_mode(chol, A, csc_vals, D, 1e-12, refactor_supernodal);
+    chol_solve(chol, rp, rhs_m);
+    scaled_op_transpose_matvec(op, rhs_m, candidate_aty);
+    for (Py_ssize_t j = 0; j < n; j++) {
+        candidate_x[j] = x[j] + D[j] * candidate_aty[j];
+    }
+    double max_bound_violation = 0.0;
+    for (Py_ssize_t j = 0; j < n; j++) {
+        unsigned char kind = bound_kind[j];
+        if ((kind & 1) && candidate_x[j] < lo[j]) {
+            double viol = lo[j] - candidate_x[j];
+            if (viol > max_bound_violation) {
+                max_bound_violation = viol;
+            }
+        }
+        if ((kind & 2) && candidate_x[j] > hi[j]) {
+            double viol = candidate_x[j] - hi[j];
+            if (viol > max_bound_violation) {
+                max_bound_violation = viol;
+            }
+        }
+    }
+    if (max_bound_violation > feas_tol) {
+        return 0;
+    }
+    scaled_op_matvec(op, candidate_x, rhs_m);
+    for (Py_ssize_t i = 0; i < m; i++) {
+        rhs_m[i] = b[i] - rhs_m[i];
+    }
+    double raw_pres = ipm_raw_primal_residual(rhs_m, row_scale, m);
+    if (raw_pres > feas_tol) {
+        return 0;
+    }
+    double gap = INFINITY;
+    if (!ipm_lagrangian_gap(c, b, lo, hi, bound_kind, m, n, candidate_x, y, aty,
+                            &gap) ||
+        gap > 1e-5) {
+        return 0;
+    }
+    memcpy(x, candidate_x, (size_t)n * sizeof(double));
+    *pres_out = l2_norm(rhs_m, m) / b_norm;
+    *raw_pres_out = raw_pres;
+    *gap_out = gap;
+    return 1;
 }
 
 /* Min-norm dual cleanup: a near-optimal primal point whose certificate
@@ -3613,13 +4783,18 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     Py_ssize_t threads = 0; /* 0 = auto; the threaded kernels are
                              * bit-identical at any thread count */
     int use_blas = 1; /* 0 forces the floored hand kernel for the tail */
+    int use_supernodal = -1; /* -1 auto, 0 row-wise, 1 supernodal */
+    double feas_tol = -1.0;
     static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "debug",
-                             "threads", "blas", NULL};
+                             "threads", "blas", "supernodal", "feas_tol", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "OOOO|ndpnp", kwlist,
+            args, kwds, "OOOO|ndpnppd", kwlist,
             &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter, &tol, &debug, &threads,
-            &use_blas)) {
+            &use_blas, &use_supernodal, &feas_tol)) {
         return NULL;
+    }
+    if (feas_tol <= 0.0 || !isfinite(feas_tol)) {
+        feas_tol = tol > 2e-5 ? tol : 2e-5;
     }
     if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
         PyErr_SetString(PyExc_ValueError, "matrix too large for the 32-bit factorization");
@@ -3863,6 +5038,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         PyErr_SetString(PyExc_RuntimeError, "Cholesky setup failed");
         goto done;
     }
+    int refactor_supernodal =
+        use_supernodal < 0 ? chol_auto_supernodal(chol) : use_supernodal;
 
     /* Mehrotra least-squares starting point: factor A A' + delta I once,
      * take the min-norm primal consistent with Ax=b and the dual from
@@ -3871,7 +5048,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         for (Py_ssize_t j = 0; j < n; j++) {
             D[j] = 1.0;
         }
-        chol_refactor(chol, self, csc_vals, D, 1e-8);
+        chol_refactor_mode(chol, self, csc_vals, D, 1e-8, refactor_supernodal);
         chol_solve(chol, b, dy_a);
         scaled_op_transpose_matvec(&op, dy_a, x);
         scaled_op_matvec(&op, c, ax);
@@ -3956,10 +5133,12 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     double c_norm = 1.0 + l2_norm(c, n);
     Py_ssize_t iterations = 0;
     double pres = INFINITY;
+    double raw_pres = INFINITY;
     double dres = INFINITY;
     double mu = INFINITY;
     double best_score = INFINITY;
     double best_pres = INFINITY;
+    double best_raw_pres = INFINITY;
     double best_dres = INFINITY;
     double best_mu = INFINITY;
     double best_gap = INFINITY;
@@ -4000,11 +5179,12 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         }
         mu = mu_sum / (double)n_comp;
         pres = l2_norm(rp, m) / b_norm;
+        raw_pres = ipm_raw_primal_residual(rp, row_scale, m);
         dres = l2_norm(rd, n) / c_norm;
         if (debug) {
             fprintf(stderr,
-                    "ipm iter=%zd mu=%.3e pres=%.3e dres=%.3e ap=%.2e ad=%.2e\n",
-                    iter, mu, pres, dres, last_ap, last_ad);
+                    "ipm iter=%zd mu=%.3e pres=%.3e raw=%.3e dres=%.3e ap=%.2e ad=%.2e\n",
+                    iter, mu, pres, raw_pres, dres, last_ap, last_ad);
         }
         if (!isfinite(mu) || !isfinite(pres) || !isfinite(dres)) {
             /* The iterate is destroyed (late Newton steps on
@@ -4029,6 +5209,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             if (isfinite(score) && score < best_score) {
                 best_score = score;
                 best_pres = pres;
+                best_raw_pres = raw_pres;
                 best_dres = dres;
                 best_mu = mu;
                 /* Certified primal-dual gap: build the TRUE Lagrangian
@@ -4077,7 +5258,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 memcpy(y_best, y, (size_t)m * sizeof(double));
             }
         }
-        if (pres < tol && dres < tol && mu < 10.0 * tol) {
+        if (raw_pres <= feas_tol && pres < tol && dres < tol && mu < 10.0 * tol) {
             status = "optimal";
             break;
         }
@@ -4091,7 +5272,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             double mu_old = mu_hist[iter % 10];
             mu_hist[iter % 10] = mu;
             int stalled = iter >= 10 && isfinite(mu_old) && mu > 0.25 * mu_old;
-            if (stalled && pres <= 1e-6 && dres <= 5e-6 && mu <= 1e-6) {
+            if (stalled && raw_pres <= feas_tol && pres <= 1e-6 && dres <= 5e-6 &&
+                mu <= 1e-6) {
                 double pobj = 0.0;
                 double dobj = 0.0;
                 int certifiable = 1;
@@ -4149,6 +5331,83 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 }
             }
         }
+        if ((m >= 100 || n >= 100) && raw_pres > feas_tol && raw_pres <= 1e-3 &&
+            pres <= 1e-6 && dres <= 5e-6) {
+            double cleaned_gap = 0.0;
+            int certified = ipm_lagrangian_gap(c, b, lo, hi, bound_kind, m, n, x, y,
+                                                aty, &cleaned_gap) &&
+                            cleaned_gap <= 1e-5;
+            if (!certified &&
+                ipm_dual_polish(&op, chol, c, b, lo, hi, bound_kind, m, n, x, D,
+                                tmp_x, rhs_m, dy, dx, &cleaned_gap)) {
+                memcpy(y, dy, (size_t)m * sizeof(double));
+                memcpy(aty, dx, (size_t)n * sizeof(double));
+                certified = 1;
+            }
+            if (!certified && iter - last_cleanup_attempt >= 1 &&
+                (last_ap < 1e-6 || last_ad < 1e-6)) {
+                last_cleanup_attempt = iter;
+                if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                     &cleaned_gap, &dual_cleanup_rounds)) {
+                    certified = 1;
+                }
+            }
+            if (certified) {
+                double polished_pres = pres;
+                double polished_raw_pres = raw_pres;
+                double polished_gap = cleaned_gap;
+                if (ipm_primal_polish(&op, chol, self, csc_vals, c, b, lo, hi,
+                                      bound_kind, row_scale, m, n, rp, y, aty,
+                                      refactor_supernodal, feas_tol, b_norm, x, D,
+                                      rhs_m, tmp_x, dx, &polished_pres,
+                                      &polished_raw_pres, &polished_gap)) {
+                    pres = polished_pres;
+                    raw_pres = polished_raw_pres;
+                    best_gap = polished_gap;
+                    best_pres = polished_pres;
+                    best_raw_pres = polished_raw_pres;
+                    best_dres = dres;
+                    best_mu = mu;
+                    memcpy(x_best, x, (size_t)n * sizeof(double));
+                    memcpy(y_best, y, (size_t)m * sizeof(double));
+                    status = "optimal";
+                    break;
+                }
+            }
+        }
+        if ((m >= 100 || n >= 100) && raw_pres <= feas_tol &&
+            pres <= 1e-6 && dres <= 5e-6 &&
+            iter - last_cleanup_attempt >= 1) {
+            /* Same certificate-producing cleanup used on non-optimal exit,
+             * but run in-loop once the residuals are already small. This
+             * avoids burning extra factorizations solely to reach stricter
+             * barrier tolerances when the Lagrangian bound can already close. */
+            last_cleanup_attempt = iter;
+            double cleaned_gap = 0.0;
+            if (ipm_lagrangian_gap(c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                   &cleaned_gap) &&
+                cleaned_gap <= 1e-5) {
+                best_gap = cleaned_gap;
+                status = "optimal";
+                break;
+            }
+            if (ipm_dual_polish(&op, chol, c, b, lo, hi, bound_kind, m, n, x, D,
+                                tmp_x, rhs_m, dy, dx, &cleaned_gap)) {
+                memcpy(y, dy, (size_t)m * sizeof(double));
+                memcpy(aty, dx, (size_t)n * sizeof(double));
+                best_gap = cleaned_gap;
+                status = "optimal";
+                break;
+            }
+            if (last_ap < 1e-6 || last_ad < 1e-6) {
+                if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                     &cleaned_gap, &dual_cleanup_rounds)) {
+                    best_gap = cleaned_gap;
+                    status = "optimal";
+                    break;
+                }
+            }
+        }
 
         /* scaling matrix and factorization; the regularization shrinks with
          * mu so it stops limiting the final dual accuracy */
@@ -4188,12 +5447,12 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         if (debug) {
             struct timespec ts0, ts1;
             clock_gettime(CLOCK_MONOTONIC, &ts0);
-            chol_refactor(chol, self, csc_vals, D, delta_it);
+            chol_refactor_mode(chol, self, csc_vals, D, delta_it, refactor_supernodal);
             clock_gettime(CLOCK_MONOTONIC, &ts1);
             t_refactor += (double)(ts1.tv_sec - ts0.tv_sec) +
                           1e-9 * (double)(ts1.tv_nsec - ts0.tv_nsec);
         } else {
-            chol_refactor(chol, self, csc_vals, D, delta_it);
+            chol_refactor_mode(chol, self, csc_vals, D, delta_it, refactor_supernodal);
         }
 
         /* affine direction */
@@ -4333,15 +5592,17 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         memcpy(x, x_best, (size_t)n * sizeof(double));
         memcpy(y, y_best, (size_t)m * sizeof(double));
         pres = best_pres;
+        raw_pres = best_raw_pres;
         dres = best_dres;
         mu = best_mu;
         /* Relaxed acceptance: ill-conditioned instances stall with residual
          * floors around 1e-7 while the iterate is excellent for every
          * practical purpose. The explicit gap test is essential: with an
          * infeasible dual, small mu alone can hide a real objective error. */
-        if (pres <= 1e-6 && dres <= 5e-6 && mu <= 1e-6 && best_gap <= 1e-5) {
+        if (raw_pres <= feas_tol && pres <= 1e-6 && dres <= 5e-6 &&
+            mu <= 1e-6 && best_gap <= 1e-5) {
             status = "optimal";
-        } else if (pres <= 1e-6 && best_gap > 1e-5) {
+        } else if (raw_pres <= feas_tol && pres <= 1e-6 && best_gap > 1e-5) {
             /* Dual polish: the stored multipliers may fail to certify an
              * excellent primal point. Recompute y by weighted least squares
              * from the final factorization (one extra solve); ANY y yields
@@ -4392,7 +5653,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 }
             }
         }
-        if (strcmp(status, "optimal") != 0 && pres <= 1e-6) {
+        if (strcmp(status, "optimal") != 0 && raw_pres <= feas_tol && pres <= 1e-6) {
             double cleaned_gap = 0.0;
             if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
                                  &cleaned_gap, &dual_cleanup_rounds)) {
@@ -4405,8 +5666,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         fprintf(stderr, "ipm timers: refactor=%.2fs newton_solves=%.2fs\n",
                 t_refactor, t_newton);
         fprintf(stderr, "ipm exit: status=%s best_gap=%.3e best_pres=%.3e "
-                "best_dres=%.3e best_mu=%.3e\n",
-                status, best_gap, best_pres, best_dres, best_mu);
+                "best_raw=%.3e best_dres=%.3e best_mu=%.3e\n",
+                status, best_gap, best_pres, best_raw_pres, best_dres, best_mu);
     }
     {
         int finite = 1;
@@ -4452,6 +5713,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         }
         for (Py_ssize_t j = 0; j < n; j++) {
             objective += c[j] * x[j];
+        }
+        if (strcmp(status, "optimal") == 0 && max_residual > feas_tol) {
+            status = "iteration_limit";
         }
         PyObject *x_list = PyList_New(n);
         PyObject *y_list = PyList_New(m);
