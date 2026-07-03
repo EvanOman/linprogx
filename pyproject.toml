@@ -5,23 +5,32 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "linprogx"
 version = "0.1.0"
-description = "A small linear programming solver with a simplex core and optional C acceleration."
+description = "A dependency-free linear programming solver: two-phase simplex, sparse interior-point and PDHG solvers, with C extensions for performance."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "Evan Oman" }]
-keywords = ["linear-programming", "optimization", "simplex", "operations-research"]
+keywords = ["linear-programming", "optimization", "simplex", "operations-research", "interior-point", "sparse"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: C",
     "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/EvanOman/linprogx"
+Repository = "https://github.com/EvanOman/linprogx"
+Issues = "https://github.com/EvanOman/linprogx/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -48,6 +57,9 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+linprogx = ["py.typed"]
+
 [[tool.setuptools.ext-modules]]
 name = "linprogx._cfast"
 sources = ["src/linprogx/_cfast.c"]
@@ -59,6 +71,11 @@ sources = ["src/linprogx/_csparse.c"]
 extra-compile-args = ["-O3", "-pthread", "-DLINPROGX_HAVE_BLAS"]
 extra-link-args = ["-pthread"]
 libraries = ["openblas"]
+
+[tool.cibuildwheel]
+build = "cp312-manylinux_x86_64 cp313-manylinux_x86_64"
+before-all = "yum install -y openblas-devel || (apt-get update && apt-get install -y libopenblas-dev)"
+test-command = 'python -c "from linprogx import solve; r = solve(c=[3,2], A=[[1,1],[1,0],[0,1]], b=[4,2,3], objective=\"max\"); assert abs(r.objective_value - 10.0) < 1e-6"'
 
 [tool.ruff]
 line-length = 100
