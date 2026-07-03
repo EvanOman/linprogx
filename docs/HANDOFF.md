@@ -470,3 +470,28 @@ applicable. Big effort; sequence after the supernodal factor lands.
   Re-arm the loop after each iteration; record official suite runs into
   `assets/` + the handoff doc; rebase past the coverage-badge bot when
   pushing to `main`.
+
+### Update 2026-07-02 (evening) — official scoreboard promoted; standing vs HiGHS
+
+Suite run at loadavg ~3-6 (best window in two days) promoted to assets/
+(commit 637e99c, build 3ddbff5 + Gilbert-Peierls 6b1ca42 + dense-row
+deferral). Standing:
+- Coverage 24/24 (HiGHS 23, Clarabel 23) — EXCEEDED.
+- Aggregate suite time 75.5s vs HiGHS 337.4s — EXCEEDED.
+- Geometric-mean time ratio ~0.78 vs HiGHS — EXCEEDED.
+- Head-to-head: 10 of 23 mutual (+ qap15 where HiGHS times out) — the one
+  remaining axis, needs ~2 robust flips for majority. Nearest: ken_11
+  (0.31 vs 0.29, noise), osa_14 (1.40 vs 1.00; 1.04 measured at lower
+  load), pilot87 (5.73 vs 4.68; 78% of iterations are certificate-tail
+  waste — min-norm cleanup diverges, needs inequality-constrained dual
+  repair), stocfor3/80bau3b (~52% tails but the gap there is genuine
+  optimization distance — needs crossover, not certification tricks),
+  pds_10 (needs DS partial pricing; DS pivot rate 363/s at stocfor3 scale
+  is still ~5-10x short for pds routing).
+- Session infrastructure note: the perf work now lives in a dedicated
+  worktree at /home/evan/dev/linprogx-perf-worktree (own venv/build)
+  because the main checkout hosts a concurrent pypi-packaging session.
+  Two destructive incidents to remember: an agent git-reset discarded the
+  branch pointer (recovered via reflog; tag session-backup-20260702), and
+  a mid-run checkout switch invalidated a suite run (rerun from the
+  worktree).
