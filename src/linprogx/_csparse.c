@@ -11,6 +11,8 @@
 /* Fortran LAPACK (LP64, column-major), declared directly so no
  * lapacke header is required. OpenBLAS exports these symbols. */
 extern void dpotrf_(const char *uplo, const int *n, double *a, const int *lda, int *info);
+extern void dgetrf_(const int *m, const int *n, double *a, const int *lda,
+                    int *ipiv, int *info);
 extern void dgemm_(const char *transa, const char *transb, const int *m, const int *n,
                    const int *k, const double *alpha, const double *a, const int *lda,
                    const double *b, const int *ldb, const double *beta, double *c,
@@ -6239,6 +6241,29 @@ typedef struct {
     double  *ws_z;              /* workspace of size m */
     double  *ws_w;              /* workspace of size m */
     double  *ws_v;              /* workspace of size m (BTRAN eta application) */
+
+    /* ---- Gilbert-Peierls sparse solve infrastructure ---- */
+    int32_t *gp_stack;        /* DFS stack, size m */
+    int32_t *gp_xi;           /* reach output (topological order), size 2*m */
+    int32_t *gp_pinv;         /* workspace for column-to-row mapping, size m */
+    int32_t  gp_mark;         /* timestamp counter for visited marking */
+    int32_t *gp_marked;       /* visited markers, size m (compare vs gp_mark) */
+
+    /* ---- Transposed L and U for BTRAN (built once per factorization) ---- */
+    int32_t *lt_indptr;       /* L^T in CSC (= L in CSR), size m+1 */
+    int32_t *lt_indices;
+    double  *lt_values;
+    int32_t *ut_indptr;       /* U^T in CSC (= U in CSR), size m+1 */
+    int32_t *ut_indices;
+    double  *ut_values;
+
+    /* ---- Hyper-sparse solve statistics ---- */
+    int64_t  ftran_dense_count;   /* number of dense FTRAN calls */
+    int64_t  ftran_sparse_count;  /* number of sparse FTRAN calls */
+    int64_t  ftran_sparse_nnz_total; /* sum of solution nnz across sparse FTRANs */
+    int64_t  btran_dense_count;
+    int64_t  btran_sparse_count;
+    int64_t  btran_sparse_nnz_total;
 } LUContext;
 
 /* Allocate a pool entry; returns index or -1 on failure. */
@@ -6404,6 +6429,16 @@ static void lu_context_free(LUContext *ctx) {
     free(ctx->ws_z);
     free(ctx->ws_w);
     free(ctx->ws_v);
+    free(ctx->gp_stack);
+    free(ctx->gp_xi);
+    free(ctx->gp_pinv);
+    free(ctx->gp_marked);
+    free(ctx->lt_indptr);
+    free(ctx->lt_indices);
+    free(ctx->lt_values);
+    free(ctx->ut_indptr);
+    free(ctx->ut_indices);
+    free(ctx->ut_values);
     free(ctx);
 }
 
@@ -7056,6 +7091,31 @@ assemble:
     ctx->ws_v = calloc((size_t)m, sizeof(double));
     if (ctx->ws_z == NULL || ctx->ws_w == NULL || ctx->ws_v == NULL) goto oom;
 
+    /* Allocate Gilbert-Peierls sparse solve workspaces */
+    ctx->gp_stack  = malloc((size_t)m * sizeof(int32_t));
+    ctx->gp_xi     = malloc(2 * (size_t)m * sizeof(int32_t));
+    ctx->gp_pinv   = malloc((size_t)m * sizeof(int32_t));
+    ctx->gp_marked = calloc((size_t)m, sizeof(int32_t));
+    if (ctx->gp_stack == NULL || ctx->gp_xi == NULL ||
+        ctx->gp_pinv == NULL || ctx->gp_marked == NULL) goto oom;
+    ctx->gp_mark = 1;
+
+    /* Initialize transpose pointers to NULL (built on demand) */
+    ctx->lt_indptr  = NULL;
+    ctx->lt_indices = NULL;
+    ctx->lt_values  = NULL;
+    ctx->ut_indptr  = NULL;
+    ctx->ut_indices = NULL;
+    ctx->ut_values  = NULL;
+
+    /* Initialize hyper-sparse solve statistics */
+    ctx->ftran_dense_count = 0;
+    ctx->ftran_sparse_count = 0;
+    ctx->ftran_sparse_nnz_total = 0;
+    ctx->btran_dense_count = 0;
+    ctx->btran_sparse_count = 0;
+    ctx->btran_sparse_nnz_total = 0;
+
     /* Cleanup temporaries and return */
     lu_active_free(&active);
     free(mult_arr); free(is_update);
@@ -7079,6 +7139,515 @@ oom:
     free(dense_buf); free(dense_row_map); free(dense_col_map);
     lu_context_free(ctx);
     return NULL;
+}
+
+/* ============================================================
+ * Gilbert-Peierls hyper-sparse triangular solve infrastructure
+ * ============================================================ */
+
+/*
+ * lu_build_transposes: build CSC representations of L^T and U^T
+ * (equivalently, CSR representations of L and U).
+ *
+ * Standard CSC-to-CSR conversion:
+ *   1. Count entries per row
+ *   2. Prefix sum to get indptr
+ *   3. Fill values and column indices
+ */
+static void lu_build_transposes(LUContext *ctx) {
+    int32_t m = ctx->m;
+
+    /* Free previous transposes if any */
+    free(ctx->lt_indptr);
+    free(ctx->lt_indices);
+    free(ctx->lt_values);
+    free(ctx->ut_indptr);
+    free(ctx->ut_indices);
+    free(ctx->ut_values);
+
+    /* ---- Build L^T (transpose of L) ---- */
+    {
+        int32_t nnz = ctx->nnz_l;
+        ctx->lt_indptr  = calloc((size_t)(m + 1), sizeof(int32_t));
+        ctx->lt_indices = malloc((size_t)nnz * sizeof(int32_t));
+        ctx->lt_values  = malloc((size_t)nnz * sizeof(double));
+        if (ctx->lt_indptr == NULL || ctx->lt_indices == NULL || ctx->lt_values == NULL) return;
+
+        /* Count entries per row of L (= per column of L^T) */
+        for (int32_t p = 0; p < nnz; p++) {
+            ctx->lt_indptr[ctx->l_indices[p] + 1]++;
+        }
+        /* Prefix sum */
+        for (int32_t i = 1; i <= m; i++) {
+            ctx->lt_indptr[i] += ctx->lt_indptr[i - 1];
+        }
+        /* Fill: for each column j of L, for each entry (i,j), place into L^T column i.
+         * Reuse gp_stack as temp counter array (size m, int32_t). */
+        int32_t *work = ctx->gp_stack;
+        memset(work, 0, (size_t)m * sizeof(int32_t));
+        for (int32_t j = 0; j < m; j++) {
+            for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
+                int32_t i = ctx->l_indices[p];
+                int32_t dest = ctx->lt_indptr[i] + work[i];
+                ctx->lt_indices[dest] = j;
+                ctx->lt_values[dest]  = ctx->l_values[p];
+                work[i]++;
+            }
+        }
+    }
+
+    /* ---- Build U^T (transpose of U) ---- */
+    {
+        int32_t nnz = ctx->nnz_u;
+        ctx->ut_indptr  = calloc((size_t)(m + 1), sizeof(int32_t));
+        ctx->ut_indices = malloc((size_t)nnz * sizeof(int32_t));
+        ctx->ut_values  = malloc((size_t)nnz * sizeof(double));
+        if (ctx->ut_indptr == NULL || ctx->ut_indices == NULL || ctx->ut_values == NULL) return;
+
+        /* Count entries per row of U (= per column of U^T) */
+        for (int32_t p = 0; p < nnz; p++) {
+            ctx->ut_indptr[ctx->u_indices[p] + 1]++;
+        }
+        /* Prefix sum */
+        for (int32_t i = 1; i <= m; i++) {
+            ctx->ut_indptr[i] += ctx->ut_indptr[i - 1];
+        }
+        /* Fill (reuse gp_stack as temp counter) */
+        int32_t *work = ctx->gp_stack;
+        memset(work, 0, (size_t)m * sizeof(int32_t));
+        for (int32_t j = 0; j < m; j++) {
+            for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+                int32_t i = ctx->u_indices[p];
+                int32_t dest = ctx->ut_indptr[i] + work[i];
+                ctx->ut_indices[dest] = j;
+                ctx->ut_values[dest]  = ctx->u_values[p];
+                work[i]++;
+            }
+        }
+    }
+}
+
+/*
+ * gp_reach: Gilbert-Peierls depth-first-search reach.
+ *
+ * Given a sparse rhs with nonzero positions in rhs_pattern[0..n_rhs_nz-1],
+ * compute the set of nodes reachable in the graph defined by
+ * matrix_indptr/matrix_indices (CSC format).
+ *
+ * Returns the reach in REVERSE topological order in xi[top..m-1].
+ * Returns the value of 'top'.
+ *
+ * Uses ctx->gp_marked with ctx->gp_mark for O(1) amortized visited checks.
+ * Uses ctx->gp_stack for iterative DFS.
+ * Uses xi[0..m-1] as scratch for current-child-pointer during DFS.
+ */
+static int32_t gp_reach(LUContext *ctx,
+                         int32_t n_rhs_nz,
+                         const int32_t *rhs_pattern,
+                         const int32_t *matrix_indptr,
+                         const int32_t *matrix_indices,
+                         int32_t m,
+                         int32_t *xi) {
+    int32_t *stack   = ctx->gp_stack;
+    int32_t *marked  = ctx->gp_marked;
+    int32_t  mark    = ctx->gp_mark;
+
+    /* Overflow check: if mark would overflow, reset */
+    if (mark >= INT32_MAX - 1) {
+        memset(marked, 0, (size_t)m * sizeof(int32_t));
+        mark = 1;
+    }
+    ctx->gp_mark = mark + 1;
+
+    int32_t top = m;  /* xi[top..m-1] will be filled in reverse topo order */
+
+    for (int32_t k = 0; k < n_rhs_nz; k++) {
+        int32_t root = rhs_pattern[k];
+        if (marked[root] == mark) continue;  /* already visited */
+
+        int32_t stack_top = 0;
+        stack[0] = root;
+        /* xi[root] stores the current pointer position for DFS resume */
+        xi[root] = matrix_indptr[root];
+
+        while (stack_top >= 0) {
+            int32_t node = stack[stack_top];
+            int32_t p_end = matrix_indptr[node + 1];
+
+            if (marked[node] != mark) {
+                marked[node] = mark;
+                xi[node] = matrix_indptr[node];
+            }
+
+            /* Find next unvisited child */
+            int found_child = 0;
+            for (int32_t p = xi[node]; p < p_end; p++) {
+                int32_t child = matrix_indices[p];
+                if (marked[child] != mark) {
+                    xi[node] = p + 1;  /* save resume point */
+                    stack[++stack_top] = child;
+                    xi[child] = matrix_indptr[child];
+                    found_child = 1;
+                    break;
+                }
+            }
+
+            if (!found_child) {
+                /* All children visited: post-order emit */
+                stack_top--;
+                xi[--top + m] = node;  /* store in xi[m..2m-1] */
+            }
+        }
+    }
+
+    /* Move reach from xi[m+top..2m-1] to xi[top..m-1] */
+    for (int32_t i = top; i < m; i++) {
+        xi[i] = xi[i + m];
+    }
+
+    return top;
+}
+
+/*
+ * gp_lsolve: sparse forward solve with L (unit lower triangular).
+ *
+ * x is a dense vector (mostly zero), xi[top..m-1] contains the nonzero
+ * positions in topological order. L is unit lower triangular in CSC.
+ *
+ * For each j in xi[top..m-1]:
+ *   for each L[i,j] where i > j: x[i] -= L[i,j] * x[j]
+ *
+ * No diagonal division needed since L is unit lower triangular.
+ */
+static void gp_lsolve(const LUContext *ctx, double *x,
+                       const int32_t *xi, int32_t top) {
+    int32_t m = ctx->m;
+    for (int32_t px = top; px < m; px++) {
+        int32_t j = xi[px];
+        if (x[j] == 0.0) continue;
+        for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
+            x[ctx->l_indices[p]] -= ctx->l_values[p] * x[j];
+        }
+    }
+}
+
+/*
+ * gp_usolve: sparse back solve with U (upper triangular).
+ *
+ * x is a dense vector (mostly zero), xi[top..m-1] contains the nonzero
+ * positions from the reach computation. The DFS post-order reversal
+ * already places them in decreasing order (correct for back-sub),
+ * so iterate FORWARD through xi[top..m-1].
+ *
+ * For each j in xi[top..m-1]:
+ *   x[j] /= u_diag[j]
+ *   for each U[i,j] where i < j: x[i] -= U[i,j] * x[j]
+ */
+static void gp_usolve(const LUContext *ctx, double *x,
+                       const int32_t *xi, int32_t top) {
+    int32_t m = ctx->m;
+    for (int32_t px = top; px < m; px++) {
+        int32_t j = xi[px];
+        if (x[j] == 0.0) continue;
+        double diag = ctx->u_diag[j];
+        if (diag != 0.0) {
+            x[j] /= diag;
+        }
+        for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+            int32_t i = ctx->u_indices[p];
+            if (i < j) {
+                x[i] -= ctx->u_values[p] * x[j];
+            }
+        }
+    }
+}
+
+/*
+ * lu_ftran_sparse: hyper-sparse FTRAN using Gilbert-Peierls.
+ *
+ * Solves B x = b where b is given in sparse form:
+ *   rhs_indices[0..n_rhs_nz-1] = nonzero positions
+ *   rhs_values[0..n_rhs_nz-1]  = corresponding values
+ *
+ * Steps:
+ *   1. Permute sparse rhs: z[inv_perm_row[idx]] = val
+ *   2. DFS reach on L -> sparse L-solve
+ *   3. DFS reach on U (using L-solve output pattern) -> sparse U-solve
+ *   4. Inverse permute: x[perm_col[k]] = z[k]
+ *   5. Apply eta chain
+ *   6. Clear workspace at touched positions
+ */
+/*
+ * lu_ftran_sparse: hyper-sparse FTRAN using Gilbert-Peierls.
+ *
+ * x must be zero on entry; caller is responsible for clearing it at
+ * the returned pattern positions after use.
+ *
+ * Returns the number of nonzeros.  x_pattern[0..ret-1] holds their indices.
+ */
+static int32_t lu_ftran_sparse(LUContext *ctx,
+                               int32_t n_rhs_nz, const int32_t *rhs_indices,
+                               const double *rhs_values,
+                               double *x, int32_t *x_pattern) {
+    int32_t m = ctx->m;
+    double *z = ctx->ws_z;
+    int32_t *xi = ctx->gp_xi;
+
+    /* ws_z may have stale values from a prior dense lu_ftran or lu_btran
+     * call.  The sparse solve relies on z being zero at untouched positions,
+     * so clear it unconditionally.  This is O(m) but sequential and fast. */
+    memset(z, 0, (size_t)m * sizeof(double));
+
+    /* Step 1: Permute sparse rhs into z.
+     * Build permuted pattern for DFS.
+     * gp_pinv is safe here: gp_reach reads from it but never writes to it. */
+    int32_t *perm_pattern = ctx->gp_pinv;
+    int32_t n_perm_nz = 0;
+    for (int32_t k = 0; k < n_rhs_nz; k++) {
+        int32_t idx = rhs_indices[k];
+        int32_t prow = ctx->inv_perm_row[idx];
+        z[prow] = rhs_values[k];
+        perm_pattern[n_perm_nz++] = prow;
+    }
+
+    /* Step 2: Reach on L, then sparse L-solve */
+    int32_t top_l = gp_reach(ctx, n_perm_nz, perm_pattern,
+                              ctx->l_indptr, ctx->l_indices, m, xi);
+    gp_lsolve(ctx, z, xi, top_l);
+
+    /* Step 3: Build the nonzero pattern after L-solve for U-reach.
+     * Collect actual nonzeros from L-solve output.
+     * Must be done before gp_reach for U overwrites xi. */
+    int32_t n_u_rhs = 0;
+    for (int32_t px = top_l; px < m; px++) {
+        int32_t j = xi[px];
+        if (z[j] != 0.0) {
+            perm_pattern[n_u_rhs++] = j;
+        }
+    }
+
+    /* Reach on U, then sparse U-solve.
+     * This overwrites xi with U-reach in xi[top_u..m-1]. */
+    int32_t top_u = gp_reach(ctx, n_u_rhs, perm_pattern,
+                              ctx->u_indptr, ctx->u_indices, m, xi);
+    gp_usolve(ctx, z, xi, top_u);
+
+    /* Step 4: Inverse permute: x[perm_col[k]] = z[k] for nonzero k.
+     * Then clear z at U-reach positions. The U-reach is a superset of all
+     * nonzero positions after both L-solve and U-solve (since we fed all
+     * L-solve nonzeros as U-reach roots), so clearing here is sufficient.
+     *
+     * x is assumed zero on entry; no memset needed. */
+    int32_t sol_nnz = 0;
+    for (int32_t px = top_u; px < m; px++) {
+        int32_t k = xi[px];
+        if (z[k] != 0.0) {
+            int32_t out_idx = ctx->perm_col[k];
+            x[out_idx] = z[k];
+            x_pattern[sol_nnz++] = out_idx;
+        }
+        z[k] = 0.0;  /* clear workspace */
+    }
+
+    /* Step 5: Apply sparse Forrest-Tomlin etas.
+     * If x[pos] == 0 before eta k, then temp = 0/pivot = 0, all
+     * updates are x[j] -= v * 0 = 0, so no change. Skip.
+     *
+     * Etas may introduce new nonzeros (at eta sparse positions) or modify
+     * existing ones.  We track the full nonzero pattern including
+     * eta-created entries in x_pattern.  To avoid duplicate indices
+     * (which are harmless but waste work in callers), we use the
+     * gp_marked array as a presence set. */
+    if (ctx->n_updates > 0) {
+        int32_t *marked = ctx->gp_marked;
+        int32_t mark = ctx->gp_mark;
+        if (mark >= INT32_MAX - 1) {
+            memset(marked, 0, (size_t)m * sizeof(int32_t));
+            mark = 1;
+        }
+        ctx->gp_mark = mark + 1;
+
+        /* Mark existing pattern positions */
+        for (int32_t i = 0; i < sol_nnz; i++) {
+            marked[x_pattern[i]] = mark;
+        }
+
+        for (int32_t upd = 0; upd < ctx->n_updates; upd++) {
+            int32_t pos = ctx->eta_positions[upd];
+            double xpos = x[pos];
+            if (xpos == 0.0) continue;
+            double temp = xpos / ctx->eta_pivot[upd];
+            int32_t sp_start = ctx->eta_sp_start[upd];
+            int32_t sp_end   = ctx->eta_sp_start[upd + 1];
+            for (int32_t p = sp_start; p < sp_end; p++) {
+                int32_t j = ctx->eta_sp_idx[p];
+                x[j] -= ctx->eta_sp_val[p] * temp;
+                if (marked[j] != mark) {
+                    marked[j] = mark;
+                    x_pattern[sol_nnz++] = j;
+                }
+            }
+            x[pos] = temp;
+        }
+    }
+
+    /* Update statistics */
+    ctx->ftran_sparse_count++;
+    ctx->ftran_sparse_nnz_total += sol_nnz;
+    return sol_nnz;
+}
+
+/*
+ * lu_btran_sparse: hyper-sparse BTRAN for unit-vector rhs.
+ *
+ * Solves B^T x = e_{rhs_pos} using sparse triangular solves with
+ * transposed L and U.
+ *
+ * x must be zero on entry; caller is responsible for clearing it at
+ * the returned pattern positions after use.
+ *
+ * Returns the number of nonzeros.  x_pattern[0..ret-1] holds their indices.
+ */
+static int32_t lu_btran_sparse(LUContext *ctx,
+                               int32_t rhs_pos,
+                               double *x, int32_t *x_pattern) {
+    int32_t m = ctx->m;
+    double *z = ctx->ws_z;
+    double *v_eta = ctx->ws_v;
+    int32_t *xi = ctx->gp_xi;
+
+    /* ws_z may have stale values from a prior dense lu_ftran or lu_btran
+     * call.  The sparse solve relies on z being zero at untouched positions,
+     * so clear it unconditionally.  This is O(m) but sequential and fast. */
+    memset(z, 0, (size_t)m * sizeof(double));
+
+    /* Step 1: Apply etas in reverse to build b_eff from e_{rhs_pos}.
+     * Step 2: Permute b_eff into z.
+     *
+     * When n_updates == 0 (freshly factorized), b_eff is just e_{rhs_pos},
+     * so we can directly set up the permuted pattern without the O(m) scan
+     * of v_eta. */
+    int32_t *perm_pattern = ctx->gp_pinv;
+    int32_t n_perm_nz = 0;
+
+    if (ctx->n_updates == 0) {
+        /* Fast path: unit vector, no etas to apply */
+        int32_t perm_idx = ctx->inv_perm_col[rhs_pos];
+        z[perm_idx] = 1.0;
+        perm_pattern[0] = perm_idx;
+        n_perm_nz = 1;
+    } else {
+        /* Clear v_eta to handle stale values from prior dense lu_btran
+         * calls (which use ws_v but don't clean up). */
+        memset(v_eta, 0, (size_t)m * sizeof(double));
+        v_eta[rhs_pos] = 1.0;
+
+        for (int32_t upd = ctx->n_updates - 1; upd >= 0; upd--) {
+            int32_t pos = ctx->eta_positions[upd];
+            double piv = ctx->eta_pivot[upd];
+            double vpos = v_eta[pos];
+
+            /* dot = piv * v_eta[pos] + sum_{(j,v)} v * v_eta[j] */
+            double dot = piv * vpos;
+            int32_t sp_start = ctx->eta_sp_start[upd];
+            int32_t sp_end   = ctx->eta_sp_start[upd + 1];
+            for (int32_t p = sp_start; p < sp_end; p++) {
+                dot += ctx->eta_sp_val[p] * v_eta[ctx->eta_sp_idx[p]];
+            }
+            v_eta[pos] = vpos + (vpos - dot) / piv;
+        }
+
+        /* Permute b_eff into z.  The set of potentially-nonzero positions
+         * in v_eta is {rhs_pos} union {eta_positions[0..n_updates-1]}.
+         * Scan only those instead of the full O(m) array. */
+        if (v_eta[rhs_pos] != 0.0) {
+            int32_t pi = ctx->inv_perm_col[rhs_pos];
+            z[pi] = v_eta[rhs_pos];
+            perm_pattern[n_perm_nz++] = pi;
+            v_eta[rhs_pos] = 0.0;
+        }
+        for (int32_t upd = 0; upd < ctx->n_updates; upd++) {
+            int32_t pos = ctx->eta_positions[upd];
+            if (v_eta[pos] != 0.0) {
+                int32_t pi = ctx->inv_perm_col[pos];
+                z[pi] = v_eta[pos];
+                perm_pattern[n_perm_nz++] = pi;
+                v_eta[pos] = 0.0;
+            }
+        }
+    }
+
+    /* Step 3: U^T-solve. U^T is lower triangular (forward solve).
+     * Reach gives positions in topological order for forward solve. */
+    int32_t top_ut = gp_reach(ctx, n_perm_nz, perm_pattern,
+                               ctx->ut_indptr, ctx->ut_indices, m, xi);
+    /* Forward solve with U^T (lower triangular):
+     *   z[j] /= u_diag[j]
+     *   for each U^T[i,j] where i > j: z[i] -= U^T[i,j] * z[j] */
+    for (int32_t px = top_ut; px < m; px++) {
+        int32_t j = xi[px];
+        if (z[j] == 0.0) continue;
+        double diag = ctx->u_diag[j];
+        if (diag != 0.0) {
+            z[j] /= diag;
+        }
+        for (int32_t p = ctx->ut_indptr[j]; p < ctx->ut_indptr[j + 1]; p++) {
+            int32_t i = ctx->ut_indices[p];
+            if (i > j) {
+                z[i] -= ctx->ut_values[p] * z[j];
+            }
+        }
+    }
+
+    /* Step 4: L^T-solve. L^T is unit upper triangular (back solve).
+     * Build pattern after U^T solve for L^T reach (before gp_reach
+     * overwrites xi). */
+    int32_t n_lt_rhs = 0;
+    for (int32_t px = top_ut; px < m; px++) {
+        int32_t j = xi[px];
+        if (z[j] != 0.0) {
+            perm_pattern[n_lt_rhs++] = j;
+        }
+    }
+
+    int32_t top_lt = gp_reach(ctx, n_lt_rhs, perm_pattern,
+                               ctx->lt_indptr, ctx->lt_indices, m, xi);
+    /* Back solve with L^T (unit upper triangular):
+     * DFS post-order reversal already gives decreasing order in
+     * xi[top_lt..m-1], matching back-sub requirements. Iterate forward.
+     *   for each L^T[i,j] where i < j: z[i] -= L^T[i,j] * z[j] */
+    for (int32_t px = top_lt; px < m; px++) {
+        int32_t j = xi[px];
+        if (z[j] == 0.0) continue;
+        for (int32_t p = ctx->lt_indptr[j]; p < ctx->lt_indptr[j + 1]; p++) {
+            int32_t i = ctx->lt_indices[p];
+            if (i < j) {
+                z[i] -= ctx->lt_values[p] * z[j];
+            }
+        }
+    }
+
+    /* Step 5: Inverse permute and clear z.
+     * x[perm_row[k]] = z[k] for nonzero k in L^T-reach.
+     * L^T-reach is a superset of all nonzero positions after both solves
+     * (U^T-solve nonzeros were fed as L^T-reach roots).
+     *
+     * x is assumed zero on entry; no memset needed. */
+    int32_t sol_nnz = 0;
+    for (int32_t px = top_lt; px < m; px++) {
+        int32_t k = xi[px];
+        if (z[k] != 0.0) {
+            int32_t out_idx = ctx->perm_row[k];
+            x[out_idx] = z[k];
+            x_pattern[sol_nnz++] = out_idx;
+        }
+        z[k] = 0.0;  /* clear workspace */
+    }
+
+    /* Update statistics */
+    ctx->btran_sparse_count++;
+    ctx->btran_sparse_nnz_total += sol_nnz;
+    return sol_nnz;
 }
 
 /*
@@ -7513,22 +8082,117 @@ static int lu_update_with_ftran(LUContext *ctx,
 }
 
 /*
+ * lu_update_with_ftran_sparse: like lu_update_with_ftran but uses the
+ * pre-computed nonzero pattern to avoid O(m) scans.
+ *
+ * alpha_pattern[0..alpha_nnz-1] = indices of nonzero positions in
+ *   alpha_precomputed.
+ */
+static int lu_update_with_ftran_sparse(LUContext *ctx,
+                                       int32_t leaving_pos,
+                                       const double *alpha_precomputed,
+                                       int32_t alpha_nnz,
+                                       const int32_t *alpha_pattern) {
+    double pivot = alpha_precomputed[leaving_pos];
+    double abs_pivot = fabs(pivot);
+
+    double max_diag = ctx->max_abs_diag;
+    if (max_diag < 1.0) max_diag = 1.0;
+
+    if (abs_pivot < 1e-11 * max_diag) {
+        return -1;
+    }
+
+    /* Count nonzeros for sparse storage (using pattern) */
+    int32_t sp_nnz = 0;
+    for (int32_t ki = 0; ki < alpha_nnz; ki++) {
+        int32_t j = alpha_pattern[ki];
+        if (j != leaving_pos) sp_nnz++;
+    }
+
+    /* Grow per-update arrays if needed */
+    if (ctx->n_updates >= ctx->eta_cap) {
+        int32_t new_cap = ctx->eta_cap == 0 ? 16 : ctx->eta_cap * 2;
+        int32_t *new_positions = realloc(ctx->eta_positions,
+                                          (size_t)new_cap * sizeof(int32_t));
+        double *new_pivot = realloc(ctx->eta_pivot,
+                                     (size_t)new_cap * sizeof(double));
+        int32_t *new_starts = realloc(ctx->eta_sp_start,
+                                       ((size_t)new_cap + 1) * sizeof(int32_t));
+        if (new_positions == NULL || new_pivot == NULL || new_starts == NULL) {
+            if (new_positions != NULL) ctx->eta_positions = new_positions;
+            if (new_pivot != NULL) ctx->eta_pivot = new_pivot;
+            if (new_starts != NULL) ctx->eta_sp_start = new_starts;
+            return -1;
+        }
+        ctx->eta_positions = new_positions;
+        ctx->eta_pivot = new_pivot;
+        ctx->eta_sp_start = new_starts;
+        if (ctx->n_updates == 0) {
+            ctx->eta_sp_start[0] = 0;
+        }
+        ctx->eta_cap = new_cap;
+    }
+
+    /* Grow packed sparse arrays if needed */
+    int32_t new_total = ctx->eta_sp_total_nnz + sp_nnz;
+    if (new_total > ctx->eta_sp_packed_cap) {
+        int32_t new_pcap = ctx->eta_sp_packed_cap == 0 ? 256 : ctx->eta_sp_packed_cap;
+        while (new_pcap < new_total) new_pcap *= 2;
+        int32_t *new_idx = realloc(ctx->eta_sp_idx,
+                                    (size_t)new_pcap * sizeof(int32_t));
+        double *new_val = realloc(ctx->eta_sp_val,
+                                   (size_t)new_pcap * sizeof(double));
+        if (new_idx == NULL || new_val == NULL) {
+            if (new_idx != NULL) ctx->eta_sp_idx = new_idx;
+            if (new_val != NULL) ctx->eta_sp_val = new_val;
+            return -1;
+        }
+        ctx->eta_sp_idx = new_idx;
+        ctx->eta_sp_val = new_val;
+        ctx->eta_sp_packed_cap = new_pcap;
+    }
+
+    /* Store sparse eta entry using pattern */
+    int32_t pack_pos = ctx->eta_sp_total_nnz;
+    for (int32_t ki = 0; ki < alpha_nnz; ki++) {
+        int32_t j = alpha_pattern[ki];
+        if (j != leaving_pos) {
+            ctx->eta_sp_idx[pack_pos] = j;
+            ctx->eta_sp_val[pack_pos] = alpha_precomputed[j];
+            pack_pos++;
+        }
+    }
+
+    ctx->eta_positions[ctx->n_updates] = leaving_pos;
+    ctx->eta_pivot[ctx->n_updates] = pivot;
+    ctx->eta_sp_start[ctx->n_updates + 1] = new_total;
+    ctx->eta_sp_total_nnz = new_total;
+    ctx->n_updates++;
+
+    if (abs_pivot > ctx->max_abs_diag) ctx->max_abs_diag = abs_pivot;
+    if (abs_pivot < ctx->min_abs_diag) ctx->min_abs_diag = abs_pivot;
+
+    return 0;
+}
+
+/*
  * lu_should_refactor: predicate indicating the factorization should be
  * recomputed from scratch.
  *
  * Triggers:
- * - Number of accumulated updates >= 100
- * - Diagonal growth ratio max/min > 1e8
- * - Total sparse eta fill > 4 * original nnz(L + U)
+ * - Number of accumulated updates >= 500 (hard limit)
+ * - Eta pivot diagonal growth ratio max/min > 1e6 (stability guard)
+ * - Total sparse eta fill > 4 * original nnz(L + U) (fill guard)
  *
  * Returns 1 if refactorization is recommended, 0 otherwise.
  */
 static int lu_should_refactor(const LUContext *ctx) {
-    if (ctx->n_updates >= 100) return 1;
+    if (ctx->n_updates >= 500) return 1;
 
     if (ctx->n_updates > 0 && ctx->min_abs_diag > 0.0) {
         double ratio = ctx->max_abs_diag / ctx->min_abs_diag;
-        if (ratio > 1e8) return 1;
+        if (ratio > 1e6) return 1;
     }
 
     /* Total sparse eta entries.  With sparse storage the fill grows much
@@ -7799,6 +8463,10 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
     /* Sparse rho support */
     int32_t *rho_nz_rows = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+    /* Sparse FTRAN/BTRAN output pattern tracking */
+    int32_t *ftran_pattern = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+    int32_t ftran_nnz = 0;
+    int32_t *btran_pattern = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
     /* Per-column alpha accumulator for sparse pricing */
     double *alpha_scratch = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(double));
     int32_t *alpha_touched = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
@@ -7825,7 +8493,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         rho == NULL || alpha_col == NULL || e_i == NULL || c_B == NULL ||
         devex_w == NULL || basis == NULL ||
         b_indptr == NULL || b_indices == NULL || b_values == NULL ||
-        rho_nz_rows == NULL || alpha_scratch == NULL || alpha_touched == NULL ||
+        rho_nz_rows == NULL || ftran_pattern == NULL || btran_pattern == NULL ||
+        alpha_scratch == NULL || alpha_touched == NULL ||
         flip_delta_xB == NULL ||
         has_art_bound == NULL || lo_true == NULL || hi_true == NULL ||
         ds_row_scale == NULL || ds_col_scale == NULL || scaled_csc_data == NULL ||
@@ -8073,6 +8742,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 goto build_result;
             }
         }
+        lu_build_transposes(lu);
     }
     /* Initialize basis_pos */
     for (int32_t j = 0; j < n_total; j++) basis_pos[j] = -1;
@@ -8191,25 +8861,30 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     /* ============================================================
      * 4. MAIN DUAL SIMPLEX LOOP
      * ============================================================ */
+    /* Running totals for hyper-sparse density stats (survive refactorizations) */
+    int64_t cum_ftran_sparse_count = 0, cum_ftran_sparse_nnz = 0;
+    int64_t cum_btran_sparse_count = 0, cum_btran_sparse_nnz = 0;
+    int64_t total_refacs = 0;
+    double refac_time_total = 0.0;
+    double refac_factorize_time = 0.0;
     {
         int consecutive_degenerate = 0;
         int use_bland = 0;
 
-        /* Adaptive refactorization interval.  Starts at refac_interval
-         * (100). After each refactorization, compare incremental x_B
-         * against the from-scratch x_B; if they differ by > 1e-7
-         * relative, halve the interval (floor 10); if clean for
-         * clean_streak_target consecutive refactorizations, relax
-         * toward 100.  Also refactorize immediately when lu_update
-         * produces a violent eta (diagonal element < 1e-6 or > 1e6). */
-        int32_t refac_interval = 100;
+        /* Refactorization triggers: lu_should_refactor (n_updates >= 500,
+         * diagonal ratio > 1e4, eta fill > 4x) or iters_since_refac >= 500.
+         * Also refactorize immediately when lu_update produces a violent
+         * eta (diagonal element < 1e-6 or > 1e6). */
+        int32_t refac_interval = 500;
         int32_t iters_since_refac = 0;
-        int32_t clean_streak = 0;
-        const int32_t clean_streak_target = 3;
+        int x_B_needs_recompute = 1;
         for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
             iterations = iter;
 
             /* ---- 4a. Compute x_B = B^{-1}(b - A_N x_N) ---- */
+            /* With incremental x_B maintenance, recompute from scratch only
+             * when the flag is set (first iteration, after refactorization). */
+            if (x_B_needs_recompute) {
             memcpy(rhs, b, (size_t)m * sizeof(double));
             for (int32_t j = 0; j < n_total; j++) {
                 if (basis_pos[j] >= 0) continue;
@@ -8225,6 +8900,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
             }
             lu_ftran(lu, rhs, x_B);
+            x_B_needs_recompute = 0;
+            }
 
             /* ---- 4b. Find leaving variable: Devex-weighted max violation ---- */
             int32_t leaving_basis_pos = -1;
@@ -8277,15 +8954,22 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             }
 
             /* ---- 4c. Compute rho = BTRAN(e_leaving) ---- */
-            memset(e_i, 0, (size_t)m * sizeof(double));
-            e_i[leaving_basis_pos] = 1.0;
-            lu_btran(lu, e_i, rho);
-
-            /* ---- 4c'. Identify rho's nonzero support for sparse pricing ---- */
+            /* Use hyper-sparse BTRAN for unit vector rhs.
+             * rho must be zero on entry (cleared at the pattern positions
+             * after use at the end of the previous iteration). */
             int32_t rho_nnz = 0;
-            for (int32_t i = 0; i < m; i++) {
-                if (fabs(rho[i]) > 1e-15) {
-                    rho_nz_rows[rho_nnz++] = i;
+            if (lu->lt_indptr != NULL) {
+                rho_nnz = lu_btran_sparse(lu, leaving_basis_pos,
+                                          rho, rho_nz_rows);
+            } else {
+                memset(e_i, 0, (size_t)m * sizeof(double));
+                e_i[leaving_basis_pos] = 1.0;
+                lu_btran(lu, e_i, rho);
+                /* Dense path: scan for nonzeros */
+                for (int32_t i = 0; i < m; i++) {
+                    if (fabs(rho[i]) > 1e-15) {
+                        rho_nz_rows[rho_nnz++] = i;
+                    }
                 }
             }
 
@@ -8537,9 +9221,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         }
                     }
                     if (n_flips > 0) {
-                        /* Recompute y and reduced costs from scratch */
+                        /* Recompute y and reduced costs from scratch.
+                         * Dense BTRAN uses ws_v; clear it afterward. */
                         for (int32_t k = 0; k < m; k++) c_B[k] = c_ext[basis[k]];
                         lu_btran(lu, c_B, y);
+                        if (lu->ws_v != NULL)
+                            memset(lu->ws_v, 0, (size_t)m * sizeof(double));
                         for (int32_t j2 = 0; j2 < n_total; j2++) {
                             if (basis_pos[j2] >= 0) continue;
                             if (bound_status[j2] == DS_BOUND_FIXED) continue;
@@ -8553,7 +9240,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             }
                             r_ext[j2] = rj;
                         }
+                        /* Flips invalidate incremental x_B */
+                        x_B_needs_recompute = 1;
                     }
+                    /* Clean up sparse workspaces before continue */
+                    for (int32_t ki = 0; ki < rho_nnz; ki++)
+                        rho[rho_nz_rows[ki]] = 0.0;
                     iterations = iter + 1;
                     continue;
                 }
@@ -8608,19 +9300,49 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             }
 
             /* ---- 4e. FTRAN entering column: alpha_col = B^{-1} a_entering ---- */
+            /* alpha_col must be zero on entry (cleared at pattern positions
+             * after use at the end of the previous iteration). */
             {
-                double *a_entering = calloc((size_t)m, sizeof(double));
-                if (a_entering == NULL) { PyErr_NoMemory(); goto done; }
-                if (entering_col < n) {
-                    for (Py_ssize_t p = self->csc_indptr[entering_col]; p < self->csc_indptr[entering_col + 1]; p++) {
-                        a_entering[(int32_t)self->csc_rows[p]] = a_data[p];
+                int sparse_ftran = 0;
+                if (lu->lt_indptr != NULL && entering_col < n) {
+                    /* Use hyper-sparse FTRAN for structural columns from CSC.
+                     * Build sparse rhs directly from CSC pointers (no malloc). */
+                    Py_ssize_t col_start = self->csc_indptr[entering_col];
+                    Py_ssize_t col_end   = self->csc_indptr[entering_col + 1];
+                    int32_t col_nnz = (int32_t)(col_end - col_start);
+                    /* Use ftran_pattern as temporary for sparse rhs indices.
+                     * Safe because rhs_indices is consumed in step 1 before
+                     * x_pattern is written in step 4 of lu_ftran_sparse. */
+                    int32_t *sp_idx = ftran_pattern;
+                    double  *sp_val = lu->ws_w;  /* ws_w is unused during sparse FTRAN */
+                    for (int32_t k = 0; k < col_nnz; k++) {
+                        sp_idx[k] = (int32_t)self->csc_rows[col_start + k];
+                        sp_val[k] = a_data[col_start + k];
                     }
+                    ftran_nnz = lu_ftran_sparse(lu, col_nnz, sp_idx, sp_val,
+                                                alpha_col, ftran_pattern);
+                    sparse_ftran = 1;
                 } else {
-                    /* Artificial column */
-                    a_entering[entering_col - n] = 1.0;
+                    double *a_entering = calloc((size_t)m, sizeof(double));
+                    if (a_entering == NULL) { PyErr_NoMemory(); goto done; }
+                    if (entering_col < n) {
+                        for (Py_ssize_t p = self->csc_indptr[entering_col]; p < self->csc_indptr[entering_col + 1]; p++) {
+                            a_entering[(int32_t)self->csc_rows[p]] = a_data[p];
+                        }
+                    } else {
+                        /* Artificial column */
+                        a_entering[entering_col - n] = 1.0;
+                    }
+                    lu_ftran(lu, a_entering, alpha_col);
+                    free(a_entering);
+                    /* Dense FTRAN: build pattern by scanning */
+                    ftran_nnz = 0;
+                    for (int32_t k = 0; k < m; k++) {
+                        if (alpha_col[k] != 0.0)
+                            ftran_pattern[ftran_nnz++] = k;
+                    }
                 }
-                lu_ftran(lu, a_entering, alpha_col);
-                free(a_entering);
+                (void)sparse_ftran;
             }
 
             /* ---- 4f. Primal step ---- */
@@ -8633,14 +9355,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             double pivot = alpha_col[leaving_basis_pos];
             if (fabs(pivot) < 1e-12) {
                 /* Tiny pivot: inflate the Devex weight for this position so it
-                 * is deprioritized in future iterations, then skip. */
+                 * is deprioritized in future iterations, then skip.
+                 * Clean up sparse workspaces before continuing. */
                 devex_w[leaving_basis_pos] *= 1e6;
+                for (int32_t ki = 0; ki < ftran_nnz; ki++)
+                    alpha_col[ftran_pattern[ki]] = 0.0;
+                for (int32_t ki = 0; ki < rho_nnz; ki++)
+                    rho[rho_nz_rows[ki]] = 0.0;
                 continue;
             }
             double dx_entering = (x_B[leaving_basis_pos] - bound_leaving) / pivot;
 
-            /* Update basic variable values */
-            for (int32_t k = 0; k < m; k++) {
+            /* Update basic variable values using sparse alpha_col pattern */
+            for (int32_t ki = 0; ki < ftran_nnz; ki++) {
+                int32_t k = ftran_pattern[ki];
                 x_B[k] -= alpha_col[k] * dx_entering;
             }
 
@@ -8713,12 +9441,25 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             bound_status[entering_col] = DS_BOUND_BASIC;
             x_ext[entering_col] = entering_new_x;
 
+            /* Incremental x_B: the entering variable now occupies
+             * leaving_basis_pos; set its basic value directly.
+             * Guard: when entering_old_x and dx_entering are large
+             * with opposite signs (e.g. free variables at +/-1e20),
+             * entering_new_x suffers catastrophic cancellation.
+             * Detect this and force from-scratch recomputation. */
+            x_B[leaving_basis_pos] = entering_new_x;
+            if (fabs(entering_old_x) > 1e6 * (1.0 + fabs(entering_new_x))) {
+                x_B_needs_recompute = 1;
+            }
+
             /* ---- 4i. Devex weight update (Harris 1973 scheme) ---- */
             {
-                /* Update Devex weights: w_i_new = max(w_i, (alpha_col[i] / pivot)^2)
+                /* Update Devex weights using sparse alpha_col pattern:
+                 * w_i_new = max(w_i, (alpha_col[i] / pivot)^2)
                  * The entering variable gets weight 1/pivot^2 */
                 double inv_pivot_sq = 1.0 / (pivot * pivot);
-                for (int32_t k = 0; k < m; k++) {
+                for (int32_t ki = 0; ki < ftran_nnz; ki++) {
+                    int32_t k = ftran_pattern[ki];
                     double ratio = alpha_col[k] * alpha_col[k] * inv_pivot_sq;
                     if (ratio > devex_w[k]) devex_w[k] = ratio;
                 }
@@ -8731,8 +9472,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
                 /* Use the alpha_col already computed in step 4e to avoid a
                  * redundant FTRAN inside the standard lu_update.  This saves
-                 * one full FTRAN per iteration (the most expensive operation). */
-                int rc = lu_update_with_ftran(lu, leaving_basis_pos, alpha_col);
+                 * one full FTRAN per iteration (the most expensive operation).
+                 * Use the sparse variant when FTRAN pattern is available. */
+                int rc = lu_update_with_ftran_sparse(
+                    lu, leaving_basis_pos, alpha_col,
+                    ftran_nnz, ftran_pattern);
 
                 if (rc != 0) {
                     need_refac = 1;
@@ -8755,6 +9499,15 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
 
                 if (need_refac) {
+                    struct timespec _rf_t0, _rf_t1, _rf_tmid;
+                    clock_gettime(CLOCK_MONOTONIC, &_rf_t0);
+                    /* Accumulate density stats before freeing old LU */
+                    if (lu != NULL) {
+                        cum_ftran_sparse_count += lu->ftran_sparse_count;
+                        cum_ftran_sparse_nnz   += lu->ftran_sparse_nnz_total;
+                        cum_btran_sparse_count += lu->btran_sparse_count;
+                        cum_btran_sparse_nnz   += lu->btran_sparse_nnz_total;
+                    }
                     lu_context_free(lu);
                     lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
                                             a_data, basis,
@@ -8771,64 +9524,17 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         iterations = iter;
                         break;
                     }
+                    clock_gettime(CLOCK_MONOTONIC, &_rf_tmid);
+                    lu_build_transposes(lu);
                     for (int32_t k = 0; k < m; k++) devex_w[k] = 1.0;
-
-                    /* Drift-triggered interval adaptation:
-                     * Compare incremental x_B with from-scratch x_B.
-                     * rhs still holds the old x_B from step 4a. */
-                    {
-                        double *xb_fresh = calloc((size_t)m, sizeof(double));
-                        double *rhs2 = calloc((size_t)m, sizeof(double));
-                        if (xb_fresh == NULL || rhs2 == NULL) {
-                            free(xb_fresh); free(rhs2);
-                            PyErr_NoMemory(); goto done;
-                        }
-                        memcpy(rhs2, b, (size_t)m * sizeof(double));
-                        for (int32_t j2 = 0; j2 < n_total; j2++) {
-                            if (basis_pos[j2] >= 0) continue;
-                            if (x_ext[j2] == 0.0) continue;
-                            double xj2 = x_ext[j2];
-                            if (j2 < n) {
-                                for (Py_ssize_t p = self->csc_indptr[j2]; p < self->csc_indptr[j2 + 1]; p++) {
-                                    rhs2[(int32_t)self->csc_rows[p]] -= a_data[p] * xj2;
-                                }
-                            } else {
-                                rhs2[j2 - n] -= xj2;
-                            }
-                        }
-                        lu_ftran(lu, rhs2, xb_fresh);
-
-                        double max_drift = 0.0;
-                        for (int32_t k = 0; k < m; k++) {
-                            double diff = fabs(x_B[k] - xb_fresh[k]);
-                            double denom = 1.0 + fabs(xb_fresh[k]);
-                            if (diff / denom > max_drift)
-                                max_drift = diff / denom;
-                        }
-                        /* Use fresh x_B going forward */
-                        memcpy(x_B, xb_fresh, (size_t)m * sizeof(double));
-                        free(xb_fresh);
-                        free(rhs2);
-
-                        if (max_drift > 1e-7) {
-                            refac_interval = refac_interval / 2;
-                            if (refac_interval < 10) refac_interval = 10;
-                            clean_streak = 0;
-                        } else {
-                            clean_streak++;
-                            if (clean_streak >= clean_streak_target &&
-                                refac_interval < 100) {
-                                refac_interval = refac_interval * 2;
-                                if (refac_interval > 100) refac_interval = 100;
-                                clean_streak = 0;
-                            }
-                        }
-                    }
                     iters_since_refac = 0;
 
-                    /* Recompute y, r from scratch and repair dual feasibility */
+                    /* Recompute y, r from scratch and repair dual feasibility.
+                     * The dense lu_btran uses ws_v internally; clear it afterward
+                     * to avoid contaminating subsequent sparse BTRAN calls. */
                     for (int32_t k = 0; k < m; k++) c_B[k] = c_ext[basis[k]];
                     lu_btran(lu, c_B, y);
+                    memset(lu->ws_v, 0, (size_t)m * sizeof(double));
 
                     for (int32_t j = 0; j < n_total; j++) {
                         if (basis_pos[j] >= 0) continue;
@@ -8856,6 +9562,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         }
                         r_ext[j] = rj;
                     }
+                    /* Dual-feasibility repair may have changed x_ext for
+                     * nonbasic variables, invalidating the incremental x_B.
+                     * Force from-scratch recomputation at next iteration. */
+                    x_B_needs_recompute = 1;
+                    clock_gettime(CLOCK_MONOTONIC, &_rf_t1);
+                    refac_factorize_time += (_rf_tmid.tv_sec - _rf_t0.tv_sec)
+                        + (_rf_tmid.tv_nsec - _rf_t0.tv_nsec) * 1e-9;
+                    refac_time_total += (_rf_t1.tv_sec - _rf_t0.tv_sec)
+                        + (_rf_t1.tv_nsec - _rf_t0.tv_nsec) * 1e-9;
+                    total_refacs++;
                 }
             }
 
@@ -8869,6 +9585,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 consecutive_degenerate = 0;
                 use_bland = 0;
             }
+
+            /* Clear sparse workspaces at pattern positions so they are
+             * zero for the next iteration's sparse FTRAN/BTRAN calls. */
+            for (int32_t ki = 0; ki < ftran_nnz; ki++)
+                alpha_col[ftran_pattern[ki]] = 0.0;
+            for (int32_t ki = 0; ki < rho_nnz; ki++)
+                rho[rho_nz_rows[ki]] = 0.0;
 
             iterations = iter + 1;
         }
@@ -8897,6 +9620,15 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
     /* Copy structural x values */
     double *x_out = x_ext; /* reuse; we only return first n entries */
+
+    /* Accumulate final LU's stats into cumulative totals before
+     * the optimality-check refactorization creates a fresh LU. */
+    if (lu != NULL) {
+        cum_ftran_sparse_count += lu->ftran_sparse_count;
+        cum_ftran_sparse_nnz   += lu->ftran_sparse_nnz_total;
+        cum_btran_sparse_count += lu->btran_sparse_count;
+        cum_btran_sparse_nnz   += lu->btran_sparse_nnz_total;
+    }
 
     if (strcmp(status, "optimal") == 0) {
         lu_context_free(lu);
@@ -9077,14 +9809,32 @@ build_result:
             PyList_SET_ITEM(y_list, i, PyFloat_FromDouble(y[i]));
         }
 
+        /* Compute hyper-sparse solve density statistics from cumulative
+         * totals (survive across refactorizations). */
+        double ftran_mean_density = 0.0;
+        double btran_mean_density = 0.0;
+        if (cum_ftran_sparse_count > 0) {
+            ftran_mean_density = (double)cum_ftran_sparse_nnz /
+                ((double)cum_ftran_sparse_count * m);
+        }
+        if (cum_btran_sparse_count > 0) {
+            btran_mean_density = (double)cum_btran_sparse_nnz /
+                ((double)cum_btran_sparse_count * m);
+        }
+
         result = Py_BuildValue(
-            "{s:s,s:d,s:d,s:n,s:N,s:N}",
+            "{s:s,s:d,s:d,s:n,s:N,s:N,s:d,s:d,s:L,s:d,s:d}",
             "status", status,
             "objective", objective,
             "max_primal_residual", max_residual,
             "iterations", iterations,
             "x", x_list,
-            "y", y_list);
+            "y", y_list,
+            "ftran_mean_density", ftran_mean_density,
+            "btran_mean_density", btran_mean_density,
+            "refactorizations", (long long)total_refacs,
+            "refac_time", refac_time_total,
+            "refac_factorize_time", refac_factorize_time);
     }
 
 done:
@@ -9095,7 +9845,8 @@ done:
     free(rho); free(alpha_col); free(e_i); free(c_B);
     free(devex_w); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
-    free(rho_nz_rows); free(alpha_scratch); free(alpha_touched);
+    free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
+    free(alpha_scratch); free(alpha_touched);
     free(flip_delta_xB);
     free(has_art_bound); free(lo_true); free(hi_true);
     free(ds_row_scale); free(ds_col_scale); free(scaled_csc_data); free(scaled_csr_data); free(c_orig);
