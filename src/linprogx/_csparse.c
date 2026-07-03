@@ -2258,6 +2258,7 @@ static int min_degree_impl(
     Py_ssize_t elements_len = 0;
     Py_ssize_t elements_cap = 0;
     unsigned char *alive = calloc((size_t)m, sizeof(unsigned char));
+    unsigned char *deferred = NULL;
     int32_t *degree = calloc((size_t)m, sizeof(int32_t));
     int32_t *mark = calloc((size_t)m, sizeof(int32_t));
     int32_t *elem_mark = NULL;
@@ -2271,11 +2272,48 @@ static int min_degree_impl(
         goto cleanup;
     }
 
+    /* Dense-node deferral (AMD-style): nodes whose degree far exceeds
+     * 10*sqrt(m) sit in nearly every elimination neighborhood and turn
+     * the quotient-graph updates quadratic (osa_14: median degree 47
+     * but max 2302 of m=2337 drove the ordering to ~0.3s). They are
+     * removed from the graph up front and appended to the END of the
+     * ordering in index order — the position any good ordering gives
+     * them — where the dense-tail factor absorbs them at BLAS speed.
+     * Purely structural rule, no measured-machine constant. */
+    deferred = calloc((size_t)m, sizeof(unsigned char));
+    if (deferred == NULL) {
+        goto cleanup;
+    }
+    int32_t dense_threshold = (int32_t)(10.0 * sqrt((double)m));
+    if (dense_threshold < m / 2) {
+        /* Only overwhelmingly dense rows qualify: deferring moderately
+         * dense rows (cre_a: 3 rows at degree ~0.26m) measurably
+         * degraded the ordering and broke raw-problem IPM
+         * certification, while the pathological rows this rule targets
+         * (osa family) sit at ~0.98m. */
+        dense_threshold = m / 2;
+    }
+    if (dense_threshold < 16) {
+        dense_threshold = 16;
+    }
+    int32_t n_deferred = 0;
     for (int32_t j = 0; j < m; j++) {
-        alive[j] = 1;
+        int32_t deg0 = (int32_t)(indptr[j + 1] - indptr[j]) - 1;
+        if (deg0 > dense_threshold) {
+            deferred[j] = 1;
+            alive[j] = 0;
+            n_deferred++;
+        } else {
+            alive[j] = 1;
+        }
+    }
+    for (int32_t j = 0; j < m; j++) {
+        if (deferred[j]) {
+            continue;
+        }
         for (Py_ssize_t idx = indptr[j]; idx < indptr[j + 1]; idx++) {
             int32_t i = (int32_t)indices[idx];
-            if (i > j) {
+            if (i > j && !deferred[i]) {
                 if (intvec_push(&adj[i], j) != 0 || intvec_push(&adj[j], i) != 0) {
                     goto cleanup;
                 }
@@ -2283,13 +2321,16 @@ static int min_degree_impl(
         }
     }
     for (int32_t v = 0; v < m; v++) {
+        if (deferred[v]) {
+            continue;
+        }
         degree[v] = adj[v].len;
         if (heap_push(&heap, degree[v], v) != 0) {
             goto cleanup;
         }
     }
 
-    for (int32_t count = 0; count < m; count++) {
+    for (int32_t count = 0; count < m - n_deferred; count++) {
         int32_t v = -1;
         for (;;) {
             int64_t key = heap_pop(&heap);
@@ -2462,6 +2503,15 @@ static int min_degree_impl(
             goto cleanup;
         }
     }
+    {
+        /* deferred dense nodes come last, in index order (deterministic) */
+        int32_t at = m - n_deferred;
+        for (int32_t j = 0; j < m; j++) {
+            if (deferred[j]) {
+                order[at++] = j;
+            }
+        }
+    }
     status = 0;
 
 cleanup:
@@ -2484,6 +2534,7 @@ cleanup:
     free(var_elems);
     free(elements);
     free(alive);
+    free(deferred);
     free(degree);
     free(mark);
     free(elem_mark);
