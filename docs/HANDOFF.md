@@ -913,3 +913,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   delta) — worth ~8% on greenbea per the defect-era data, provably
   safe on cre (zero-flip pivots are band-sensitive only via the
   tie-break, which is now fixed).
+
+- FOURTEENTH SETTLED / SERIES CLOSED (2026-07-04, branch exp-leaving):
+  the Harris band-width surface is shallow and the 1e-7 default is
+  best-or-tied on greenbea/cre_d/stocfor3/80bau3b (narrow band's only
+  win: woodw -2.8%). The old defective-BFRT greenbea benefit (8,545) is
+  RETIRED: it reproduced from neither the tie-break (+1.7%) nor the
+  band (+7.6% — worse!) alone; it was an un-reproducible composite of
+  tau-expanded ratios inside the sorted scan interacting with
+  flip-firing pivots. Honest greenbea frontier: 9,668 (expand-only).
+  THE ENTERING-CHOICE RULE FAMILY AROUND MAX-|ALPHA| IS EXHAUSTED.
+  The DS frontier stands where the start+pricing unit left it:
+  (1) PRICING LOCALITY for pds-class walks (partial/hyper-sparse
+  pricing — pds_10 does 600k+ pivots with 1M+ flips at 0% degeneracy
+  and good crash survival), (2) crash REACHABLE-SET work for cre-class
+  (non-singleton pivoting with fill control; ordering alone measured
+  insufficient). Both are next-program scale. All experiment kwargs
+  (tiebreak, harris_band, r_refresh, crash v2, phase1, leaving_rule,
+  pricing) live on their branches as the permanent record.
