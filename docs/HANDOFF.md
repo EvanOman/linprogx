@@ -495,3 +495,42 @@ deferral). Standing:
   branch pointer (recovered via reflog; tag session-backup-20260702), and
   a mid-run checkout switch invalidated a suite run (rerun from the
   worktree).
+
+### Update 2026-07-04 — tension-experiment round: crash landed; two hypotheses settled
+
+Three parallel worktree experiments on the DS bottleneck (same protocol,
+competing hypotheses), plus an IPM dual-repair attempt:
+- **WINNER — crash quality (merged, b1529be)**: singleton-cascade
+  triangular crash + conditioning guard. woodw dual_infeasible -> OPTIMAL;
+  stocfor3 DS pivots -62% (9,061, below HiGHS's 12,313); greenbea public
+  4.41s. Includes a gap-budgeted acceptance for columns parked at
+  artificial bounds (|r|*max(1,|x|) vs objective-scaled budget — the
+  experiment's per-column tolerance would have admitted real gap error).
+- **REFUTED — exact dual steepest edge (branch exp-sedge, NOT merged)**:
+  count hypothesis confirmed (greenbea -39%, 80bau3b -22% pivots) but
+  exact DSE costs (1 FTRAN/pivot + m BTRANs/refactor) cancel the win at
+  small m and are ruinous above m~3k (cre_b 900s timeout; stocfor3
+  regressed + lost certification carrying weights across refactors).
+  The derived FT-update algebra is preserved in the branch. A future
+  count lever needs cheap weight maintenance, not exact DSE.
+- **REDIRECTED — partial pricing (branch exp-pricing, incomplete, agent
+  killed by spend limit)**: decisive diagnostic before death: on
+  stocfor3, refac_time = 65.3s of 74.5s total (88%) — REFACTORIZATION,
+  not pricing, is the DS bottleneck at m >= 15k. The next rate lever is
+  refactorization cost (Markowitz speed, sparser FT updates stretching
+  the refactor interval, or basis-reuse), not candidate lists.
+- **INCOMPLETE — IPM dual-repair QP (patch saved to session scratchpad
+  as dual-repair-admm-partial.patch, worktree reverted)**: agent removed
+  its unsound relaxed-gap path after coordinator intervention (soundness
+  restored), implemented an ADMM variant that did not converge to the
+  gates (pilot87 still ~150 iters) before being killed by the spend
+  limit. The active-set formulation from the original spec remains the
+  recommended approach; do not resurrect the ADMM patch without fixing
+  convergence.
+
+Standing after this round (quiet-box, public route): 12 wins, 1 tie,
+11 losses vs HiGHS. woodw's DS is now correct but the IPM route (0.17s)
+still loses to HiGHS 0.09s — routing woodw to DS needs DS end-to-end
+< 0.09s (currently ~0.5s incl. setup), so woodw stays IPM for now.
+NOTE: monthly API spend limit hit 2026-07-04 — subagent launches
+blocked until raised; continue inline or after reset.
