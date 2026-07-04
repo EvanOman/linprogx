@@ -667,3 +667,15 @@ remains depending on instance.
   max reentries 55 -> <10, count 100k -> ~15-25k, putting cre_d at
   ~5-10s DS vs IPM 6.6s and HiGHS 1.0s — likely still not a flip alone,
   but the remaining gap then becomes measurable engineering again).
+
+- PARTIAL (2026-07-04): dynamic cost shifting v1 (LINPROGX_DS_COST_SHIFT=1,
+  dark; cost_shifts counter in result dict). On cre_d: 39,094 shifts fire,
+  churn improves (max reentries 55 -> 25, gt10 columns 764 -> 624) but
+  count stays 100k — 1e-9-scale shifts make steps positive in name only.
+  The missing half is the standard large-shift + REMOVAL machinery:
+  meaningful shift magnitudes (e.g. fraction of the median |r| among
+  candidates), a c_shift[] accumulator, subtraction at every
+  refactorization r-recompute followed by a dual-feasibility repair pass
+  (bounded re-pivoting), and final removal before the exit gates. All
+  scaffolding (knob, counters, c_orig-based gates) is in place; implement
+  removal next, then re-run the pre-registered cre_d targets.

@@ -9541,6 +9541,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     int64_t stat_bland_pivots = 0;
     int64_t stat_max_degen_streak = 0;
     int64_t stat_art_ejections = 0;
+    int64_t stat_cost_shifts = 0;
+    int cost_shift_on = 0;
+    {
+        const char *env = getenv("LINPROGX_DS_COST_SHIFT");
+        if (env != NULL && atoi(env) == 1) {
+            cost_shift_on = 1;
+        }
+    }
     {
         int consecutive_degenerate = 0;
         int use_bland = 0;
@@ -9967,6 +9975,24 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
                 /* Compute theta_d for the chosen entering variable */
                 theta_d = -r_ext[entering_col] / ((double)leaving_sigma * entering_alpha_row);
+                if (cost_shift_on && theta_d < 1e-12) {
+                    /* Dynamic anti-degeneracy cost shift (Koberstein-style):
+                     * a zero dual step makes no progress and re-forms the
+                     * same ties (measured on cre_d: 764 columns re-entering
+                     * the basis up to 55x). Shift the entering column's
+                     * WORKING cost minimally so the step is positive. The
+                     * shift lives only in c_ext/r_ext (path steering); the
+                     * exit gates, objective, and certificates all recompute
+                     * from c_orig, and 1e-9-scale shifts sit far below the
+                     * 1e-7 exit tolerances. */
+                    double want = 1e-9 * (1.0 + fabs(c_ext[entering_col]));
+                    double r_new = -((double)leaving_sigma * entering_alpha_row) * want;
+                    double shift = r_new - r_ext[entering_col];
+                    c_ext[entering_col] += shift;
+                    r_ext[entering_col] = r_new;
+                    theta_d = want;
+                    stat_cost_shifts++;
+                }
 
             } else {
                 /* Bland's rule: pick smallest index admissible */
@@ -10637,7 +10663,7 @@ build_result:
             }
         }
         result = Py_BuildValue(
-            "{s:s,s:d,s:d,s:n,s:N,s:N,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:d,s:d}",
+            "{s:s,s:d,s:d,s:n,s:N,s:N,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:d,s:d}",
             "status", status,
             "objective", objective,
             "max_primal_residual", max_residual,
@@ -10649,6 +10675,7 @@ build_result:
             "refactorizations", (long long)total_refacs,
             "bound_flips", (long long)stat_flips,
             "artificial_ejections", (long long)stat_art_ejections,
+            "cost_shifts", (long long)stat_cost_shifts,
             "max_col_reentries", (long long)churn_max,
             "cols_reentering_gt10", (long long)churn_gt10,
             "degenerate_pivots", (long long)stat_degenerate,
