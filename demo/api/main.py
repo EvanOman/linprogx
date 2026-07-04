@@ -1,7 +1,8 @@
-"""linprogx demo API — Production Mix Optimizer.
+"""linprogx demo API — Network Flow Optimizer.
 
-A purpose-built FastAPI service that solves production-mix LP problems
-using linprogx.  Deployed on Render for the evanoman.com interactive demo.
+A purpose-built FastAPI service that solves minimum-cost network-flow LP
+problems using linprogx.  Deployed on Render for the evanoman.com
+interactive demo.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,7 +63,6 @@ _rate_buckets: dict[str, list[float]] = {}
 def _check_rate_limit(client_ip: str) -> bool:
     now = time.monotonic()
     bucket = _rate_buckets.setdefault(client_ip, [])
-    # Prune old entries
     bucket[:] = [t for t in bucket if now - t < _RATE_WINDOW]
     if len(bucket) >= _RATE_LIMIT:
         return False
@@ -70,14 +70,13 @@ def _check_rate_limit(client_ip: str) -> bool:
     return True
 
 
-# Periodic cleanup to avoid memory leak from stale IPs
 _last_cleanup = time.monotonic()
 
 
 def _maybe_cleanup() -> None:
     global _last_cleanup
     now = time.monotonic()
-    if now - _last_cleanup < 300:  # every 5 min
+    if now - _last_cleanup < 300:
         return
     _last_cleanup = now
     stale = [
@@ -102,21 +101,19 @@ async def rate_limit_middleware(request: Request, call_next: Any) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Solve timeout
+# Solve timeout & thread pool
 # ---------------------------------------------------------------------------
 
 SOLVE_TIMEOUT_SECONDS = 5
-
 _solve_pool = ThreadPoolExecutor(max_workers=2)
-
 
 # ---------------------------------------------------------------------------
 # Hard caps
 # ---------------------------------------------------------------------------
 
-MAX_PRODUCTS = 10
-MAX_RESOURCES = 10
-MAX_COEFFICIENT = 1_000_000
+MAX_NODES = 20
+MAX_EDGES = 50
+MAX_VALUE = 100_000
 
 
 # ---------------------------------------------------------------------------
@@ -124,57 +121,56 @@ MAX_COEFFICIENT = 1_000_000
 # ---------------------------------------------------------------------------
 
 
-class Product(BaseModel):
-    name: str = Field(..., min_length=1, max_length=50)
-    profit: float = Field(..., ge=0, le=MAX_COEFFICIENT)
+class Node(BaseModel):
+    id: str = Field(..., min_length=1, max_length=30)
+    type: Literal["supply", "hub", "demand"]
+    value: float = Field(default=0, ge=0, le=MAX_VALUE)
 
-    @field_validator("profit")
+    @field_validator("value")
     @classmethod
-    def profit_finite(cls, v: float) -> float:
-        if not (-MAX_COEFFICIENT <= v <= MAX_COEFFICIENT):
-            raise ValueError(f"profit must be between -{MAX_COEFFICIENT} and {MAX_COEFFICIENT}")
+    def value_required_for_supply_demand(cls, v: float, info: Any) -> float:
+        # supply and demand nodes need a positive value; hubs default to 0
         return v
 
 
-class Resource(BaseModel):
-    name: str = Field(..., min_length=1, max_length=50)
-    capacity: float = Field(..., gt=0, le=MAX_COEFFICIENT)
-    usage: list[float] = Field(..., min_length=1, max_length=MAX_PRODUCTS)
+class Edge(BaseModel):
+    source: str = Field(..., min_length=1, max_length=30, alias="from")
+    target: str = Field(..., min_length=1, max_length=30, alias="to")
+    cost: float = Field(..., ge=0, le=MAX_VALUE)
+    capacity: float = Field(..., gt=0, le=MAX_VALUE)
 
-    @field_validator("usage")
-    @classmethod
-    def usage_nonneg(cls, v: list[float]) -> list[float]:
-        for u in v:
-            if u < 0 or u > MAX_COEFFICIENT:
-                raise ValueError(f"usage values must be between 0 and {MAX_COEFFICIENT}")
-        return v
+    model_config = {"populate_by_name": True}
 
 
-class SolveRequest(BaseModel):
-    products: list[Product] = Field(..., min_length=1, max_length=MAX_PRODUCTS)
-    resources: list[Resource] = Field(..., min_length=1, max_length=MAX_RESOURCES)
+class FlowRequest(BaseModel):
+    nodes: list[Node] = Field(..., min_length=2, max_length=MAX_NODES)
+    edges: list[Edge] = Field(..., min_length=1, max_length=MAX_EDGES)
 
 
-class ProductResult(BaseModel):
-    name: str
-    quantity: float
-    profit_contribution: float
-
-
-class ResourceResult(BaseModel):
-    name: str
-    used: float
+class FlowResult(BaseModel):
+    source: str = Field(alias="from")
+    target: str = Field(alias="to")
+    flow: float
     capacity: float
-    utilization: float  # 0..1
-    shadow_price: float
-    binding: bool
+    utilization: float
+    cost: float
+    flow_cost: float
+
+    model_config = {"populate_by_name": True}
 
 
-class SolveResponse(BaseModel):
+class NodeBalance(BaseModel):
+    id: str
+    type: str
+    value: float
+    net_flow: float
+
+
+class FlowResponse(BaseModel):
     status: str
-    total_profit: float | None = None
-    products: list[ProductResult] = []
-    resources: list[ResourceResult] = []
+    total_cost: float | None = None
+    flows: list[FlowResult] = []
+    node_balances: list[NodeBalance] = []
     iterations: int = 0
     solve_time_ms: float = 0
     solver: str = f"linprogx v{linprogx.__version__}"
@@ -189,7 +185,7 @@ class InfoResponse(BaseModel):
         "Netlib benchmark suite."
     )
     github: str = "https://github.com/EvanOman/linprogx"
-    demo: str = "production-mix-optimizer"
+    demo: str = "network-flow-optimizer"
 
 
 # ---------------------------------------------------------------------------
@@ -207,39 +203,65 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/solve/production-mix", response_model=SolveResponse)
-def solve_production_mix(req: SolveRequest) -> SolveResponse:
-    n_products = len(req.products)
+@app.post("/api/solve/network-flow", response_model=FlowResponse)
+def solve_network_flow(req: FlowRequest) -> FlowResponse:
+    node_ids = {n.id for n in req.nodes}
 
-    # Validate usage vector lengths
-    for r in req.resources:
-        if len(r.usage) != n_products:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Resource '{r.name}' usage list has {len(r.usage)} entries "
-                f"but there are {n_products} products",
-            )
+    # Validate edges reference valid nodes
+    for e in req.edges:
+        if e.source not in node_ids:
+            raise HTTPException(422, f"Edge references unknown source node '{e.source}'")
+        if e.target not in node_ids:
+            raise HTTPException(422, f"Edge references unknown target node '{e.target}'")
 
-    # Build the LP:  maximize profit^T x  s.t.  usage * x <= capacity, x >= 0
-    model = linprogx.Model(name="production_mix")
-    variables = [model.variable(name=p.name, lower=0.0) for p in req.products]
+    # Build the min-cost flow LP:
+    #   minimize  sum(cost_e * x_e)
+    #   subject to:
+    #     For supply nodes:  sum(outflow) - sum(inflow) <= supply
+    #     For demand nodes:  sum(inflow) - sum(outflow) >= demand
+    #     For hub nodes:     sum(inflow) = sum(outflow)  (flow conservation)
+    #     For all edges:     0 <= x_e <= capacity_e
+    model = linprogx.Model(name="network_flow")
 
-    model.maximize({v: p.profit for v, p in zip(variables, req.products, strict=True)})
+    # Create a flow variable for each edge
+    edge_vars = []
+    for e in req.edges:
+        v = model.variable(name=f"{e.source}->{e.target}", lower=0.0, upper=e.capacity)
+        edge_vars.append(v)
 
-    for resource in req.resources:
-        model.add_constraint(
-            {v: u for v, u in zip(variables, resource.usage, strict=True)},
-            "<=",
-            resource.capacity,
-            name=resource.name,
-        )
+    # Objective: minimize total shipping cost
+    model.minimize({v: e.cost for v, e in zip(edge_vars, req.edges, strict=True)})
+
+    # Flow balance constraints for each node
+    for node in req.nodes:
+        # Coefficients: +1 for outgoing edges, -1 for incoming edges
+        coeffs: dict[Any, float] = {}
+        for v, e in zip(edge_vars, req.edges, strict=True):
+            if e.source == node.id:
+                coeffs[v] = coeffs.get(v, 0.0) + 1.0  # outflow
+            if e.target == node.id:
+                coeffs[v] = coeffs.get(v, 0.0) - 1.0  # inflow (negative)
+
+        if not coeffs:
+            continue
+
+        # net_outflow = sum(outflow) - sum(inflow)
+        if node.type == "supply":
+            # net_outflow <= supply (can ship at most supply amount)
+            model.add_constraint(coeffs, "<=", node.value, name=f"supply_{node.id}")
+        elif node.type == "demand":
+            # net_outflow <= -demand  =>  net_inflow >= demand
+            model.add_constraint(coeffs, "<=", -node.value, name=f"demand_{node.id}")
+        else:
+            # hub: flow conservation (net_outflow = 0)
+            model.add_constraint(coeffs, "=", 0.0, name=f"balance_{node.id}")
 
     t0 = time.perf_counter()
     try:
         future = _solve_pool.submit(model.solve)
         solution = future.result(timeout=SOLVE_TIMEOUT_SECONDS)
     except FuturesTimeoutError:
-        return SolveResponse(
+        return FlowResponse(
             status="timeout",
             solve_time_ms=round((time.perf_counter() - t0) * 1000, 2),
         )
@@ -248,52 +270,57 @@ def solve_production_mix(req: SolveRequest) -> SolveResponse:
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
 
     if solution.status != linprogx.Status.OPTIMAL:
-        return SolveResponse(
+        return FlowResponse(
             status=str(solution.status),
             iterations=solution.iterations,
             solve_time_ms=elapsed_ms,
         )
 
-    # Build response
-    product_results = []
-    for i, p in enumerate(req.products):
-        qty = solution.x[i] if i < len(solution.x) else 0.0
-        product_results.append(
-            ProductResult(
-                name=p.name,
-                quantity=round(qty, 6),
-                profit_contribution=round(qty * p.profit, 6),
+    # Build flow results
+    flow_results = []
+    for i, e in enumerate(req.edges):
+        flow_val = solution.x[i] if i < len(solution.x) else 0.0
+        utilization = flow_val / e.capacity if e.capacity > 0 else 0.0
+        flow_results.append(
+            FlowResult(
+                **{
+                    "from": e.source,
+                    "to": e.target,
+                    "flow": round(flow_val, 4),
+                    "capacity": e.capacity,
+                    "utilization": round(min(utilization, 1.0), 4),
+                    "cost": e.cost,
+                    "flow_cost": round(flow_val * e.cost, 4),
+                }
             )
         )
 
-    resource_results = []
-    sensitivity = solution.sensitivity
-    for i, r in enumerate(req.resources):
-        used = sum(
-            r.usage[j] * (solution.x[j] if j < len(solution.x) else 0.0) for j in range(n_products)
-        )
-        shadow = 0.0
-        if sensitivity and i < len(sensitivity.shadow_prices):
-            shadow = sensitivity.shadow_prices[i]
-        utilization = used / r.capacity if r.capacity > 0 else 0.0
-        resource_results.append(
-            ResourceResult(
-                name=r.name,
-                used=round(used, 6),
-                capacity=r.capacity,
-                utilization=round(min(utilization, 1.0), 6),
-                shadow_price=round(shadow, 6),
-                binding=utilization > 0.999,
+    # Compute node balances
+    node_balances = []
+    for node in req.nodes:
+        net_out = 0.0
+        for i, e in enumerate(req.edges):
+            flow_val = solution.x[i] if i < len(solution.x) else 0.0
+            if e.source == node.id:
+                net_out += flow_val
+            if e.target == node.id:
+                net_out -= flow_val
+        node_balances.append(
+            NodeBalance(
+                id=node.id,
+                type=node.type,
+                value=node.value,
+                net_flow=round(abs(net_out), 4),
             )
         )
 
-    return SolveResponse(
+    total_cost = sum(fr.flow_cost for fr in flow_results)
+
+    return FlowResponse(
         status="optimal",
-        total_profit=round(solution.objective_value, 6)
-        if solution.objective_value is not None
-        else None,
-        products=product_results,
-        resources=resource_results,
+        total_cost=round(total_cost, 4),
+        flows=flow_results,
+        node_balances=node_balances,
         iterations=solution.iterations,
         solve_time_ms=elapsed_ms,
     )
