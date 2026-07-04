@@ -6217,8 +6217,50 @@ typedef struct {
     unsigned char *row_active;
     unsigned char *col_active;
 
+    /* Count buckets: doubly-linked lists of ACTIVE columns keyed by their
+     * current col_count, so Markowitz pivot selection walks only the
+     * smallest occupied counts instead of scanning all m columns per
+     * elimination step (that scan made lu_factorize ~quadratic in m:
+     * 5.3ms at m=1097 but 547ms at m=14633 per call, 86% of stocfor3's
+     * dual-simplex wall time). bkt_prev encodes bucket-head membership
+     * as -(count+1). bkt_min is a lazy lower bound on the smallest
+     * nonempty bucket. bkt_ready gates the maintenance hooks so
+     * initialization can bulk-load. */
+    int32_t *bkt_head;  /* size m+1 */
+    int32_t *bkt_next;  /* size m */
+    int32_t *bkt_prev;  /* size m */
+    int32_t bkt_min;
+    int bkt_ready;
+
     int32_t m;  /* matrix dimension */
 } LUActive;
+
+static void lu_bkt_unlink(LUActive *a, int32_t col) {
+    int32_t nx = a->bkt_next[col];
+    int32_t pv = a->bkt_prev[col];
+    if (pv >= 0) {
+        a->bkt_next[pv] = nx;
+    } else {
+        a->bkt_head[-(pv + 1)] = nx;
+    }
+    if (nx >= 0) {
+        a->bkt_prev[nx] = pv;
+    }
+}
+
+static void lu_bkt_insert(LUActive *a, int32_t col) {
+    int32_t cnt = a->col_count[col];
+    int32_t h = a->bkt_head[cnt];
+    a->bkt_next[col] = h;
+    a->bkt_prev[col] = -(cnt + 1);
+    if (h >= 0) {
+        a->bkt_prev[h] = col;
+    }
+    a->bkt_head[cnt] = col;
+    if (cnt < a->bkt_min) {
+        a->bkt_min = cnt;
+    }
+}
 
 /* Result of LU factorization. */
 typedef struct {
@@ -6355,7 +6397,13 @@ static int lu_active_insert(LUActive *a, int32_t row, int32_t col, double value)
     a->col_head[col] = idx;
     a->pool[idx].next_in_row = a->row_head[row];
     a->row_head[row] = idx;
-    a->col_count[col]++;
+    if (a->bkt_ready && a->col_active[col]) {
+        lu_bkt_unlink(a, col);
+        a->col_count[col]++;
+        lu_bkt_insert(a, col);
+    } else {
+        a->col_count[col]++;
+    }
     a->row_count[row]++;
     return 0;
 }
@@ -6389,6 +6437,13 @@ static int lu_active_init(LUActive *a, int32_t m,
         a->row_active[j] = 1;
         a->col_active[j] = 1;
     }
+    a->bkt_ready = 0;
+    a->bkt_head = calloc((size_t)m + 1, sizeof(int32_t));
+    a->bkt_next = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+    a->bkt_prev = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+    if (a->bkt_head == NULL || a->bkt_next == NULL || a->bkt_prev == NULL) {
+        return -1;
+    }
     /* Insert entries column by column */
     for (int32_t j = 0; j < m; j++) {
         for (int32_t p = csc_indptr[j]; p < csc_indptr[j + 1]; p++) {
@@ -6397,6 +6452,15 @@ static int lu_active_init(LUActive *a, int32_t m,
             }
         }
     }
+    /* Bulk-load the count buckets now that col_counts are final. */
+    for (int32_t k = 0; k <= m; k++) {
+        a->bkt_head[k] = -1;
+    }
+    a->bkt_min = m;
+    for (int32_t j = 0; j < m; j++) {
+        lu_bkt_insert(a, j);
+    }
+    a->bkt_ready = 1;
     return 0;
 }
 
@@ -6408,6 +6472,9 @@ static void lu_active_free(LUActive *a) {
     free(a->row_count);
     free(a->row_active);
     free(a->col_active);
+    free(a->bkt_head);
+    free(a->bkt_next);
+    free(a->bkt_prev);
 }
 
 /* Remove all entries in row `row` from the active submatrix, also unlinking
@@ -6427,7 +6494,13 @@ static void lu_active_remove_row(LUActive *a, int32_t row) {
             }
             pp = &a->pool[*pp].next_in_col;
         }
-        a->col_count[col]--;
+        if (a->bkt_ready && a->col_active[col]) {
+            lu_bkt_unlink(a, col);
+            a->col_count[col]--;
+            lu_bkt_insert(a, col);
+        } else {
+            a->col_count[col]--;
+        }
         lu_pool_free(a, idx);
         idx = next;
     }
@@ -6456,6 +6529,9 @@ static void lu_active_remove_col(LUActive *a, int32_t col) {
         idx = next;
     }
     a->col_head[col] = -1;
+    if (a->bkt_ready && a->col_active[col]) {
+        lu_bkt_unlink(a, col);
+    }
     a->col_active[col] = 0;
 }
 
@@ -6765,39 +6841,27 @@ static LUContext *lu_factorize(int32_t m,
         int64_t best_score = (int64_t)m * (int64_t)m + 1;
         double best_pivot_val = 0.0;
 
-        /* Find the 4 smallest active column counts */
-        int32_t tier_counts[4] = {-1, -1, -1, -1};
-        int32_t n_tiers = 0;
-        for (int32_t j = 0; j < m; j++) {
-            if (!active.col_active[j]) continue;
-            int32_t cc = active.col_count[j];
-            int already = 0;
-            for (int32_t t = 0; t < n_tiers; t++) {
-                if (tier_counts[t] == cc) { already = 1; break; }
-            }
-            if (!already && n_tiers < 4) {
-                int32_t pos = n_tiers;
-                while (pos > 0 && tier_counts[pos - 1] > cc) {
-                    tier_counts[pos] = tier_counts[pos - 1];
-                    pos--;
-                }
-                tier_counts[pos] = cc;
-                n_tiers++;
-            } else if (!already && cc < tier_counts[3]) {
-                tier_counts[3] = cc;
-                for (int32_t t = 3; t > 0 && tier_counts[t] < tier_counts[t - 1]; t--) {
-                    int32_t tmp = tier_counts[t];
-                    tier_counts[t] = tier_counts[t - 1];
-                    tier_counts[t - 1] = tmp;
-                }
-            }
+        /* Walk the count buckets from the smallest occupied count: visit
+         * at most 4 nonempty tiers, and after the first tier stop probing
+         * for more once 256 consecutive counts are empty (quality-only
+         * tiers; bounded so sparse count distributions cannot reintroduce
+         * the O(m) sweep this replaced). bkt_min advances lazily. */
+        while (active.bkt_min <= m && active.bkt_head[active.bkt_min] < 0) {
+            active.bkt_min++;
         }
-
-        /* Scan columns in the chosen tiers */
-        int32_t max_tier_count = n_tiers > 0 ? tier_counts[n_tiers - 1] : 0;
-        for (int32_t j = 0; j < m; j++) {
-            if (!active.col_active[j]) continue;
-            if (active.col_count[j] > max_tier_count) continue;
+        int32_t tiers_seen = 0;
+        int32_t empty_run = 0;
+        for (int32_t cnt = active.bkt_min;
+             cnt <= m && tiers_seen < 4 && (tiers_seen == 0 || empty_run < 256);
+             cnt++) {
+            int32_t j = active.bkt_head[cnt];
+            if (j < 0) {
+                empty_run++;
+                continue;
+            }
+            empty_run = 0;
+            tiers_seen++;
+            for (; j >= 0; j = active.bkt_next[j]) {
 
             double col_max = 0.0;
             int32_t idx = active.col_head[j];
@@ -6825,6 +6889,7 @@ static LUContext *lu_factorize(int32_t m,
                     }
                 }
                 idx = active.pool[idx].next_in_col;
+            }
             }
         }
 pivot_found:
