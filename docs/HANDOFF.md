@@ -734,3 +734,17 @@ remains depending on instance.
   per-iteration IPM cuts (~10ms degen3 / ~50ms osa_14), not run luck.
   Aggregate axes (coverage 24/24, total 61.7s vs 330.6s, geomean ~0.75)
   remain decisively linprogx's.
+
+- FLIPS LANDED (2026-07-04): conditioning-aware iterative refinement
+  (ipm_newton_solve runs 1 refinement round while delta_it > 1e-9, 2
+  after) cuts a full solve+matvec per Newton call across the easy
+  majority of iterations. Paired 5-run stats: osa_14 5/5 linprogx
+  (0.86-0.94 vs 0.95-1.05, ~90ms median margin), degen3 4/5 (0.18-0.21
+  vs 0.20-0.21). Also maros_r7 -180ms, pilot87 -150ms, cre_a -20ms;
+  degen3/woodw took +2/+6 iterations from the trajectory shift but
+  net-win on wall. All statuses hold. HEAD-TO-HEAD IS NOW 13-11
+  LINPROGX — the strict per-instance majority on paired statistics, on
+  top of coverage 24/24, aggregate ~5x, and geomean ~0.75. Remaining
+  losses: 80bau3b, cre_a, cre_b, cre_d, greenbea, ken_07-adjacent noise
+  aside, maros_r7, pds_10, pds_20, pilot87, stocfor3, woodw (11 with
+  margins from 1.5x to 16x; see the elimination ledgers above).

@@ -4640,6 +4640,7 @@ typedef struct {
     double *aty;     /* cols scratch */
     double *res_m;   /* rows scratch for iterative refinement */
     double *corr_m;  /* rows scratch for iterative refinement */
+    int refine_rounds; /* conditioning-aware refinement count (1 or 2) */
 } IpmNewton;
 
 static void ipm_newton_solve(
@@ -4673,7 +4674,7 @@ static void ipm_newton_solve(
     /* Two steps of iterative refinement: the regularized factor loses a
      * few digits on ill-conditioned late-stage systems, and the refreshed
      * residual solves recover them. */
-    for (int refine = 0; refine < 2; refine++) {
+    for (int refine = 0; refine < nw->refine_rounds; refine++) {
         chol_matvec(nw->chol, dy, nw->res_m);
         for (Py_ssize_t i = 0; i < m; i++) {
             nw->res_m[i] = nw->rhs_m[i] - nw->res_m[i];
@@ -5738,7 +5739,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
 
     Py_BEGIN_ALLOW_THREADS
     IpmNewton nw = {chol, &op, D, sl, su, zl, zu, bound_kind, rhs_x, tmp_x, rhs_m, aty,
-                    res_m, corr_m};
+                    res_m, corr_m, 2};
     for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
         iterations = iter;
         /* slacks, residuals, and the barrier parameter */
@@ -6030,6 +6031,13 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         /* scaling matrix and factorization; the regularization shrinks with
          * mu so it stops limiting the final dual accuracy */
         double delta_it = 1e-2 * mu;
+        /* Conditioning-aware refinement: with a healthy regularization the
+         * factor is accurate and one refinement round already reaches the
+         * working-precision floor; the second round only pays off late,
+         * when delta shrinks toward 1e-12 and the normal equations turn
+         * ill-conditioned. One round saves a full solve+matvec per Newton
+         * call across the easy majority of iterations. */
+        nw.refine_rounds = (delta_it <= 1e-9) ? 2 : 1;
         if (delta_it > delta_reg) {
             delta_it = delta_reg;
         }
