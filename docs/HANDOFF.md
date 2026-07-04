@@ -855,3 +855,16 @@ Head-to-head 14-10 linprogx; all aggregate axes won. Per-loss attack map:
   setup trimming, and iteration-count work (centering).
 All instrumentation in place: dual_progress/degen_progress, churn
 counters, refac phase profile, LU profile, paired-stat protocol.
+
+- pds_10 DS PROBE (2026-07-04, expand=1 bfrt=1): iteration_limit at 100k
+  but the pathology profile is TRANSFORMED — 0 degenerate pivots (EXPAND
+  total), 139,638 bound flips (BFRT highly active; pds IS boxed-heavy,
+  unlike cre), 754 piv/s, clean refactorizations. Same Theory-A verdict
+  as cre: the walk from our identity-artificial/crash start is genuinely
+  ~13x HiGHS's 7.5k count. FINAL CONVERGENCE OF THE DS PROGRAM: every
+  family (cre one-sided, pds boxed, greenbea mixed) now shows healthy
+  pivot mechanics and a long walk — the one remaining lever class is
+  START DISTANCE + PRICING (slack-heavy/triangular crash tuned for
+  network structure, dual steepest-edge default with cheap weights).
+  That is the next multi-session program; everything else in the DS is
+  done and measured.
