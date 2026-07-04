@@ -221,6 +221,7 @@ class SparseSolver:
                     solve_hi,
                     max_iter=min(self.max_iterations, 50_000),
                     bfrt=1,
+                    expand=1,
                 )
                 if ds_early["status"] == "optimal":
                     dx = [float(value) for value in ds_early["x"]]
@@ -343,6 +344,7 @@ class SparseSolver:
                             solve_hi,
                             max_iter=min(self.max_iterations, 50_000),
                             bfrt=1,
+                            expand=1,
                         )
                         if ds_result["status"] == "optimal":
                             dx = [float(value) for value in ds_result["x"]]

@@ -9118,12 +9118,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     int pricing = 0; /* 0 = Devex (default), 1 = carried exact steepest edge */
     int leaving_rule = 0; /* leaving-row selection rule; 0 = current (byte-identical) */
     int bfrt = 0; /* 1 = bound-flipping (longest-step) dual ratio test */
+    int r_refresh = 0; /* drift audit: every K pivots recompute y and all
+                        * nonbasic reduced costs from scratch (with the
+                        * dual-feasibility repair pass) WITHOUT refactorizing.
+                        * 0 (default) = off. */
+    int expand = 0; /* 1 = EXPAND-style dual anti-degeneracy (Gill/Murray/
+                     * Saunders 1989, adapted to the dual ratio test):
+                     * expanding working dual tolerance + guaranteed minimum
+                     * step. 0 (default) = byte-identical legacy behavior. */
     static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "pricing",
-                             "leaving_rule", "bfrt", NULL};
+                             "leaving_rule", "bfrt", "r_refresh", "expand", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "OOOO|ndiii", kwlist,
+            args, kwds, "OOOO|ndiiiii", kwlist,
             &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter_arg, &tol, &pricing,
-            &leaving_rule, &bfrt)) {
+            &leaving_rule, &bfrt, &r_refresh, &expand)) {
         return NULL;
     }
     if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
@@ -9777,6 +9785,58 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             cost_shift_on = 1;
         }
     }
+    /* --- EXPAND state (expand==1) ---------------------------------------
+     * Gill/Murray/Saunders "EXPAND" anti-degeneracy, adapted to the DUAL
+     * simplex (dual-side practice per Koberstein's thesis). The quantity
+     * whose feasibility we expand is the nonbasic REDUCED COST: a column at
+     * LO is dual-feasible when r_j >= 0, at HI when r_j <= 0. The working
+     * tolerance tau grows by a tiny deterministic delta each pivot, so the
+     * dual ratio test may admit candidates whose reduced cost ends up to
+     * tau on the wrong side of zero, in exchange for a GUARANTEED minimum
+     * dual step theta_d >= delta/|alpha_q| every pivot:
+     *
+     *   Pass 1 (expanded): Theta_max = min_j (|r_j| + tau) / |alpha_j|
+     *   Pass 2 (unchanged): entering q = argmax |alpha_j| among candidates
+     *          with PLAIN ratio |r_j|/|alpha_j| <= Theta_max (+ Harris band)
+     *   Step: theta_d = max(-r_q / (sigma*alpha_q), delta/|alpha_q|)
+     *
+     * Every pivot therefore strictly moves the entering column's slack by
+     * >= delta (the classic EXPAND anti-cycling argument), so exact-zero
+     * steps -- which give the leaving variable r = 0 and deterministically
+     * re-form the same tie -- cannot occur. The price is bounded, controlled
+     * dual infeasibility (each wrong-side r_j is within tau of zero).
+     *
+     * Soundness:
+     *   - tau is reset to tau0 at EVERY refactorization, whose existing
+     *     recompute-and-repair pass (flip sign-violated nonbasics to their
+     *     correct finite bound) IS the EXPAND bound-consistency resweep.
+     *   - tau is hard-capped at EXPAND_TAU_MAX = 1e-8 (absolute): if tau
+     *     would exceed it, a refactorization + resweep is forced. 1e-8 sits
+     *     an order of magnitude below the 1e-7 c_orig exit-gate tolerances,
+     *     so accumulated expansion can never leak through the exit honesty
+     *     checks (which recompute everything from scratch and are untouched).
+     *     In practice refac_interval=500 keeps tau <= tau0 + 500*delta
+     *     = 5.5e-10, far from the cap.
+     *   - Sizing: tol_d = 1e-9 (the dual-feasibility repair tolerance used
+     *     at refactorization); tau0 = 0.5*tol_d = 5e-10; delta = tol_d/1e4
+     *     = 1e-13. All increments deterministic -- no randomness anywhere.
+     */
+    const double expand_tau0 = 5e-10;
+    const double expand_tau_max = 1e-8;
+    double expand_dtau = 1e-11;
+    {
+        /* Experiment knob (same idiom as LINPROGX_DS_BIGM_FACTOR): probe
+         * the EXPAND step-floor dose delta without changing the kwarg
+         * surface. Soundness does not depend on the dose: the tau_max
+         * refactorization trigger below caps accumulated expansion at
+         * 1e-8 for ANY delta (a larger delta only forces earlier
+         * resweeps). Default 1e-13 = tol_d/1e4, the classic sizing. */
+        const char *env = getenv("LINPROGX_DS_EXPAND_DTAU");
+        if (env != NULL && atof(env) > 0.0) {
+            expand_dtau = atof(env);
+        }
+    }
+    double expand_tau = expand_tau0;
     {
         int consecutive_degenerate = 0;
         int use_bland = 0;
@@ -10178,7 +10238,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                     if (!admissible) continue;
 
-                    double ratio = fabs(r_ext[j]) / fabs(alpha_j);
+                    /* EXPAND pass 1: the admission ratio uses the expanded
+                     * working tolerance, (|r_j| + tau)/|alpha_j|, so the
+                     * band Theta_max admits steps that push r_j up to tau
+                     * past zero. expand==0 keeps the plain ratio. */
+                    double r_num = fabs(r_ext[j]);
+                    if (expand == 1) r_num += expand_tau;
+                    double ratio = r_num / fabs(alpha_j);
                     if (ratio < theta_min) theta_min = ratio;
                     if (bfrt == 1) {
                         /* Collect breakpoint candidates for the BFRT walk.
@@ -10553,6 +10619,17 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     theta_d = -r_new / denom;
                     stat_cost_shifts++;
                 }
+                if (expand == 1) {
+                    /* EXPAND guaranteed minimum step: theta_d >= delta/|alpha_q|.
+                     * This (a) turns exact-zero (and tiny wrong-signed, from
+                     * Harris-band drift) steps into strictly positive ones so
+                     * the leaving variable's reduced cost theta_d*sigma is
+                     * strictly right-signed and the tie cannot re-form, and
+                     * (b) keeps the induced wrong-side reduced costs within
+                     * the expanded tolerance admitted in pass 1. */
+                    double theta_floor = expand_dtau / fabs(entering_alpha_row);
+                    if (theta_d < theta_floor) theta_d = theta_floor;
+                }
 
             } else {
                 /* Bland's rule: pick smallest index admissible */
@@ -10602,6 +10679,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     break;
                 }
                 theta_d = -r_ext[entering_col] / ((double)leaving_sigma * entering_alpha_row);
+                if (expand == 1) {
+                    /* Same EXPAND minimum-step floor on the Bland path. */
+                    double theta_floor = expand_dtau / fabs(entering_alpha_row);
+                    if (theta_d < theta_floor) theta_d = theta_floor;
+                }
             }
 
             /* Clean up alpha_scratch for next iteration */
@@ -10843,7 +10925,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 /* ---- 4k. Adaptive refactorization ---- */
                 if (!need_refac) {
                     if (lu_should_refactor(lu) ||
-                        iters_since_refac >= refac_interval) {
+                        iters_since_refac >= refac_interval ||
+                        (expand == 1 &&
+                         expand_tau + expand_dtau >= expand_tau_max)) {
+                        /* The expand_tau clause is the EXPAND hard cap: force
+                         * a refactorization (whose repair pass is the
+                         * resweep, and which resets tau to tau0) before the
+                         * working tolerance can reach EXPAND_TAU_MAX. */
                         need_refac = 1;
                     }
                 }
@@ -10921,6 +11009,10 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                      * nonbasic variables, invalidating the incremental x_B.
                      * Force from-scratch recomputation at next iteration. */
                     x_B_needs_recompute = 1;
+                    /* EXPAND reset: the recompute-and-repair above is the
+                     * bound-consistency resweep; restart the working
+                     * tolerance schedule from tau0. */
+                    expand_tau = expand_tau0;
                     clock_gettime(CLOCK_MONOTONIC, &_rf_t1);
                     refac_factorize_time += (_rf_tmid.tv_sec - _rf_t0.tv_sec)
                         + (_rf_tmid.tv_nsec - _rf_t0.tv_nsec) * 1e-9;
@@ -10931,6 +11023,10 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             }
 
             /* ---- 4l. Anti-cycling ---- */
+            /* EXPAND: grow the working tolerance once per completed pivot
+             * (tau_k = tau0 + k*delta between refactorizations; the reset
+             * to tau0 lives in the refactorization block above). */
+            if (expand == 1) expand_tau += expand_dtau;
             x_B_fresh = 0;
             if (theta_d < 1e-12) {
                 consecutive_degenerate++;
