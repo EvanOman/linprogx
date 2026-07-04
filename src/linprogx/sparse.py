@@ -10,7 +10,7 @@ try:
 except ImportError:  # pragma: no cover - source tree before extension build
     CSRMatrix = None  # type: ignore[assignment]
 
-from linprogx.presolve import postsolve_x, presolve_eq_box
+from linprogx.presolve import postsolve_x, presolve_matrix
 from linprogx.types import ObjectiveSense, Solution, Status
 
 SparseSense = Literal["<=", ">=", "="]
@@ -148,17 +148,18 @@ class SparseSolver:
         matrix = problem.A_eq
         reduction = None
         if self.presolve:
-            rows, cols = matrix.shape
-            indptr, indices, data = matrix.to_components()
-            reduction = presolve_eq_box(rows, cols, indptr, indices, data, b, c, lo, hi)
+            reduction = presolve_matrix(matrix, b, c, lo, hi)
         if reduction is not None:
-            matrix = csr_matrix(
-                reduction.rows,
-                reduction.cols,
-                reduction.indptr,
-                reduction.indices,
-                reduction.data,
-            )
+            if reduction._matrix is not None:
+                matrix = reduction._matrix
+            else:
+                matrix = csr_matrix(
+                    reduction.rows,
+                    reduction.cols,
+                    reduction.indptr,
+                    reduction.indices,
+                    reduction.data,
+                )
             solve_c, solve_b = reduction.c, reduction.b
             solve_lo, solve_hi = reduction.lo, reduction.hi
         else:

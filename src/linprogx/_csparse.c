@@ -10495,6 +10495,633 @@ static PyObject *csparse_lu_update_test(PyObject *self, PyObject *args) {
     return ret;
 }
 
+/* ====================================================================== */
+/* presolve_eq_box – C port of the pure-Python fixpoint presolve          */
+/* ====================================================================== */
+
+#define PRESOLVE_RATIO_LO  1e-4
+#define PRESOLVE_RATIO_HI  1e4
+#define PRESOLVE_PIVOT_EPS 1e-12
+#define PRESOLVE_DROP_EPS  1e-15
+
+/* Per-row sparse entry: col == -1 marks a deleted slot. */
+typedef struct { Py_ssize_t col; double val; } PSEntry;
+
+typedef struct {
+    PSEntry    *entries;
+    Py_ssize_t  count;     /* active entries                 */
+    Py_ssize_t  total;     /* slots used (including deleted) */
+    Py_ssize_t  capacity;  /* allocated slots                */
+} PSRow;
+
+/* Column-to-row membership set (unordered). */
+typedef struct {
+    Py_ssize_t *items;
+    Py_ssize_t  count;
+    Py_ssize_t  capacity;
+} PSColSet;
+
+#define PS_REC_FIXED    0
+#define PS_REC_DOUBLETON 1
+
+typedef struct {
+    int         type;
+    Py_ssize_t  idx1, idx2;
+    double      v1, v2, v3;
+} PSRec;
+
+/* ---- PSRow helpers ---------------------------------------------------- */
+
+static inline int ps_row_init(PSRow *r, Py_ssize_t cap) {
+    r->entries = (PSEntry *)malloc((size_t)cap * sizeof(PSEntry));
+    if (!r->entries) return -1;
+    r->count = r->total = 0;
+    r->capacity = cap;
+    return 0;
+}
+
+static inline int ps_row_append(PSRow *r, Py_ssize_t col, double val) {
+    if (r->total >= r->capacity) {
+        Py_ssize_t nc = r->capacity * 2 + 4;
+        PSEntry *t = (PSEntry *)realloc(r->entries, (size_t)nc * sizeof(PSEntry));
+        if (!t) return -1;
+        r->entries = t;
+        r->capacity = nc;
+    }
+    r->entries[r->total].col = col;
+    r->entries[r->total].val = val;
+    r->total++;
+    r->count++;
+    return 0;
+}
+
+static inline PSEntry *ps_row_find(PSRow *r, Py_ssize_t col) {
+    for (Py_ssize_t k = 0; k < r->total; k++)
+        if (r->entries[k].col == col) return &r->entries[k];
+    return NULL;
+}
+
+static inline void ps_row_delete(PSRow *r, Py_ssize_t col) {
+    for (Py_ssize_t k = 0; k < r->total; k++) {
+        if (r->entries[k].col == col) {
+            r->entries[k].col = -1;
+            r->count--;
+            return;
+        }
+    }
+}
+
+/* Set: update existing or append new. Returns -1 on alloc failure. */
+static inline int ps_row_set(PSRow *r, Py_ssize_t col, double val) {
+    PSEntry *e = ps_row_find(r, col);
+    if (e) { e->val = val; return 0; }
+    return ps_row_append(r, col, val);
+}
+
+/* Pop: delete if present.  Returns 1 if found, 0 otherwise. */
+static inline int ps_row_pop(PSRow *r, Py_ssize_t col) {
+    for (Py_ssize_t k = 0; k < r->total; k++) {
+        if (r->entries[k].col == col) {
+            r->entries[k].col = -1;
+            r->count--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static inline double ps_row_get(PSRow *r, Py_ssize_t col, double def) {
+    PSEntry *e = ps_row_find(r, col);
+    return e ? e->val : def;
+}
+
+/* Return the single active entry of a singleton row. */
+static inline void ps_row_get_one(PSRow *r, Py_ssize_t *jout, double *vout) {
+    for (Py_ssize_t k = 0; k < r->total; k++) {
+        if (r->entries[k].col >= 0) {
+            *jout = r->entries[k].col;
+            *vout = r->entries[k].val;
+            return;
+        }
+    }
+}
+
+/* Return the two active entries of a doubleton row in insertion order. */
+static inline void ps_row_get_two(PSRow *r,
+                                  Py_ssize_t *j1, double *v1,
+                                  Py_ssize_t *j2, double *v2) {
+    int found = 0;
+    for (Py_ssize_t k = 0; k < r->total; k++) {
+        if (r->entries[k].col >= 0) {
+            if (found == 0) { *j1 = r->entries[k].col; *v1 = r->entries[k].val; }
+            else            { *j2 = r->entries[k].col; *v2 = r->entries[k].val; return; }
+            found++;
+        }
+    }
+}
+
+static inline void ps_row_free(PSRow *r) { free(r->entries); r->entries = NULL; }
+
+/* ---- PSColSet helpers ------------------------------------------------- */
+
+static inline int ps_colset_init(PSColSet *s, Py_ssize_t cap) {
+    s->items = (Py_ssize_t *)malloc((size_t)cap * sizeof(Py_ssize_t));
+    if (!s->items) return -1;
+    s->count = 0;
+    s->capacity = cap;
+    return 0;
+}
+
+static inline int ps_colset_add(PSColSet *s, Py_ssize_t row) {
+    for (Py_ssize_t k = 0; k < s->count; k++)
+        if (s->items[k] == row) return 0;
+    if (s->count >= s->capacity) {
+        Py_ssize_t nc = s->capacity * 2 + 4;
+        Py_ssize_t *t = (Py_ssize_t *)realloc(s->items, (size_t)nc * sizeof(Py_ssize_t));
+        if (!t) return -1;
+        s->items = t;
+        s->capacity = nc;
+    }
+    s->items[s->count++] = row;
+    return 0;
+}
+
+static inline void ps_colset_discard(PSColSet *s, Py_ssize_t row) {
+    for (Py_ssize_t k = 0; k < s->count; k++) {
+        if (s->items[k] == row) {
+            s->items[k] = s->items[s->count - 1];
+            s->count--;
+            return;
+        }
+    }
+}
+
+static inline void ps_colset_clear(PSColSet *s) { s->count = 0; }
+static inline void ps_colset_free(PSColSet *s) { free(s->items); s->items = NULL; }
+
+/* ---- qsort comparator for output CSR (sort by column) ----------------- */
+
+static int ps_entry_cmp(const void *a, const void *b) {
+    Py_ssize_t ca = ((const PSEntry *)a)->col;
+    Py_ssize_t cb = ((const PSEntry *)b)->col;
+    return (ca > cb) - (ca < cb);
+}
+
+/* ---- the main presolve function --------------------------------------- */
+
+static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
+    (void)self;
+    PyObject *matrix_obj;
+    const char *b_buf, *c_buf, *lo_buf, *hi_buf;
+    Py_ssize_t b_len, c_len, lo_len, hi_len;
+    int max_fill = 5;
+
+    if (!PyArg_ParseTuple(args, "Oy#y#y#y#|i",
+                          &matrix_obj,
+                          &b_buf, &b_len,
+                          &c_buf, &c_len,
+                          &lo_buf, &lo_len,
+                          &hi_buf, &hi_len,
+                          &max_fill))
+        return NULL;
+
+    if (!PyObject_TypeCheck(matrix_obj, &CSRMatrixType)) {
+        PyErr_SetString(PyExc_TypeError,
+                        "first argument must be a CSRMatrix");
+        return NULL;
+    }
+    CSRMatrixObject *matrix = (CSRMatrixObject *)matrix_obj;
+    Py_ssize_t rows = matrix->rows;
+    Py_ssize_t cols = matrix->cols;
+    Py_ssize_t nnz  = matrix->nnz;
+
+    /* Read directly from CSRMatrixObject (no copy needed for matrix data) */
+    const Py_ssize_t *indptr  = matrix->indptr;
+    const Py_ssize_t *indices = matrix->indices;
+    const double     *data_in = matrix->data;
+
+    /* Validate b/c/lo/hi buffer sizes */
+    if (b_len != (Py_ssize_t)(rows * sizeof(double))) {
+        PyErr_SetString(PyExc_ValueError, "b buffer size mismatch");
+        return NULL;
+    }
+    if (c_len != (Py_ssize_t)(cols * sizeof(double)) ||
+        lo_len != (Py_ssize_t)(cols * sizeof(double)) ||
+        hi_len != (Py_ssize_t)(cols * sizeof(double))) {
+        PyErr_SetString(PyExc_ValueError, "c/lo/hi buffer size mismatch");
+        return NULL;
+    }
+
+    /* ---- allocate working storage ------------------------------------- */
+    double      *b_arr = NULL, *c_arr = NULL, *lo_arr = NULL, *hi_arr = NULL;
+    PSRow       *row_data    = NULL;
+    PSColSet    *col_sets    = NULL;
+    char        *rem_row     = NULL;   /* removed-row flags  */
+    char        *rem_col     = NULL;   /* removed-col flags  */
+    PSRec       *recs        = NULL;
+    Py_ssize_t   recs_n = 0, recs_cap = 0;
+    Py_ssize_t  *snap_buf    = NULL;   /* col_rows snapshot  */
+    Py_ssize_t  *act_rows    = NULL;
+    Py_ssize_t  *act_cols    = NULL;
+    Py_ssize_t  *col_map     = NULL;
+    PSEntry     *sort_buf    = NULL;
+    Py_ssize_t  *o_indptr    = NULL;
+    Py_ssize_t  *o_indices   = NULL;
+    double      *o_data      = NULL;
+    double      *o_b         = NULL;
+    PyObject    *py_b  = NULL, *py_c  = NULL, *py_lo = NULL, *py_hi = NULL;
+    PyObject    *py_recs = NULL, *py_ac = NULL;
+    PyObject    *py_matrix = NULL;
+    PyObject    *result      = NULL;
+
+    /* ---- copy mutable vectors from bytes ------------------------------ */
+    b_arr  = (double *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(double));
+    c_arr  = (double *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(double));
+    lo_arr = (double *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(double));
+    hi_arr = (double *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(double));
+    if (!b_arr || !c_arr || !lo_arr || !hi_arr) goto oom;
+    if (rows > 0) memcpy(b_arr, b_buf, (size_t)rows * sizeof(double));
+    if (cols > 0) {
+        memcpy(c_arr, c_buf, (size_t)cols * sizeof(double));
+        memcpy(lo_arr, lo_buf, (size_t)cols * sizeof(double));
+        memcpy(hi_arr, hi_buf, (size_t)cols * sizeof(double));
+    }
+
+    /* ---- build row_entries -------------------------------------------- */
+    row_data = (PSRow *)calloc((size_t)(rows > 0 ? rows : 1), sizeof(PSRow));
+    if (!row_data) goto oom;
+    for (Py_ssize_t i = 0; i < rows; i++) {
+        Py_ssize_t cap = indptr[i + 1] - indptr[i] + 2;
+        if (ps_row_init(&row_data[i], cap) != 0) goto oom;
+        for (Py_ssize_t off = indptr[i]; off < indptr[i + 1]; off++) {
+            if (fabs(data_in[off]) > PRESOLVE_DROP_EPS) {
+                if (ps_row_append(&row_data[i], indices[off], data_in[off]) != 0)
+                    goto oom;
+            }
+        }
+    }
+
+    /* ---- build col_rows ----------------------------------------------- */
+    col_sets = (PSColSet *)calloc((size_t)(cols > 0 ? cols : 1), sizeof(PSColSet));
+    if (!col_sets) goto oom;
+    for (Py_ssize_t j = 0; j < cols; j++)
+        if (ps_colset_init(&col_sets[j], 4) != 0) goto oom;
+    for (Py_ssize_t i = 0; i < rows; i++) {
+        for (Py_ssize_t k = 0; k < row_data[i].total; k++) {
+            Py_ssize_t c = row_data[i].entries[k].col;
+            if (c >= 0)
+                if (ps_colset_add(&col_sets[c], i) != 0) goto oom;
+        }
+    }
+
+    /* ---- tracking arrays ---------------------------------------------- */
+    rem_row  = (char *)calloc((size_t)(rows > 0 ? rows : 1), 1);
+    rem_col  = (char *)calloc((size_t)(cols > 0 ? cols : 1), 1);
+    snap_buf = (Py_ssize_t *)calloc((size_t)(rows > 0 ? rows : 1), sizeof(Py_ssize_t));
+    if (!rem_row || !rem_col || !snap_buf) goto oom;
+
+    recs_cap = 32;
+    recs = (PSRec *)malloc((size_t)recs_cap * sizeof(PSRec));
+    if (!recs) goto oom;
+
+    double obj_off = 0.0;
+    Py_ssize_t n_rem_rows = 0, n_rem_cols = 0;
+
+    /* ==== fixpoint loop ================================================ */
+    int changed = 1;
+    while (changed) {
+        changed = 0;
+
+        /* ---- pass 1: empty rows --------------------------------------- */
+        for (Py_ssize_t i = 0; i < rows; i++) {
+            if (rem_row[i]) continue;
+            if (row_data[i].count == 0) {
+                rem_row[i] = 1; n_rem_rows++; changed = 1;
+            }
+        }
+
+        /* ---- pass 2: singleton rows ----------------------------------- */
+        for (Py_ssize_t i = 0; i < rows; i++) {
+            if (rem_row[i] || row_data[i].count != 1) continue;
+            Py_ssize_t j = -1; double coef = 0.0;
+            ps_row_get_one(&row_data[i], &j, &coef);
+            if (j < 0 || rem_col[j] || fabs(coef) < PRESOLVE_PIVOT_EPS) continue;
+
+            double value = b_arr[i] / coef;
+            if (value < lo_arr[j]) value = lo_arr[j];
+            if (value > hi_arr[j]) value = hi_arr[j];
+
+            /* record */
+            if (recs_n >= recs_cap) {
+                recs_cap *= 2;
+                PSRec *t = (PSRec *)realloc(recs, (size_t)recs_cap * sizeof(PSRec));
+                if (!t) goto oom;
+                recs = t;
+            }
+            recs[recs_n].type = PS_REC_FIXED;
+            recs[recs_n].idx1 = j;
+            recs[recs_n].idx2 = 0;
+            recs[recs_n].v1   = value;
+            recs[recs_n].v2   = 0.0;
+            recs[recs_n].v3   = 0.0;
+            recs_n++;
+
+            obj_off += c_arr[j] * value;
+
+            /* substitute into other rows */
+            Py_ssize_t sn = col_sets[j].count;
+            memcpy(snap_buf, col_sets[j].items, (size_t)sn * sizeof(Py_ssize_t));
+            for (Py_ssize_t s = 0; s < sn; s++) {
+                Py_ssize_t oth = snap_buf[s];
+                if (oth == i || rem_row[oth]) continue;
+                PSEntry *ep = ps_row_find(&row_data[oth], j);
+                if (ep) {
+                    b_arr[oth] -= ep->val * value;
+                    ps_row_delete(&row_data[oth], j);
+                    ps_colset_discard(&col_sets[j], oth);
+                }
+            }
+            rem_row[i] = 1; n_rem_rows++;
+            rem_col[j] = 1; n_rem_cols++;
+            ps_colset_clear(&col_sets[j]);
+            changed = 1;
+        }
+
+        /* ---- pass 3: doubleton rows ----------------------------------- */
+        for (Py_ssize_t i = 0; i < rows; i++) {
+            if (rem_row[i] || row_data[i].count != 2) continue;
+
+            Py_ssize_t jp, jq; double ap, dq;
+            ps_row_get_two(&row_data[i], &jp, &ap, &jq, &dq);
+            if (rem_col[jp] || rem_col[jq]) continue;
+
+            /* prefer eliminating the lower-degree column */
+            if (col_sets[jp].count > col_sets[jq].count) {
+                Py_ssize_t tj = jp; double ta = ap;
+                jp = jq; ap = dq; jq = tj; dq = ta;
+            }
+            if (fabs(ap) < PRESOLVE_PIVOT_EPS) {
+                Py_ssize_t tj = jp; double ta = ap;
+                jp = jq; ap = dq; jq = tj; dq = ta;
+                if (fabs(ap) < PRESOLVE_PIVOT_EPS) continue;
+            }
+            double ratio = fabs(dq / ap);
+            if (ratio < PRESOLVE_RATIO_LO || ratio > PRESOLVE_RATIO_HI) {
+                Py_ssize_t tj = jp; double ta = ap;
+                jp = jq; ap = dq; jq = tj; dq = ta;
+                if (fabs(ap) < PRESOLVE_PIVOT_EPS) continue;
+                ratio = fabs(dq / ap);
+                if (ratio < PRESOLVE_RATIO_LO || ratio > PRESOLVE_RATIO_HI) continue;
+            }
+            if (col_sets[jp].count - 1 > max_fill) continue;
+
+            double alpha = -dq / ap;
+            double beta  = b_arr[i] / ap;
+            double new_lo = lo_arr[jq];
+            double new_hi = hi_arr[jq];
+            if (alpha > PRESOLVE_DROP_EPS) {
+                if (isfinite(lo_arr[jp]))
+                    new_lo = fmax(new_lo, (lo_arr[jp] - beta) / alpha);
+                if (isfinite(hi_arr[jp]))
+                    new_hi = fmin(new_hi, (hi_arr[jp] - beta) / alpha);
+            } else if (alpha < -PRESOLVE_DROP_EPS) {
+                if (isfinite(hi_arr[jp]))
+                    new_lo = fmax(new_lo, (hi_arr[jp] - beta) / alpha);
+                if (isfinite(lo_arr[jp]))
+                    new_hi = fmin(new_hi, (lo_arr[jp] - beta) / alpha);
+            }
+            if (new_lo > new_hi + 1e-8) continue;
+            lo_arr[jq] = new_lo;
+            hi_arr[jq] = new_hi;
+
+            /* record */
+            if (recs_n >= recs_cap) {
+                recs_cap *= 2;
+                PSRec *t = (PSRec *)realloc(recs, (size_t)recs_cap * sizeof(PSRec));
+                if (!t) goto oom;
+                recs = t;
+            }
+            recs[recs_n].type = PS_REC_DOUBLETON;
+            recs[recs_n].idx1 = jp;
+            recs[recs_n].idx2 = jq;
+            recs[recs_n].v1   = ap;
+            recs[recs_n].v2   = dq;
+            recs[recs_n].v3   = b_arr[i];
+            recs_n++;
+
+            obj_off    += c_arr[jp] * beta;
+            c_arr[jq]  += c_arr[jp] * alpha;
+
+            /* substitute into other rows */
+            Py_ssize_t sn = col_sets[jp].count;
+            memcpy(snap_buf, col_sets[jp].items, (size_t)sn * sizeof(Py_ssize_t));
+            for (Py_ssize_t s = 0; s < sn; s++) {
+                Py_ssize_t oth = snap_buf[s];
+                if (oth == i || rem_row[oth]) continue;
+                PSEntry *ep = ps_row_find(&row_data[oth], jp);
+                if (!ep || fabs(ep->val) < PRESOLVE_DROP_EPS) continue;
+                double coef_p = ep->val;
+
+                b_arr[oth] -= coef_p * beta;
+                double merged = ps_row_get(&row_data[oth], jq, 0.0) + coef_p * alpha;
+
+                if (fabs(merged) < PRESOLVE_DROP_EPS) {
+                    ps_row_pop(&row_data[oth], jq);
+                    ps_colset_discard(&col_sets[jq], oth);
+                } else {
+                    if (ps_row_set(&row_data[oth], jq, merged) != 0) goto oom;
+                    if (ps_colset_add(&col_sets[jq], oth) != 0) goto oom;
+                }
+                ps_row_delete(&row_data[oth], jp);
+                ps_colset_discard(&col_sets[jp], oth);
+            }
+            rem_row[i]  = 1; n_rem_rows++;
+            rem_col[jp] = 1; n_rem_cols++;
+            ps_colset_clear(&col_sets[jp]);
+            changed = 1;
+        }
+    }
+    /* ==== end fixpoint ================================================= */
+
+    if (n_rem_rows == 0 && n_rem_cols == 0) {
+        result = Py_None; Py_INCREF(result);
+        goto cleanup;
+    }
+
+    /* ---- build compacted output --------------------------------------- */
+    {
+        Py_ssize_t n_ar = rows - n_rem_rows;
+        Py_ssize_t n_ac = cols - n_rem_cols;
+
+        act_rows = (Py_ssize_t *)malloc((size_t)(n_ar > 0 ? n_ar : 1) * sizeof(Py_ssize_t));
+        act_cols = (Py_ssize_t *)malloc((size_t)(n_ac > 0 ? n_ac : 1) * sizeof(Py_ssize_t));
+        col_map  = (Py_ssize_t *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(Py_ssize_t));
+        if (!act_rows || !act_cols || !col_map) goto oom;
+
+        { Py_ssize_t k = 0; for (Py_ssize_t i = 0; i < rows; i++) if (!rem_row[i]) act_rows[k++] = i; }
+        { Py_ssize_t k = 0; for (Py_ssize_t j = 0; j < cols; j++) if (!rem_col[j]) { col_map[j] = k; act_cols[k++] = j; } }
+
+        sort_buf  = (PSEntry *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(PSEntry));
+        o_indptr  = (Py_ssize_t *)malloc((size_t)(n_ar + 1) * sizeof(Py_ssize_t));
+        Py_ssize_t ocap = nnz > 16 ? nnz : 16;
+        o_indices = (Py_ssize_t *)malloc((size_t)ocap * sizeof(Py_ssize_t));
+        o_data    = (double *)malloc((size_t)ocap * sizeof(double));
+        o_b       = (double *)malloc((size_t)(n_ar > 0 ? n_ar : 1) * sizeof(double));
+        if (!sort_buf || !o_indptr || !o_indices || !o_data || !o_b) goto oom;
+
+        Py_ssize_t onnz = 0;
+        o_indptr[0] = 0;
+        for (Py_ssize_t k = 0; k < n_ar; k++) {
+            Py_ssize_t ri = act_rows[k];
+            PSRow *r = &row_data[ri];
+            Py_ssize_t ns = 0;
+            for (Py_ssize_t e = 0; e < r->total; e++)
+                if (r->entries[e].col >= 0) {
+                    sort_buf[ns].col = r->entries[e].col;
+                    sort_buf[ns].val = r->entries[e].val;
+                    ns++;
+                }
+            if (ns > 1) qsort(sort_buf, (size_t)ns, sizeof(PSEntry), ps_entry_cmp);
+
+            if (onnz + ns > ocap) {
+                ocap = (onnz + ns) * 2;
+                Py_ssize_t *ti = (Py_ssize_t *)realloc(o_indices, (size_t)ocap * sizeof(Py_ssize_t));
+                double     *td = (double *)realloc(o_data, (size_t)ocap * sizeof(double));
+                if (!ti || !td) goto oom;
+                o_indices = ti; o_data = td;
+            }
+            for (Py_ssize_t e = 0; e < ns; e++) {
+                o_indices[onnz] = col_map[sort_buf[e].col];
+                o_data[onnz]    = sort_buf[e].val;
+                onnz++;
+            }
+            o_indptr[k + 1] = onnz;
+            o_b[k] = b_arr[ri];
+        }
+
+        /* ---- Construct output CSRMatrixObject directly -------------------- */
+        /* This avoids the C -> Python list -> C round trip entirely. */
+        {
+            CSRMatrixObject *out = (CSRMatrixObject *)CSRMatrixType.tp_alloc(
+                &CSRMatrixType, 0);
+            if (!out) goto oom;
+            out->rows = n_ar;
+            out->cols = n_ac;
+            out->nnz  = onnz;
+            /* Transfer ownership of output arrays */
+            out->indptr  = o_indptr;   o_indptr  = NULL;
+            out->indices = o_indices;  o_indices = NULL;
+            out->data    = o_data;     o_data    = NULL;
+            /* Build CSC representation */
+            out->csc_indptr = (Py_ssize_t *)calloc((size_t)(n_ac + 1),
+                                                   sizeof(Py_ssize_t));
+            out->csc_rows   = (Py_ssize_t *)calloc((size_t)(onnz > 0 ? onnz : 1),
+                                                   sizeof(Py_ssize_t));
+            out->csc_data   = (double *)calloc((size_t)(onnz > 0 ? onnz : 1),
+                                               sizeof(double));
+            if (!out->csc_indptr || !out->csc_rows || !out->csc_data) {
+                Py_DECREF(out);
+                goto oom;
+            }
+            for (Py_ssize_t i = 0; i < onnz; i++)
+                out->csc_indptr[out->indices[i] + 1]++;
+            for (Py_ssize_t col = 0; col < n_ac; col++)
+                out->csc_indptr[col + 1] += out->csc_indptr[col];
+            if (n_ac > 0) {
+                Py_ssize_t *next = (Py_ssize_t *)calloc((size_t)n_ac,
+                                                        sizeof(Py_ssize_t));
+                if (!next) { Py_DECREF(out); goto oom; }
+                for (Py_ssize_t col = 0; col < n_ac; col++)
+                    next[col] = out->csc_indptr[col];
+                for (Py_ssize_t row = 0; row < n_ar; row++) {
+                    for (Py_ssize_t off = out->indptr[row];
+                         off < out->indptr[row + 1]; off++) {
+                        Py_ssize_t col = out->indices[off];
+                        Py_ssize_t dest = next[col]++;
+                        out->csc_rows[dest] = row;
+                        out->csc_data[dest] = out->data[off];
+                    }
+                }
+                free(next);
+            }
+            py_matrix = (PyObject *)out;
+        }
+
+        /* b as bytes */
+        py_b = PyBytes_FromStringAndSize((const char *)o_b,
+                                         (Py_ssize_t)(n_ar * sizeof(double)));
+        if (!py_b) goto cleanup;
+
+        /* c, lo, hi: gather active columns into contiguous buffers */
+        {
+            double *c_tmp  = (double *)malloc((size_t)(n_ac > 0 ? n_ac : 1) * sizeof(double));
+            double *lo_tmp = (double *)malloc((size_t)(n_ac > 0 ? n_ac : 1) * sizeof(double));
+            double *hi_tmp = (double *)malloc((size_t)(n_ac > 0 ? n_ac : 1) * sizeof(double));
+            if (!c_tmp || !lo_tmp || !hi_tmp) {
+                free(c_tmp); free(lo_tmp); free(hi_tmp);
+                goto oom;
+            }
+            for (Py_ssize_t x = 0; x < n_ac; x++) {
+                Py_ssize_t j = act_cols[x];
+                c_tmp[x]  = c_arr[j];
+                lo_tmp[x] = lo_arr[j];
+                hi_tmp[x] = hi_arr[j];
+            }
+            py_c  = PyBytes_FromStringAndSize((const char *)c_tmp,
+                                              (Py_ssize_t)(n_ac * sizeof(double)));
+            py_lo = PyBytes_FromStringAndSize((const char *)lo_tmp,
+                                              (Py_ssize_t)(n_ac * sizeof(double)));
+            py_hi = PyBytes_FromStringAndSize((const char *)hi_tmp,
+                                              (Py_ssize_t)(n_ac * sizeof(double)));
+            free(c_tmp); free(lo_tmp); free(hi_tmp);
+            if (!py_c || !py_lo || !py_hi) goto cleanup;
+        }
+
+        /* records: keep as Python tuples (relatively small count) */
+        py_recs = PyList_New(recs_n);
+        if (!py_recs) goto cleanup;
+        for (Py_ssize_t x = 0; x < recs_n; x++) {
+            PyObject *tup;
+            if (recs[x].type == PS_REC_FIXED)
+                tup = Py_BuildValue("(nnd)",
+                    (Py_ssize_t)0, recs[x].idx1, recs[x].v1);
+            else
+                tup = Py_BuildValue("(nnnddd)",
+                    (Py_ssize_t)1, recs[x].idx1, recs[x].idx2,
+                    recs[x].v1, recs[x].v2, recs[x].v3);
+            if (!tup) goto cleanup;
+            PyList_SET_ITEM(py_recs, x, tup);
+        }
+
+        py_ac = PyBytes_FromStringAndSize((const char *)act_cols,
+                                          (Py_ssize_t)(n_ac * sizeof(Py_ssize_t)));
+        if (!py_ac) goto cleanup;
+
+        result = Py_BuildValue("(OOOOOdnnOOn)",
+            py_matrix, py_b, py_c, py_lo, py_hi,
+            obj_off, n_rem_rows, n_rem_cols,
+            py_recs, py_ac, cols);
+    }
+    goto cleanup;
+
+oom:
+    PyErr_NoMemory();
+
+cleanup:
+    /* Python objects: XDECREF is safe for NULL */
+    Py_XDECREF(py_matrix);
+    Py_XDECREF(py_b);   Py_XDECREF(py_c);   Py_XDECREF(py_lo);
+    Py_XDECREF(py_hi);  Py_XDECREF(py_recs); Py_XDECREF(py_ac);
+    /* C arrays (matrix data is read from input CSRMatrixObject, not freed) */
+    free(b_arr);  free(c_arr);   free(lo_arr);  free(hi_arr);
+    if (row_data) { for (Py_ssize_t i = 0; i < rows; i++) ps_row_free(&row_data[i]); free(row_data); }
+    if (col_sets) { for (Py_ssize_t j = 0; j < cols; j++) ps_colset_free(&col_sets[j]); free(col_sets); }
+    free(rem_row); free(rem_col); free(recs); free(snap_buf);
+    free(act_rows); free(act_cols); free(col_map); free(sort_buf);
+    free(o_indptr); free(o_indices); free(o_data); free(o_b);
+    return result;
+}
+
 static PyMethodDef module_methods[] = {
     {"min_degree", csparse_min_degree, METH_VARARGS,
      "Exact minimum-degree ordering of a symmetric CSC/CSR pattern (indptr, indices)."},
@@ -10504,6 +11131,8 @@ static PyMethodDef module_methods[] = {
      "Test hook: sparse LU stats. Returns (nnz_l, nnz_u, singular_step)."},
     {"lu_update_test", csparse_lu_update_test, METH_VARARGS,
      "Test hook: sparse LU basis-change update. Returns (solutions, should_refactor, n_singular)."},
+    {"presolve_eq_box", csparse_presolve_eq_box, METH_VARARGS,
+     "C presolve for equality-plus-bounds LP (mirrors Python presolve_eq_box)."},
     {NULL, NULL, 0, NULL}
 };
 
