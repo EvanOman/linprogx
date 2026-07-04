@@ -772,3 +772,22 @@ remains depending on instance.
   shifting x3, M-magnitude, flips(none available), boxing/Phase-1 —
   remaining suspects: the leaving-rule experiment (in flight) and
   ratio-test/step-quality comparative study.
+
+- NINTH ELIMINATION + PRIME SUSPECT (2026-07-04, branch exp-leaving):
+  five leaving-row rules (Devex-weighted, Dantzig, section-rotation,
+  oldest-infeasibility, churn-damped) ALL cap at 100k on cre_d with
+  genuinely different trajectories. Decisive decoupling: the
+  churn-damped rule cut max column re-entries 55 -> 19 and gt10 columns
+  764 -> 211 with ZERO count effect — churn was a symptom. With
+  entering weights, leaving rules, degeneracy treatments, boxing, and
+  presolve all eliminated, the surviving suspect is the RATIO TEST STEP
+  LENGTH: ours stops at (near) the first dual breakpoint; the
+  literature-standard bound-flipping ratio test (BFRT / longest step —
+  pass breakpoints while the piecewise-linear dual objective slope
+  stays favorable, flipping each crossed boxed column) absorbs many
+  breakpoints per pivot. cre_d flips 0 times under every rule despite
+  box-heavy structure — consistent with never passing breakpoints.
+  BFRT implementation is the next unit. Side note: plain-Dantzig
+  leaving cut greenbea 37% pivots (6,437) and is correctness-safe
+  everywhere measured; possible future heuristic, slight regressions
+  elsewhere (+6-13%).
