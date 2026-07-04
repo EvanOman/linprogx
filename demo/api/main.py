@@ -7,6 +7,7 @@ interactive demo.
 
 from __future__ import annotations
 
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -51,6 +52,27 @@ app.add_middleware(
     allow_headers=["Content-Type"],
     max_age=3600,
 )
+
+# ---------------------------------------------------------------------------
+# Auth — require X-Demo-Secret header on /api/* (except /api/health)
+# ---------------------------------------------------------------------------
+
+_DEMO_SECRET = os.environ.get("DEMO_SHARED_SECRET", "")
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next: Any) -> Response:
+    path = request.url.path
+    if _DEMO_SECRET and path.startswith("/api/") and path != "/api/health":
+        provided = request.headers.get("X-Demo-Secret", "")
+        if provided != _DEMO_SECRET:
+            return Response(
+                content='{"detail":"Unauthorized"}',
+                status_code=401,
+                media_type="application/json",
+            )
+    return await call_next(request)
+
 
 # ---------------------------------------------------------------------------
 # Rate limiting — simple in-memory sliding window
