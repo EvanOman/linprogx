@@ -20,6 +20,9 @@ extern void dgemm_(const char *transa, const char *transb, const int *m, const i
 extern void dtrsm_(const char *side, const char *uplo, const char *transa,
                    const char *diag, const int *m, const int *n, const double *alpha,
                    const double *a, const int *lda, double *b, const int *ldb);
+extern void dtrsv_(const char *uplo, const char *trans, const char *diag,
+                   const int *n, const double *a, const int *lda, double *x,
+                   const int *incx);
 extern void openblas_set_num_threads(int n);
 static int g_blas_threads_current = 0;
 static void set_blas_threads(int n) {
@@ -171,6 +174,14 @@ static int g_kernel_threads = 1;
  * dpotrf — a stability fallback for degenerate endgames whose
  * certificate depends on the per-pivot 1e-12 floor */
 static int g_tail_use_blas = 1;
+
+/* Refactor phase timers (debug only, guarded by LINPROGX_REFAC_PROFILE). */
+static int g_refac_profile = 0;
+static double g_refac_uplook = 0.0;
+static double g_refac_dpotrf = 0.0;
+static double g_refac_copyback = 0.0;
+static double g_refac_assemble = 0.0;
+static double g_solve_tail = 0.0;
 
 typedef struct {
     int tid;
@@ -4157,7 +4168,13 @@ static void chol_refactor(
     CholContext *ctx, CSRMatrixObject *A, const double *csc_values,
     const double *D, double delta) {
     int32_t m = ctx->m;
+    double tp0 = g_refac_profile ? linprogx_monotonic_seconds() : 0.0;
     chol_assemble_normal(ctx, A, csc_values, D, delta);
+    if (g_refac_profile) {
+        double now = linprogx_monotonic_seconds();
+        g_refac_assemble += now - tp0;
+        tp0 = now;
+    }
 
     /* up-looking Cholesky over the fixed pattern; rows in the dense
      * tail keep their sparse prefix processing but accumulate their
@@ -4226,6 +4243,11 @@ static void chol_refactor(
             trow[k - tstart] = d;
         }
     }
+    if (g_refac_profile) {
+        double now = linprogx_monotonic_seconds();
+        g_refac_uplook += now - tp0;
+        tp0 = now;
+    }
     if (tlen > 0) {
 #ifdef LINPROGX_HAVE_BLAS
         /* T is row-major lower == column-major upper, so dpotrf("U")
@@ -4266,10 +4288,18 @@ static void chol_refactor(
 #else
         tail_dense_chol(T, tlen);
 #endif
+        if (g_refac_profile) {
+            double now = linprogx_monotonic_seconds();
+            g_refac_dpotrf += now - tp0;
+            tp0 = now;
+        }
         for (int32_t j = tstart; j < m; j++) {
             for (Py_ssize_t p = ctx->Lp[j]; p < ctx->Lp[j + 1]; p++) {
                 ctx->Lx[p] = T[(Py_ssize_t)(ctx->Li[p] - tstart) * tlen + (j - tstart)];
             }
+        }
+        if (g_refac_profile) {
+            g_refac_copyback += linprogx_monotonic_seconds() - tp0;
         }
     }
 
@@ -4334,18 +4364,65 @@ static void chol_matvec(const CholContext *ctx, const double *x, double *out) {
 /* Solve with the SPARSE part of the factor only (no dense correction). */
 static void chol_solve_sparse(CholContext *ctx, const double *rhs, double *out) {
     int32_t m = ctx->m;
+    int32_t tstart = ctx->tail_start;
     double *y = ctx->work2;
     for (int32_t k = 0; k < m; k++) {
         y[k] = rhs[ctx->perm[k]];
     }
-    for (int32_t j = 0; j < m; j++) {
+    /* forward: prefix columns (sparse) then dense tail block */
+    for (int32_t j = 0; j < tstart; j++) {
         double yj = y[j] / ctx->Lx[ctx->Lp[j]];
         y[j] = yj;
         for (Py_ssize_t p = ctx->Lp[j] + 1; p < ctx->Lp[j + 1]; p++) {
             y[ctx->Li[p]] -= ctx->Lx[p] * yj;
         }
     }
-    for (int32_t j = m - 1; j >= 0; j--) {
+    double ts0 = g_refac_profile ? linprogx_monotonic_seconds() : 0.0;
+#ifdef LINPROGX_HAVE_BLAS
+    /* The trailing tail_len columns form a dense lower-triangular block
+     * held row-major in ctx->Tdense (== column-major upper). Solve it with
+     * two dtrsv calls instead of the O(tail_len^2) scalar walk over the
+     * sparse L storage. Same math, BLAS memory throughput; gated by the
+     * same size threshold as the dense-tail dpotrf so small/degenerate
+     * blocks keep the scalar path. */
+    Py_ssize_t tlen = ctx->tail_len;
+    static int tail_dtrsv = -1;
+    if (tail_dtrsv < 0) {
+        const char *e = getenv("LINPROGX_TAIL_DTRSV");
+        tail_dtrsv = (e != NULL && atoi(e) == 0) ? 0 : 1;
+    }
+    if (tail_dtrsv && g_tail_use_blas && tlen >= 400 && ctx->Tdense != NULL) {
+        ensure_blas_threads();
+        int bn = (int)tlen;
+        int incx = 1;
+        double *yt = y + tstart;
+        /* forward L y = b: column-major upper is L^T -> trans='T' */
+        dtrsv_("U", "T", "N", &bn, ctx->Tdense, &bn, yt, &incx);
+        /* backward L^T y = b: column-major upper is L^T -> trans='N' */
+        dtrsv_("U", "N", "N", &bn, ctx->Tdense, &bn, yt, &incx);
+    } else {
+#endif
+        for (int32_t j = tstart; j < m; j++) {
+            double yj = y[j] / ctx->Lx[ctx->Lp[j]];
+            y[j] = yj;
+            for (Py_ssize_t p = ctx->Lp[j] + 1; p < ctx->Lp[j + 1]; p++) {
+                y[ctx->Li[p]] -= ctx->Lx[p] * yj;
+            }
+        }
+        for (int32_t j = m - 1; j >= tstart; j--) {
+            double total = y[j];
+            for (Py_ssize_t p = ctx->Lp[j] + 1; p < ctx->Lp[j + 1]; p++) {
+                total -= ctx->Lx[p] * y[ctx->Li[p]];
+            }
+            y[j] = total / ctx->Lx[ctx->Lp[j]];
+        }
+#ifdef LINPROGX_HAVE_BLAS
+    }
+#endif
+    if (g_refac_profile) {
+        g_solve_tail += linprogx_monotonic_seconds() - ts0;
+    }
+    for (int32_t j = tstart - 1; j >= 0; j--) {
         double total = y[j];
         for (Py_ssize_t p = ctx->Lp[j] + 1; p < ctx->Lp[j + 1]; p++) {
             total -= ctx->Lx[p] * y[ctx->Li[p]];
@@ -5591,6 +5668,10 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     int refactor_supernodal =
         use_supernodal < 0 ? chol_auto_supernodal(chol) : use_supernodal;
 
+    g_refac_profile = (getenv("LINPROGX_REFAC_PROFILE") != NULL);
+    g_refac_assemble = g_refac_uplook = g_refac_dpotrf = g_refac_copyback = 0.0;
+    g_solve_tail = 0.0;
+
     int max_mcc = 2;
     double mcc_ratio = 5.5;
     {
@@ -6430,6 +6511,12 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     if (debug) {
         fprintf(stderr, "ipm timers: refactor=%.2fs newton_solves=%.2fs\n",
                 t_refactor, t_newton);
+        if (g_refac_profile) {
+            fprintf(stderr, "refac phases: assemble=%.3f uplook=%.3f "
+                    "dpotrf=%.3f copyback=%.3f solve_tail=%.3f\n",
+                    g_refac_assemble, g_refac_uplook, g_refac_dpotrf,
+                    g_refac_copyback, g_solve_tail);
+        }
         fprintf(stderr, "ipm exit: status=%s best_gap=%.3e best_pres=%.3e "
                 "best_raw=%.3e best_dres=%.3e best_mu=%.3e\n",
                 status, best_gap, best_pres, best_raw_pres, best_dres, best_mu);
