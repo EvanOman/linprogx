@@ -9756,6 +9756,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     int64_t stat_max_degen_streak = 0;
     int64_t stat_art_ejections = 0;
     int64_t stat_cost_shifts = 0;
+    /* --- Dual-progress instrumentation (always-on, read-only) ---
+     * Every DUAL_PROG_STRIDE pivots, sample the running Phase-2 dual merit
+     *   z = c_ext' x  (basics from x_B, nonbasics at their bound)
+     * for the current dual-feasible basis. In a correct dual simplex z is
+     * monotone non-decreasing (each pivot adds theta_d * primal-infeasibility
+     * >= 0); it is the classic dual objective value. Working-space c_ext'x is
+     * scale-invariant, so it equals the true objective. Alongside it we record
+     * the per-window degenerate-pivot count (delta of stat_degenerate). Cap 128
+     * samples => covers 256k pivots. Purely diagnostic: zero behavioral effect. */
+    enum { DUAL_PROG_STRIDE = 2000, DUAL_PROG_CAP = 128 };
+    double dual_prog_vals[DUAL_PROG_CAP];
+    int64_t degen_prog_vals[DUAL_PROG_CAP];
+    int32_t dual_prog_n = 0;
+    int64_t degen_prog_prev = 0;
     int cost_shift_on = 0;
     {
         const char *env = getenv("LINPROGX_DS_COST_SHIFT");
@@ -9811,6 +9825,21 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             lu_ftran(lu, rhs, x_B);
             x_B_needs_recompute = 0;
             x_B_fresh = 1;
+            }
+
+            /* Dual-progress sample (read-only; x_B here matches the current
+             * basis, whether freshly solved above or incrementally maintained). */
+            if ((iter % DUAL_PROG_STRIDE) == 0 && dual_prog_n < DUAL_PROG_CAP) {
+                double zmerit = 0.0;
+                for (int32_t k = 0; k < m; k++)
+                    zmerit += c_ext[basis[k]] * x_B[k];
+                for (int32_t j = 0; j < n_total; j++)
+                    if (basis_pos[j] < 0)
+                        zmerit += c_ext[j] * x_ext[j];
+                dual_prog_vals[dual_prog_n] = zmerit;
+                degen_prog_vals[dual_prog_n] = stat_degenerate - degen_prog_prev;
+                degen_prog_prev = stat_degenerate;
+                dual_prog_n++;
             }
 
             /* ---- 4b. Find leaving variable ----
@@ -11193,8 +11222,25 @@ build_result:
                 if (enter_count[j] > 10) churn_gt10++;
             }
         }
+        /* Dual-progress diagnostic series (read-only instrumentation). */
+        PyObject *dual_prog_list = PyList_New(dual_prog_n);
+        PyObject *degen_prog_list = PyList_New(dual_prog_n);
+        if (dual_prog_list == NULL || degen_prog_list == NULL) {
+            Py_XDECREF(dual_prog_list);
+            Py_XDECREF(degen_prog_list);
+            Py_DECREF(x_list);
+            Py_DECREF(y_list);
+            goto done;
+        }
+        for (int32_t s = 0; s < dual_prog_n; s++) {
+            PyList_SET_ITEM(dual_prog_list, s,
+                            PyFloat_FromDouble(dual_prog_vals[s]));
+            PyList_SET_ITEM(degen_prog_list, s,
+                            PyLong_FromLongLong((long long)degen_prog_vals[s]));
+        }
+
         result = Py_BuildValue(
-            "{s:s,s:d,s:d,s:n,s:N,s:N,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:d,s:d}",
+            "{s:s,s:d,s:d,s:n,s:N,s:N,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:d,s:d,s:N,s:N}",
             "status", status,
             "objective", objective,
             "max_primal_residual", max_residual,
@@ -11213,7 +11259,9 @@ build_result:
             "bland_pivots", (long long)stat_bland_pivots,
             "max_degenerate_streak", (long long)stat_max_degen_streak,
             "refac_time", refac_time_total,
-            "refac_factorize_time", refac_factorize_time);
+            "refac_factorize_time", refac_factorize_time,
+            "dual_progress", dual_prog_list,
+            "degen_progress", degen_prog_list);
     }
 
 done:

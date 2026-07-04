@@ -791,3 +791,21 @@ remains depending on instance.
   leaving cut greenbea 37% pivots (6,437) and is correctness-safe
   everywhere measured; possible future heuristic, slight regressions
   elsewhere (+6-13%).
+
+- DISCRIMINATOR VERDICT (2026-07-04, instrumentation merged: dual_progress
+  + degen_progress lists in the DS result dict): cre's walk is THEORY B —
+  a degeneracy plateau (88% zero-progress pivots on one-sided columns
+  where BFRT is structurally inert; healthy greenbea: 30% + 7,565 flips)
+  — AND the dual merit is NON-MONOTONE on cre (18-27 of 49 windows
+  regress; greenbea zero): the dual-feasible invariant drifts between
+  refactorizations and is snapped back by the refac repair flips. The
+  drift-snap cycle is a genuine defect (exit gates protect correctness)
+  and plausibly CAUSES the churn. Big-M magnitude re-confirmed
+  irrelevant (byte-identical series across 4 orders). NEXT BUILDS, in
+  order: (1) drift audit — refresh reduced costs from scratch every K
+  pivots (K~50) on cre_d; watch monotonicity + count; if drift feeds the
+  churn this alone may cut the walk; (2) EXPAND-style dual degeneracy
+  tolerance ratchet (Gill/Murray/Saunders) for the one-sided 88% — the
+  literature's answer and HiGHS's likely edge; note the earlier
+  cost-shifting family attacked entering-side ties, NOT the ratio-test
+  tolerance ratchet, so this is not a retread.
