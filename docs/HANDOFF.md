@@ -648,3 +648,22 @@ remains depending on instance.
   HiGHS-style dual Phase-1 vs our artificial-ejection start: count how
   many of the 100k pivots merely eject the ~m starting artificials and
   whether ejection order thrashes).
+
+- DIAGNOSIS COMPLETE (2026-07-04): cre_d churn instrumentation
+  (artificial_ejections / max_col_reentries / cols_reentering_gt10 in the
+  DS result dict): 764 columns re-enter the basis 10-55 times each;
+  artificials eject only 286 times (start exonerated). The 100k-pivot
+  path is QUASI-CYCLING through a connected column set — degenerate ties
+  re-form dynamically, which is why static cost perturbation only halved
+  thrash. THE NEXT IMPLEMENTATION (precise): dynamic cost shifting for
+  dual-simplex degeneracy (Koberstein's thesis; Huangfu-Hall describe the
+  practice): when theta_d computes to ~0, shift the entering column's
+  cost by the minimum that makes theta_d positive, accumulate shifts in a
+  side array, subtract them at each refactorization's r-recompute (and at
+  exit), and re-verify dual feasibility — the exit-honesty gates on
+  c_orig already make it certificate-safe. Expected: breaks the
+  quasi-cycles that neither static perturbation, SE weights, presolve,
+  nor big-M changes touched; measure with the churn counters (target:
+  max reentries 55 -> <10, count 100k -> ~15-25k, putting cre_d at
+  ~5-10s DS vs IPM 6.6s and HiGHS 1.0s — likely still not a flip alone,
+  but the remaining gap then becomes measurable engineering again).

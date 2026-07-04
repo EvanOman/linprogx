@@ -8981,6 +8981,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     int32_t *btran_pattern = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
     /* Per-column alpha accumulator for sparse pricing */
     double *alpha_scratch = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(double));
+    /* per-column basis entries (churn probe) */
+    int32_t *enter_count = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
     int32_t *alpha_touched = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
 
     /* Bound-flip workspace: accumulated delta to x_B from flips */
@@ -9538,6 +9540,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     int64_t stat_degenerate = 0;
     int64_t stat_bland_pivots = 0;
     int64_t stat_max_degen_streak = 0;
+    int64_t stat_art_ejections = 0;
     {
         int consecutive_degenerate = 0;
         int use_bland = 0;
@@ -10160,6 +10163,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             r_ext[leaving_col] = r_leaving;
             basis_pos[leaving_col] = -1;
 
+            if (leaving_col >= n) {
+                stat_art_ejections++;
+            }
+            if (enter_count != NULL) {
+                enter_count[entering_col]++;
+            }
             basis[leaving_basis_pos] = entering_col;
             basis_pos[entering_col] = leaving_basis_pos;
             bound_status[entering_col] = DS_BOUND_BASIC;
@@ -10619,8 +10628,16 @@ build_result:
                 ((double)cum_btran_sparse_count * m);
         }
 
+        long long churn_max = 0;
+        long long churn_gt10 = 0;
+        if (enter_count != NULL) {
+            for (int32_t j = 0; j < n_total; j++) {
+                if (enter_count[j] > churn_max) churn_max = enter_count[j];
+                if (enter_count[j] > 10) churn_gt10++;
+            }
+        }
         result = Py_BuildValue(
-            "{s:s,s:d,s:d,s:n,s:N,s:N,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:d,s:d}",
+            "{s:s,s:d,s:d,s:n,s:N,s:N,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:L,s:d,s:d}",
             "status", status,
             "objective", objective,
             "max_primal_residual", max_residual,
@@ -10631,6 +10648,9 @@ build_result:
             "btran_mean_density", btran_mean_density,
             "refactorizations", (long long)total_refacs,
             "bound_flips", (long long)stat_flips,
+            "artificial_ejections", (long long)stat_art_ejections,
+            "max_col_reentries", (long long)churn_max,
+            "cols_reentering_gt10", (long long)churn_gt10,
             "degenerate_pivots", (long long)stat_degenerate,
             "bland_pivots", (long long)stat_bland_pivots,
             "max_degenerate_streak", (long long)stat_max_degen_streak,
@@ -10644,7 +10664,7 @@ done:
     free(x_ext); free(r_ext); free(basis_pos); free(bound_status);
     free(b); free(y); free(x_B); free(rhs);
     free(rho); free(alpha_col); free(e_i); free(c_B);
-    free(devex_w); free(dse_beta); free(basis);
+    free(devex_w); free(dse_beta); free(enter_count); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched);
