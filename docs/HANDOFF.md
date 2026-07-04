@@ -691,3 +691,20 @@ remains depending on instance.
   exit + bounded dual-repair pivots before the c_orig gates. All
   scaffolding, counters, and knobs are in place; the churn probe
   (scratchpad probe_churn.py) is the measurement harness.
+
+- VERDICT (2026-07-04, final for the shifting family): bold 1e-4 shifts
+  WITH the removal-and-repair pass at the would-be-optimal exit still
+  leave cre_d at 100k pivots (30.7k shifts, churn unchanged). Ties are
+  NOT the path-length driver; the walk itself is long. All shifting
+  code stays dark behind LINPROGX_DS_COST_SHIFT.
+- NEW ANOMALY / LEAD: bound_flips == 0 on EVERY instance measured today
+  (cre_d, greenbea, woodw, stocfor3, 80bau3b) — including boxed-heavy
+  ones. In a bounded-variable dual simplex, the bound-flip ratio test
+  should fire routinely; a silently dead flip path yields correct
+  answers with systematically long paths — precisely cre_d's signature
+  (bounded ratio-test steps that should be absorbed by flips instead
+  force full basis changes). NEXT: unit-test the flip logic directly on
+  a constructed LP whose dual ratio test must flip (tight boxes, forced
+  large dual step), then audit the flip admissibility condition in the
+  ratio test (n_flips accounting is correct; the flips themselves never
+  occur).

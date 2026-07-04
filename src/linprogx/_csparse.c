@@ -8983,6 +8983,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *alpha_scratch = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(double));
     /* per-column basis entries (churn probe) */
     int32_t *enter_count = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
+    /* accumulated anti-degeneracy cost shifts (removed before optimal exit) */
+    double *c_shift = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(double));
     int32_t *alpha_touched = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
 
     /* Bound-flip workspace: accumulated delta to x_B from flips */
@@ -9621,6 +9623,58 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
             }
 
+            if (leaving_basis_pos < 0 && cost_shift_on && c_shift != NULL) {
+                /* Would-be-optimal for the SHIFTED costs: remove all
+                 * accumulated shifts, recompute duals/reduced costs from
+                 * the clean working costs, restore dual feasibility (boxed
+                 * columns flip; one-sided columns re-enter the artificial-
+                 * bound treatment), and continue the loop. Shifts shrink
+                 * to zero across removal rounds, so the eventual optimal
+                 * exit is for the true working costs and the unchanged
+                 * c_orig gates certify it. */
+                int had_shifts = 0;
+                for (int32_t j = 0; j < n_total; j++) {
+                    if (c_shift[j] != 0.0) {
+                        c_ext[j] -= c_shift[j];
+                        c_shift[j] = 0.0;
+                        had_shifts = 1;
+                    }
+                }
+                if (had_shifts) {
+                    for (int32_t k = 0; k < m; k++) c_B[k] = c_ext[basis[k]];
+                    lu_btran(lu, c_B, y);
+                    memset(lu->ws_v, 0, (size_t)m * sizeof(double));
+                    for (int32_t j = 0; j < n_total; j++) {
+                        if (basis_pos[j] >= 0) { r_ext[j] = 0.0; continue; }
+                        double rj = c_ext[j];
+                        if (j < n) {
+                            for (Py_ssize_t pp = self->csc_indptr[j];
+                                 pp < self->csc_indptr[j + 1]; pp++) {
+                                rj -= a_data[pp] * y[(int32_t)self->csc_rows[pp]];
+                            }
+                        } else {
+                            rj -= y[j - n];
+                        }
+                        r_ext[j] = rj;
+                        if (bound_status[j] == DS_BOUND_FIXED) continue;
+                        /* restore dual feasibility */
+                        if (bound_status[j] == DS_BOUND_LO && rj < 0.0) {
+                            if (isfinite(hi_ext[j])) {
+                                bound_status[j] = DS_BOUND_HI;
+                                x_ext[j] = hi_ext[j];
+                            }
+                        } else if (bound_status[j] == DS_BOUND_HI && rj > 0.0) {
+                            if (isfinite(lo_ext[j])) {
+                                bound_status[j] = DS_BOUND_LO;
+                                x_ext[j] = lo_ext[j];
+                            }
+                        }
+                    }
+                    x_B_needs_recompute = 1;
+                    iterations = iter + 1;
+                    continue;
+                }
+            }
             if (leaving_basis_pos < 0) {
                 /* No bound violation: check for basic artificials with |value| > tol */
                 int has_artificial_basic = 0;
@@ -9991,12 +10045,22 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                      * machinery (each column shifts at most once per basis
                      * entry; reentries are bounded by the churn the shift
                      * itself suppresses). */
-                    double want = 5e-8 * (1.0 + fabs(c_ext[entering_col]));
-                    double r_new = -((double)leaving_sigma * entering_alpha_row) * want;
+                    /* Bold dose in COST units (1e-4 scale): breaks ties
+                     * decisively; soundness comes from the removal pass at
+                     * the would-be-optimal exit below, not from staying
+                     * under exit tolerances. Shifts carry consistently
+                     * through refactorizations because r recomputes from
+                     * the shifted c_ext. */
+                    double eta = 1e-4 * (1.0 + fabs(c_ext[entering_col]));
+                    double denom = (double)leaving_sigma * entering_alpha_row;
+                    double r_new = -(denom > 0.0 ? eta : -eta);
                     double shift = r_new - r_ext[entering_col];
                     c_ext[entering_col] += shift;
+                    if (c_shift != NULL) {
+                        c_shift[entering_col] += shift;
+                    }
                     r_ext[entering_col] = r_new;
-                    theta_d = want;
+                    theta_d = -r_new / denom;
                     stat_cost_shifts++;
                 }
 
@@ -10697,7 +10761,7 @@ done:
     free(x_ext); free(r_ext); free(basis_pos); free(bound_status);
     free(b); free(y); free(x_B); free(rhs);
     free(rho); free(alpha_col); free(e_i); free(c_B);
-    free(devex_w); free(dse_beta); free(enter_count); free(basis);
+    free(devex_w); free(dse_beta); free(enter_count); free(c_shift); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched);
