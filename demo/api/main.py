@@ -6,9 +6,8 @@ using linprogx.  Deployed on Render for the evanoman.com interactive demo.
 
 from __future__ import annotations
 
-import signal
 import time
-from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -109,25 +108,7 @@ async def rate_limit_middleware(request: Request, call_next: Any) -> Response:
 
 SOLVE_TIMEOUT_SECONDS = 5
 
-
-class SolveTimeoutError(Exception):
-    pass
-
-
-def _timeout_handler(signum: int, frame: Any) -> None:
-    raise SolveTimeoutError()
-
-
-@contextmanager
-def solve_timeout(seconds: int = SOLVE_TIMEOUT_SECONDS):
-    """Context manager that raises SolveTimeoutError after *seconds*."""
-    old = signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(seconds)
-    try:
-        yield
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old)
+_solve_pool = ThreadPoolExecutor(max_workers=2)
 
 
 # ---------------------------------------------------------------------------
@@ -259,9 +240,9 @@ def solve_production_mix(req: SolveRequest) -> SolveResponse:
 
     t0 = time.perf_counter()
     try:
-        with solve_timeout():
-            solution = model.solve()
-    except SolveTimeoutError:
+        future = _solve_pool.submit(model.solve)
+        solution = future.result(timeout=SOLVE_TIMEOUT_SECONDS)
+    except FuturesTimeoutError:
         return SolveResponse(
             status="timeout",
             solve_time_ms=round((time.perf_counter() - t0) * 1000, 2),
