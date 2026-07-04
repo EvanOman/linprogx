@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { ProductionMixDemo } from "./ProductionMixDemo";
+import { NetworkFlowDemo } from "./NetworkFlowDemo";
 import "./index.css";
 
 const API_URL =
@@ -8,6 +8,6 @@ const API_URL =
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ProductionMixDemo apiUrl={API_URL} />
+    <NetworkFlowDemo apiUrl={API_URL} />
   </React.StrictMode>
 );

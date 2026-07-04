@@ -63,3 +63,9 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* Flow particle animation (CSS offset-path approach, kept as fallback reference) */
+@keyframes flow-particle {
+  0% { offset-distance: 0%; }
+  100% { offset-distance: 100%; }
+}
