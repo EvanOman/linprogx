@@ -590,3 +590,18 @@ remains depending on instance.
   REVERTED; retry it TOGETHER WITH a cheap steepest-edge scheme (the
   count lever), where its stocfor3-style cleanups may compound instead
   of trading. The counters stay.
+
+- NEXT SESSION OPENER (2026-07-04, prepared): transplant the DSE update
+  block from branch exp-sedge (now COMMITTED as 158b70a — worktree at
+  /home/evan/dev/linprogx-exp-sedge) onto the main branch with ONE
+  change: drop the m-BTRAN exact reinit; carry weights across
+  refactorizations (weights are basis properties — refactorization does
+  not change B; the identity-artificial cold start makes the gamma=1
+  seed EXACT, unlike the experiment's crash-basis seed which is where
+  its drift actually came from) + a periodic one-btran drift spot-check.
+  Ship dark behind the existing pricing flag; measure on cre_d with the
+  new pivot-type counters (target: the 48k productive pivots -> ~10k),
+  then greenbea/woodw for path regressions, then consider re-adding the
+  cost perturbation on top (documented trade above). This is the count
+  lever for the whole degenerate-network family: cre_b/cre_d, pds_10/20,
+  greenbea-to-0.25s.
