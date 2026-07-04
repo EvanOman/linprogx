@@ -724,3 +724,13 @@ remains depending on instance.
   flips, ties, weights, M, presolve). The cre count gap is the one
   remaining mystery, now requiring deep comparative study rather than
   another quick lever.
+
+- PAIRED STATISTICS (2026-07-04, load <1.3, 5 interleaved pairs each):
+  the two "coin-flips" lean HiGHS in expectation — degen3 loses 5/5 by
+  2-20ms (consistent ~10ms structural deficit); osa_14 loses 4/5, true
+  margin ~50ms median (our 0.95-1.16 spread is system noise; iterations
+  are a deterministic 55). Honest head-to-head: 11 solid linprogx wins
+  (incl. qap15 at the cap), 13 HiGHS. Flipping these two needs real
+  per-iteration IPM cuts (~10ms degen3 / ~50ms osa_14), not run luck.
+  Aggregate axes (coverage 24/24, total 61.7s vs 330.6s, geomean ~0.75)
+  remain decisively linprogx's.
