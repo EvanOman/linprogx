@@ -931,3 +931,20 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   insufficient). Both are next-program scale. All experiment kwargs
   (tiebreak, harris_band, r_refresh, crash v2, phase1, leaving_rule,
   pricing) live on their branches as the permanent record.
+
+- PIVOT ANATOMY (2026-07-04, branch exp-leaving; viol/theta/delta
+  histograms + top1pct_progress_frac now in the DS result dict): the
+  pds/cre walk anatomy is EXTREME PROGRESS CONCENTRATION — greenbea
+  diffuse (top-1% carries 1.5%), cre_d 52%, pds_10 ~100% (all real work
+  in 0.2-0.7% of pivots; the rest drain a standing pool of near-zero
+  reduced-cost nonbasics at theta_d ~ the EXPAND floor, 33 flips/pivot
+  on pds). Violations are LARGE (near-feasible-start theory dead);
+  theta_d is dual-side truncated by the pool. APPROVED NEXT UNIT:
+  bounded deterministic cost perturbation ~1e-5(1+|c|)psi_j on the DS
+  routes with exit removal + re-optimization — composes the EXISTING
+  c_shift removal machinery and psi-hash. Historical caveat as hard
+  gate: the 1e-9 static perturbation (pre-EXPAND) regressed
+  greenbea/woodw paths — the unit must show cre_d/pds_10 count
+  collapse (targets: cre_d < 40k, pds_10 completes under 100k) WITHOUT
+  >10% path regressions on greenbea/woodw/stocfor3/80bau3b, and exit
+  removal must leave all certificates on c_orig intact.
