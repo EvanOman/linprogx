@@ -4939,6 +4939,307 @@ static int ipm_dual_cleanup(const ScaledOp *op, const double *c, const double *b
     return certified;
 }
 
+/* Active-set dual repair: where the min-norm cleanup above re-targets a
+ * growing violator union with FULL steps (which overshoots and cascades
+ * new violations — measured divergence on pilot87: 335 -> 1095 -> 1790
+ * violators), this variant takes PARTIAL steps. Each iteration solves
+ * the min-norm correction for the current working set W, ratio-tests the
+ * step against every other sign-constrained column (one transpose matvec
+ * gives all directional derivatives), advances only to the first
+ * blocking column, and adds that column to W with an O(|W|^2) Cholesky
+ * append. The working set grows monotonically, so termination is finite;
+ * acceptance still requires the full Lagrangian certificate, so this can
+ * gain certificates but never fake one. Returns 1 and updates y only on
+ * certified success. */
+static int ipm_dual_repair(const ScaledOp *op, const double *c, const double *b,
+                           const double *lo, const double *hi,
+                           const unsigned char *bound_kind, Py_ssize_t m,
+                           Py_ssize_t n, const double *x, double *y, double *aty,
+                           double *gap_out) {
+    enum { REPAIR_CAP = 1024 };
+    int certified = 0;
+    double *y_save = malloc((size_t)m * sizeof(double));
+    unsigned char *in_w = calloc((size_t)n, 1);
+    Py_ssize_t *W = malloc(REPAIR_CAP * sizeof(Py_ssize_t));
+    double *L = calloc((size_t)REPAIR_CAP * REPAIR_CAP, sizeof(double));
+    double *rhs = malloc(REPAIR_CAP * sizeof(double));
+    double *omega = malloc(REPAIR_CAP * sizeof(double));
+    double *dy = malloc((size_t)m * sizeof(double));
+    double *delta = malloc((size_t)n * sizeof(double));
+    if (y_save == NULL || in_w == NULL || W == NULL || L == NULL ||
+        rhs == NULL || omega == NULL || dy == NULL || delta == NULL) {
+        goto done;
+    }
+    memcpy(y_save, y, (size_t)m * sizeof(double));
+    scaled_op_transpose_matvec(op, y, aty);
+
+    Py_ssize_t wn = 0;
+    /* Seed W with the current violators. */
+    for (Py_ssize_t j = 0; j < n; j++) {
+        unsigned char kind = bound_kind[j];
+        if (kind == 4) {
+            continue;
+        }
+        double r = c[j] - aty[j];
+        double tolj = 1e-9 * (1.0 + fabs(c[j]));
+        int viol = (r > tolj && !(kind & 1)) || (-r > tolj && !(kind & 2));
+        if (viol) {
+            if (wn >= REPAIR_CAP) {
+                goto done;
+            }
+            in_w[j] = 1;
+            W[wn++] = j;
+        }
+    }
+    if (wn == 0) {
+        goto done; /* nothing to repair; caller's certificate already ran */
+    }
+    /* Build the Cholesky factor of G_W incrementally: appending column k
+     * solves L l = g_k over the existing factor. */
+    for (Py_ssize_t k = 0; k < wn; k++) {
+        Py_ssize_t jk = W[k];
+        for (Py_ssize_t a = 0; a <= k; a++) {
+            Py_ssize_t ja = W[a];
+            Py_ssize_t pa = op->col_start[ja];
+            Py_ssize_t pk = op->col_start[jk];
+            Py_ssize_t ea = op->col_start[ja + 1];
+            Py_ssize_t ek = op->col_start[jk + 1];
+            double dot = 0.0;
+            while (pa < ea && pk < ek) {
+                int32_t ra = op->row_index[pa];
+                int32_t rk = op->row_index[pk];
+                if (ra == rk) {
+                    dot += op->csc_data[pa] * op->csc_data[pk];
+                    pa++;
+                    pk++;
+                } else if (ra < rk) {
+                    pa++;
+                } else {
+                    pk++;
+                }
+            }
+            if (a == k) {
+                dot += 1e-12 * (1.0 + dot);
+                double sum = dot;
+                for (Py_ssize_t t = 0; t < k; t++) {
+                    sum -= L[k * REPAIR_CAP + t] * L[k * REPAIR_CAP + t];
+                }
+                if (sum <= 0.0) {
+                    goto done;
+                }
+                L[k * REPAIR_CAP + k] = sqrt(sum);
+            } else {
+                double sum = dot;
+                for (Py_ssize_t t = 0; t < a; t++) {
+                    sum -= L[k * REPAIR_CAP + t] * L[a * REPAIR_CAP + t];
+                }
+                L[k * REPAIR_CAP + a] = sum / L[a * REPAIR_CAP + a];
+            }
+        }
+    }
+
+    for (int iter = 0; iter < 2 * REPAIR_CAP; iter++) {
+        /* Min-norm correction for the working set from the CURRENT y:
+         * targets are the remaining sign excesses with a small margin. */
+        double excess = 0.0;
+        for (Py_ssize_t a = 0; a < wn; a++) {
+            Py_ssize_t j = W[a];
+            unsigned char kind = bound_kind[j];
+            double r = c[j] - aty[j];
+            double margin = 1e-8 * (1.0 + fabs(c[j]));
+            double goal;
+            if (!(kind & 1) && !(kind & 2)) {
+                goal = 0.0;
+            } else if (!(kind & 1)) {
+                goal = -margin;
+            } else {
+                goal = margin;
+            }
+            rhs[a] = r - goal;
+            if (fabs(rhs[a]) > excess) {
+                excess = fabs(rhs[a]);
+            }
+        }
+        if (excess <= 0.0) {
+            break;
+        }
+        /* forward/back solve with the appended factor (row-major L) */
+        for (Py_ssize_t a = 0; a < wn; a++) {
+            double v = rhs[a];
+            for (Py_ssize_t t = 0; t < a; t++) {
+                v -= L[a * REPAIR_CAP + t] * omega[t];
+            }
+            omega[a] = v / L[a * REPAIR_CAP + a];
+        }
+        for (Py_ssize_t a = wn - 1; a >= 0; a--) {
+            double v = omega[a];
+            for (Py_ssize_t t = a + 1; t < wn; t++) {
+                v -= L[t * REPAIR_CAP + a] * omega[t];
+            }
+            omega[a] = v / L[a * REPAIR_CAP + a];
+        }
+        for (Py_ssize_t i = 0; i < m; i++) {
+            dy[i] = 0.0;
+        }
+        for (Py_ssize_t a = 0; a < wn; a++) {
+            Py_ssize_t j = W[a];
+            double wa = omega[a];
+            for (Py_ssize_t pp = op->col_start[j]; pp < op->col_start[j + 1]; pp++) {
+                dy[op->row_index[pp]] += op->csc_data[pp] * wa;
+            }
+        }
+        /* Directional derivatives for every column at once. */
+        scaled_op_transpose_matvec(op, dy, delta);
+        /* Ratio test: largest alpha in (0,1] keeping all non-working
+         * sign-constrained columns feasible. r_j(alpha) = r_j - alpha*delta_j. */
+        double alpha = 1.0;
+        Py_ssize_t blocker = -1;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            if (kind == 4 || in_w[j]) {
+                continue;
+            }
+            double r = c[j] - aty[j];
+            double tolj = 1e-9 * (1.0 + fabs(c[j]));
+            double d = delta[j];
+            if (!(kind & 1) && d < -1e-300) {
+                /* needs r <= tolj; grows when d < 0 */
+                double slack = tolj - r;
+                double a_j = slack / (-d);
+                if (a_j < alpha) {
+                    alpha = a_j;
+                    blocker = j;
+                }
+            }
+            if (!(kind & 2) && d > 1e-300) {
+                /* needs r >= -tolj; shrinks when d > 0 */
+                double slack = r + tolj;
+                double a_j = slack / d;
+                if (a_j < alpha) {
+                    alpha = a_j;
+                    blocker = j;
+                }
+            }
+        }
+        if (alpha < 0.0) {
+            alpha = 0.0;
+        }
+        if (alpha > 0.0) {
+            for (Py_ssize_t i = 0; i < m; i++) {
+                y[i] += alpha * dy[i];
+            }
+            scaled_op_transpose_matvec(op, y, aty);
+        }
+        if (blocker < 0) {
+            break; /* full step taken; working set satisfied at margins */
+        }
+        if (wn >= REPAIR_CAP) {
+            goto done; /* would exceed the cap: fail closed */
+        }
+        /* Append blocker to W and extend the Cholesky factor by one row. */
+        {
+            Py_ssize_t k = wn;
+            Py_ssize_t jk = blocker;
+            for (Py_ssize_t a = 0; a <= k; a++) {
+                Py_ssize_t ja = a == k ? jk : W[a];
+                Py_ssize_t pa = op->col_start[ja];
+                Py_ssize_t pk = op->col_start[jk];
+                Py_ssize_t ea = op->col_start[ja + 1];
+                Py_ssize_t ek = op->col_start[jk + 1];
+                double dot = 0.0;
+                while (pa < ea && pk < ek) {
+                    int32_t ra = op->row_index[pa];
+                    int32_t rk = op->row_index[pk];
+                    if (ra == rk) {
+                        dot += op->csc_data[pa] * op->csc_data[pk];
+                        pa++;
+                        pk++;
+                    } else if (ra < rk) {
+                        pa++;
+                    } else {
+                        pk++;
+                    }
+                }
+                if (a == k) {
+                    dot += 1e-12 * (1.0 + dot);
+                    double sum = dot;
+                    for (Py_ssize_t t = 0; t < k; t++) {
+                        sum -= L[k * REPAIR_CAP + t] * L[k * REPAIR_CAP + t];
+                    }
+                    if (sum <= 1e-300) {
+                        goto done; /* dependent column: fail closed */
+                    }
+                    L[k * REPAIR_CAP + k] = sqrt(sum);
+                } else {
+                    double sum = dot;
+                    for (Py_ssize_t t = 0; t < a; t++) {
+                        sum -= L[k * REPAIR_CAP + t] * L[a * REPAIR_CAP + t];
+                    }
+                    L[k * REPAIR_CAP + a] = sum / L[a * REPAIR_CAP + a];
+                }
+            }
+            in_w[jk] = 1;
+            W[wn++] = jk;
+        }
+    }
+
+    /* Full certificate with the repaired y (identical gate to cleanup). */
+    {
+        double pobj = 0.0;
+        double dobj = 0.0;
+        int cert = 1;
+        for (Py_ssize_t j = 0; j < n; j++) {
+            unsigned char kind = bound_kind[j];
+            double r = c[j] - aty[j];
+            pobj += c[j] * x[j];
+            if (kind == 4) {
+                dobj += r * x[j];
+                continue;
+            }
+            if (r > 0.0) {
+                if (kind & 1) {
+                    dobj += r * lo[j];
+                } else if (r > 1e-9 * (1.0 + fabs(c[j]))) {
+                    cert = 0;
+                    break;
+                }
+            } else if (r < 0.0) {
+                if (kind & 2) {
+                    dobj += r * hi[j];
+                } else if (-r > 1e-9 * (1.0 + fabs(c[j]))) {
+                    cert = 0;
+                    break;
+                }
+            }
+        }
+        if (cert) {
+            for (Py_ssize_t i = 0; i < m; i++) {
+                dobj += b[i] * y[i];
+            }
+            double gap = fabs(pobj - dobj) / (1.0 + fabs(pobj) + fabs(dobj));
+            if (gap <= 1e-5) {
+                *gap_out = gap;
+                certified = 1;
+            }
+        }
+    }
+
+done:
+    if (!certified && y_save != NULL) {
+        memcpy(y, y_save, (size_t)m * sizeof(double));
+        scaled_op_transpose_matvec(op, y, aty);
+    }
+    free(y_save);
+    free(in_w);
+    free(W);
+    free(L);
+    free(rhs);
+    free(omega);
+    free(dy);
+    free(delta);
+    return certified;
+}
+
 static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *args, PyObject *kwds) {
     PyObject *c_obj;
     PyObject *b_obj;
@@ -5534,7 +5835,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                     last_cleanup_attempt = iter;
                     double cleaned_gap = 0.0;
                     if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y,
-                                         aty, &cleaned_gap, &dual_cleanup_rounds)) {
+                                         aty, &cleaned_gap, &dual_cleanup_rounds) ||
+                        ipm_dual_repair(&op, c, b, lo, hi, bound_kind, m, n, x, y,
+                                        aty, &cleaned_gap)) {
                         best_gap = cleaned_gap;
                         status = "optimal";
                         accepted = 1;
@@ -5569,7 +5872,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 (last_ap < 1e-6 || last_ad < 1e-6)) {
                 last_cleanup_attempt = iter;
                 if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
-                                     &cleaned_gap, &dual_cleanup_rounds)) {
+                                     &cleaned_gap, &dual_cleanup_rounds) ||
+                    ipm_dual_repair(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                    &cleaned_gap)) {
                     certified = 1;
                 }
             }
@@ -5581,7 +5886,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                  * the relaxed-acceptance path. */
                 last_cleanup_attempt = iter;
                 if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
-                                     &cleaned_gap, &dual_cleanup_rounds)) {
+                                     &cleaned_gap, &dual_cleanup_rounds) ||
+                    ipm_dual_repair(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                    &cleaned_gap)) {
                     certified = 1;
                 }
             }
@@ -5634,7 +5941,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             }
             if (last_ap < 1e-6 || last_ad < 1e-6) {
                 if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
-                                     &cleaned_gap, &dual_cleanup_rounds)) {
+                                     &cleaned_gap, &dual_cleanup_rounds) ||
+                    ipm_dual_repair(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                    &cleaned_gap)) {
                     best_gap = cleaned_gap;
                     status = "optimal";
                     break;
@@ -5975,7 +6284,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         if (strcmp(status, "optimal") != 0 && raw_pres <= feas_tol && pres <= 1e-6) {
             double cleaned_gap = 0.0;
             if (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
-                                 &cleaned_gap, &dual_cleanup_rounds)) {
+                                 &cleaned_gap, &dual_cleanup_rounds) ||
+                ipm_dual_repair(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                &cleaned_gap)) {
                 best_gap = cleaned_gap;
                 status = "optimal";
             }
@@ -6000,8 +6311,10 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                                                aty, &cleaned_gap) &&
                             cleaned_gap <= 1e-5;
             if (!certified &&
-                ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
-                                 &cleaned_gap, &dual_cleanup_rounds)) {
+                (ipm_dual_cleanup(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                  &cleaned_gap, &dual_cleanup_rounds) ||
+                 ipm_dual_repair(&op, c, b, lo, hi, bound_kind, m, n, x, y, aty,
+                                 &cleaned_gap))) {
                 certified = 1;
             }
             if (!certified &&
