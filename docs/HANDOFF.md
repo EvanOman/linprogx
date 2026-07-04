@@ -825,3 +825,10 @@ remains depending on instance.
   acceptance: cre_d count materially below 100k, dual-progress
   decreasing-window count -> ~0 (the merged instrument is the test),
   no regressions on greenbea/woodw/stocfor3/80bau3b.
+
+- PILOT87 CERTIFIED (2026-07-04, 5-pair protocol at load 0.8-2.6, EXPAND
+  agent measuring concurrently — paired design absorbs it): linprogx
+  3/5 pairs and the median (3.566 vs 3.671). From a consistent 1.28x
+  loss before the dtrsv tail solves to a paired-majority win.
+  HEAD-TO-HEAD: 14-10 LINPROGX. Remaining losses: 80bau3b, cre_a,
+  cre_b, cre_d, greenbea, maros_r7, pds_10, pds_20, stocfor3, woodw.
