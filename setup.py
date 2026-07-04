@@ -8,6 +8,7 @@ solver still works -- just without BLAS-accelerated sparse internals.
 
 import subprocess
 import sys
+
 from setuptools import Extension, setup
 
 
@@ -25,6 +26,7 @@ def _have_openblas() -> bool:
         pass
     # Fallback: check if the header exists
     import os
+
     for path in ["/usr/include", "/usr/local/include", "/usr/include/openblas"]:
         if os.path.isfile(os.path.join(path, "cblas.h")):
             return True
