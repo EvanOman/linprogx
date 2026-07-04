@@ -38,6 +38,8 @@ ALLOWED_ORIGINS = [
     "https://www.evanoman.com",
     "http://localhost:5173",
     "http://localhost:5174",
+    "http://localhost:14173",
+    "http://localhost:18920",
     "http://localhost:19100",
     "http://localhost:19101",
 ]
