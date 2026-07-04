@@ -3279,7 +3279,83 @@ static CholContext *chol_setup(
     if (ctx->pair_offset == NULL || ctx->diag_offset == NULL) {
         goto fail;
     }
-    {
+    /* Pair offsets via bucketed dense scatter: binary-searching C's
+     * column for every pair cost O(n_pairs * log(col)) with cache-hostile
+     * access (0.30s of maros_r7's setup, ~0.05s of osa_14's). Bucketing
+     * pairs by their TARGET column and scattering each C column's
+     * row->offset map once makes it O(n_pairs + nnz(C)), and because the
+     * original pair index is carried through the buckets, the resulting
+     * pair_offset array is IDENTICAL to the search version — assembly
+     * order and numerics are unchanged. Falls back to the search loop if
+     * the bucket memory would be excessive. */
+    if (n_pairs <= ((Py_ssize_t)1 << 26)) {
+        int32_t *bkt_ptr = calloc((size_t)m + 1, sizeof(int32_t));
+        int32_t *bkt_at = malloc((size_t)(n_pairs > 0 ? n_pairs : 1) * sizeof(int32_t));
+        int32_t *bkt_r1 = malloc((size_t)(n_pairs > 0 ? n_pairs : 1) * sizeof(int32_t));
+        Py_ssize_t *colmap = malloc((size_t)m * sizeof(Py_ssize_t));
+        if (bkt_ptr == NULL || bkt_at == NULL || bkt_r1 == NULL || colmap == NULL) {
+            free(bkt_ptr); free(bkt_at); free(bkt_r1); free(colmap);
+            goto fail;
+        }
+        for (Py_ssize_t t = 0; t < A->cols; t++) {
+            if (ctx->col_is_dense[t]) {
+                continue;
+            }
+            Py_ssize_t nz = A->csc_indptr[t + 1] - A->csc_indptr[t];
+            for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
+                bkt_ptr[ctx->pinv[A->csc_rows[q]] + 1] += (int32_t)nz;
+            }
+        }
+        for (int32_t k = 0; k < m; k++) {
+            bkt_ptr[k + 1] += bkt_ptr[k];
+        }
+        {
+            Py_ssize_t at = 0;
+            for (Py_ssize_t t = 0; t < A->cols; t++) {
+                if (ctx->col_is_dense[t]) {
+                    continue;
+                }
+                for (Py_ssize_t p = A->csc_indptr[t]; p < A->csc_indptr[t + 1]; p++) {
+                    int32_t r1 = ctx->pinv[A->csc_rows[p]];
+                    for (Py_ssize_t q = A->csc_indptr[t]; q < A->csc_indptr[t + 1]; q++) {
+                        int32_t r2 = ctx->pinv[A->csc_rows[q]];
+                        int32_t slot = bkt_ptr[r2]++;
+                        bkt_at[slot] = (int32_t)at;
+                        bkt_r1[slot] = r1;
+                        at++;
+                    }
+                }
+            }
+        }
+        /* bkt_ptr got advanced; rewind */
+        for (int32_t k = m; k > 0; k--) {
+            bkt_ptr[k] = bkt_ptr[k - 1];
+        }
+        bkt_ptr[0] = 0;
+        {
+            int ok = 1;
+            for (int32_t col = 0; col < m && ok; col++) {
+                for (Py_ssize_t pp = ctx->Cp[col]; pp < ctx->Cp[col + 1]; pp++) {
+                    colmap[ctx->Ci[pp]] = pp;
+                }
+                for (int32_t slot = bkt_ptr[col]; slot < bkt_ptr[col + 1]; slot++) {
+                    int32_t r1 = bkt_r1[slot];
+                    /* validity: r1 must be present in column col */
+                    Py_ssize_t off = colmap[r1];
+                    if (off < ctx->Cp[col] || off >= ctx->Cp[col + 1] ||
+                        ctx->Ci[off] != r1) {
+                        ok = 0;
+                        break;
+                    }
+                    ctx->pair_offset[bkt_at[slot]] = off;
+                }
+            }
+            free(bkt_ptr); free(bkt_at); free(bkt_r1); free(colmap);
+            if (!ok) {
+                goto fail;
+            }
+        }
+    } else {
         Py_ssize_t at = 0;
         for (Py_ssize_t t = 0; t < A->cols; t++) {
             if (ctx->col_is_dense[t]) {
