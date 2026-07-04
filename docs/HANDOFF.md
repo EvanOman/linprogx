@@ -809,3 +809,19 @@ remains depending on instance.
   literature's answer and HiGHS's likely edge; note the earlier
   cost-shifting family attacked entering-side ties, NOT the ratio-test
   tolerance ratchet, so this is not a retread.
+
+- ELEVENTH ELIMINATION (2026-07-04, branch exp-leaving, r_refresh kwarg
+  kept default-off and NOT merged): periodic from-scratch reduced-cost
+  refresh (K=25..400) changes NOTHING on cre_d (all runs exactly 100k,
+  degen 85-89%, churn unchanged) and does NOT restore merit
+  monotonicity — the merit drops are the REPAIR FLIPS themselves,
+  fixing sign violations FRESHLY CREATED by theta_d~0 degenerate steps
+  (Harris-tolerance-sized wrong-sign moves), not accumulated staleness.
+  Frequent repair is actively harmful (greenbea +18% pivots at K=50,
+  status regression at K=100). FINAL CONVERGENCE: every mechanism
+  except the degenerate theta_d~0 pivot stream itself is eliminated.
+  BUILD: EXPAND-style dual anti-degeneracy (Gill/Murray/Saunders
+  working-tolerance expansion on the dual ratio test). Pre-registered
+  acceptance: cre_d count materially below 100k, dual-progress
+  decreasing-window count -> ~0 (the merged instrument is the test),
+  no regressions on greenbea/woodw/stocfor3/80bau3b.
