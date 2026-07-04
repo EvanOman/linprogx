@@ -220,7 +220,6 @@ class SparseSolver:
                     solve_lo,
                     solve_hi,
                     max_iter=min(self.max_iterations, 50_000),
-                    bfrt=1,
                     expand=1,
                 )
                 if ds_early["status"] == "optimal":
@@ -343,7 +342,6 @@ class SparseSolver:
                             solve_lo,
                             solve_hi,
                             max_iter=min(self.max_iterations, 50_000),
-                            bfrt=1,
                             expand=1,
                         )
                         if ds_result["status"] == "optimal":

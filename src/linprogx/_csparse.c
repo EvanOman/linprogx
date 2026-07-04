@@ -10218,6 +10218,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                  * if we need flip logic at all. We use the CSR-scattered alphas. */
                 double theta_min = 1e300;
                 int n_admissible = 0;
+                int any_flippable = 0;
 
                 /* Count admissible to know if we need flips */
                 for (int32_t j = 0; j < n_total; j++) {
@@ -10264,6 +10265,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             if (bw >= 1e-14) {
                                 cd->flippable = 1;
                                 cd->absorption = fabs(alpha_j) * bw;
+                                any_flippable = 1;
                             }
                         }
                     }
@@ -10331,7 +10333,28 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                  */
                 double remaining_infeas = fabs(x_B[leaving_basis_pos] - leaving_bound);
 
-                if (bfrt == 1) {
+                /* BFRT reduction guarantee: when the breakpoint walk fires
+                 * ZERO flips, the BFRT pivot must be byte-identical to the
+                 * baseline Harris two-pass choice. The old code's terminal-
+                 * band entering scan diverged from the baseline in the
+                 * no-flip case through (a) tie-break order -- the baseline
+                 * sweep scans by column index, so equal-|alpha| ties resolve
+                 * to the lowest j, while the ratio-sorted walk resolved them
+                 * to the lowest ratio (on +-1 network matrices like cre_d,
+                 * |alpha| ties are pervasive: measured 2x pivot count with
+                 * zero flips fired) -- and (b) band membership under
+                 * expand=1 -- the baseline admits plain ratio <= theta_max
+                 * while the walk compared tau-expanded ratios, a band
+                 * narrower by tau/|alpha_j| per candidate. Fix: the walk
+                 * only decides the flip set; if it is empty, fall through
+                 * to the baseline sweeps below. */
+                int bfrt_flips_fired = 0;
+                /* Skip the sort+walk entirely when no candidate is
+                 * flippable: the walk would fire zero flips and fall
+                 * through anyway (byte-identical outcome), and the per-
+                 * pivot qsort is pure overhead on flip-free instances
+                 * (cre_d: 56% wall). */
+                if (bfrt == 1 && any_flippable) {
                 /* ============================================================
                  * Bound-flipping ratio test (BFRT / longest step; Fourer,
                  * Maros ch. 10). The dual objective along the step is
@@ -10378,11 +10401,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     n_flips--;
                     slope += bfrt_cands[term].absorption;
                 }
-                /* Entering choice: Harris band above the terminal
-                 * breakpoint, largest |alpha| (candidates are (ratio, j)
-                 * sorted, so ties resolve deterministically). All collected
-                 * candidates already satisfy |alpha| >= 1e-9. */
-                {
+                /* Entering choice (only when flips actually fired; the
+                 * no-flip case reduces to the baseline sweeps below):
+                 * Harris band above the terminal breakpoint, largest
+                 * |alpha| (candidates are (ratio, j) sorted, so ties
+                 * resolve deterministically). All collected candidates
+                 * already satisfy |alpha| >= 1e-9. */
+                if (n_flips > 0) {
+                    bfrt_flips_fired = 1;
                     double band_hi = bfrt_cands[term].ratio + harris_delta;
                     double best_a = 0.0;
                     for (int32_t ci = term; ci < n_admissible; ci++) {
@@ -10396,7 +10422,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                 }
 
-                } else {
+                }
+                if (!bfrt_flips_fired) {
                 /* Pass 2: find entering variable with largest |alpha| within Harris band.
                  * Along the way, flip boxed variables at the bottom of the band
                  * if their absorption < remaining_infeas.
@@ -10490,7 +10517,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         entering_alpha_row = alpha_j;
                     }
                 }
-                } /* end bfrt==0 sweep-1/sweep-2 path */
+                } /* end baseline sweep-1/sweep-2 path (bfrt==0, or
+                   * bfrt==1 with an empty flip set -- the reduction case) */
 
                 if (entering_col < 0) {
                     /* All candidates within the band were flipped.

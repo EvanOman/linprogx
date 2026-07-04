@@ -730,3 +730,69 @@ class TestBigMArtificialBounds:
     def test_free_variables(self) -> None:
         """Free variables (lo=-inf, hi=+inf, c=0): 100 random instances."""
         self._run_mode("free", seed=11)
+
+
+# ---------------------------------------------------------------------------
+# Bound-flipping ratio test (bfrt=1)
+# ---------------------------------------------------------------------------
+
+
+class TestBfrtRatioTest:
+    """BFRT correctness: reduction to the baseline choice and flip firing."""
+
+    def test_bfrt_reduces_to_baseline_with_no_flippable_columns(self) -> None:
+        """With no boxed columns there is never a flippable breakpoint, so
+        every bfrt=1 pivot must be byte-identical to the bfrt=0 Harris
+        two-pass choice: identical iteration counts and objectives."""
+        rng = np.random.RandomState(20260704)
+        checked = 0
+        for _ in range(10):
+            m = rng.randint(3, 9)
+            n = m + rng.randint(2, 8)
+            A = rng.randn(m, n)
+            if np.linalg.matrix_rank(A) < m:
+                continue
+            # One-sided columns only: [0, +inf) -- nothing is flippable.
+            lo = np.zeros(n)
+            hi = np.full(n, np.inf)
+            x_feas = rng.rand(n)
+            b = A @ x_feas
+            c = np.abs(rng.randn(n)) + 0.1  # bounded below => solvable
+            A_obj = _make_csr(A)
+            r0 = A_obj.solve_eq_box_dual_simplex(
+                c.tolist(), b.tolist(), lo.tolist(), hi.tolist(), bfrt=0
+            )
+            r1 = A_obj.solve_eq_box_dual_simplex(
+                c.tolist(), b.tolist(), lo.tolist(), hi.tolist(), bfrt=1
+            )
+            assert r1["iterations"] == r0["iterations"], (
+                f"bfrt=1 must reduce to bfrt=0 with no flippable columns: "
+                f"{r1['iterations']} != {r0['iterations']} (m={m}, n={n})"
+            )
+            assert r1["status"] == r0["status"]
+            assert r1["objective"] == r0["objective"], (
+                f"objective diverged: {r1['objective']} != {r0['objective']}"
+            )
+            assert r1["bound_flips"] == 0 and r0["bound_flips"] == 0
+            checked += 1
+        assert checked >= 8, f"only {checked} full-rank instances checked"
+
+    def test_bfrt_must_flip_fires_flips(self) -> None:
+        """Longest-step walk: one row, boxed unit-width columns at ratio 0
+        that each absorb 1.0 of the 3.5 leaving infeasibility, then a wide
+        terminal column. bfrt=1 must flip the three cheap columns and pivot
+        once on the terminal column."""
+        A = np.array([[1.0, 1.0, 1.0, 1.0, 1.0]])
+        b = np.array([4.5])
+        c = np.array([1.0, 1.0, 1.0, 2.0, 1.0])
+        lo = np.zeros(5)
+        hi = np.array([1.0, 1.0, 1.0, 10.0, 1.0])
+        A_obj = _make_csr(A)
+        res = A_obj.solve_eq_box_dual_simplex(
+            c.tolist(), b.tolist(), lo.tolist(), hi.tolist(), bfrt=1
+        )
+        assert res["status"] == "optimal"
+        ref = _solve_highs(c, A, b, lo, hi)
+        assert abs(res["objective"] - ref.fun) < 1e-9
+        assert res["iterations"] == 1, f"expected 1 pivot, got {res['iterations']}"
+        assert res["bound_flips"] == 3, f"expected 3 flips, got {res['bound_flips']}"

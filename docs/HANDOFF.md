@@ -885,3 +885,17 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   reduction defect: BFRT should be byte-identical to baseline when
   nothing can flip. FIX QUEUED; once fixed, bfrt=1 becomes Pareto-safe
   (greenbea keeps its win, cre unaffected).
+
+- BFRT REDUCTION FIXED (2026-07-04): with zero flips fired the walk now
+  falls through to the baseline sweep verbatim — cre_d bfrt=1 reproduces
+  bfrt=0 BIT-EXACTLY (103,781). Root causes: (ratio,j)-sorted tie-breaks
+  vs baseline's column-index order (pervasive |alpha| ties on +-1
+  network matrices — hidden pricing!), and a tau-expanded vs plain band
+  mismatch under expand. THE TWIST: greenbea's old bfrt "benefit" was
+  partly the defect's accidental lowest-ratio tie-break; with principled
+  semantics, expand-only dominates on the greenbea-shaped route, so the
+  routes now use expand=1 WITHOUT bfrt. FOLLOW-UP QUEUED: an explicit
+  lower-ratio-among-equal-|alpha| entering tie-break as its own
+  experiment in BOTH paths — the legitimate version of the accidental
+  win (greenbea -8%, cre_d 2x loss suggests it must be gated or scored,
+  not global). 249 tests (2 new reduction/must-flip tests).
