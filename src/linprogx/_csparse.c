@@ -8920,10 +8920,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     PyObject *c_obj, *b_obj, *lo_obj, *hi_obj;
     Py_ssize_t max_iter_arg = 0;
     double tol = 1e-8;
-    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", NULL};
+    int pricing = 0; /* 0 = Devex (default), 1 = carried exact steepest edge */
+    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "pricing", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "OOOO|nd", kwlist,
-            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter_arg, &tol)) {
+            args, kwds, "OOOO|ndi", kwlist,
+            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter_arg, &tol, &pricing)) {
         return NULL;
     }
     if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
@@ -8963,6 +8964,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *e_i = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *c_B = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *devex_w = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *dse_beta = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     int32_t *basis = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
 
     /* Basis CSC workspace (max nnz = A's nnz + m for artificials) */
@@ -9523,6 +9525,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         int32_t refac_interval = 500;
         int32_t iters_since_refac = 0;
         int x_B_needs_recompute = 1;
+        int x_B_fresh = 0; /* set when x_B comes from a full solve, cleared
+                            * after incremental pivot updates; infeasibility
+                            * may only be declared from fresh state */
         for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
             iterations = iter;
 
@@ -9546,6 +9551,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             }
             lu_ftran(lu, rhs, x_B);
             x_B_needs_recompute = 0;
+            x_B_fresh = 1;
             }
 
             /* ---- 4b. Find leaving variable: Devex-weighted max violation ---- */
@@ -9616,6 +9622,21 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         rho_nz_rows[rho_nnz++] = i;
                     }
                 }
+            }
+
+            if (pricing == 1) {
+                /* Continuous drift anchor: rho = B^{-T} e_r is in hand, so
+                 * the leaving row's exact steepest-edge weight ||rho||^2 is
+                 * free. Anchoring gamma_r each pivot keeps the carried
+                 * update's dominant term exact, so floating-point drift
+                 * cannot compound across refactorizations. */
+                double g_exact = 0.0;
+                for (int32_t ri = 0; ri < rho_nnz; ri++) {
+                    double v = rho[rho_nz_rows[ri]];
+                    g_exact += v * v;
+                }
+                if (g_exact < 1e-12) g_exact = 1e-12;
+                devex_w[leaving_basis_pos] = g_exact;
             }
 
             /* ---- 4d. Sparse pivot row computation via CSR scatter ---- */
@@ -9725,7 +9746,28 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             alpha_touched[j] = 0;
                         }
                     }
-                    status = "infeasible";
+                    if (!x_B_fresh) {
+                        /* The driving violation may be incremental-update
+                         * drift. Infeasibility (an empty dual ratio test on
+                         * a violated row = a Farkas ray) may only be
+                         * declared from a freshly solved x_B: recompute and
+                         * re-select instead. */
+                        x_B_needs_recompute = 1;
+                        continue;
+                    }
+                    {
+                        /* An empty ratio test certifies infeasibility of
+                         * the problem AS BOXED. If any artificial big-M
+                         * bound is installed, that proves nothing about
+                         * the true problem — report a routing status the
+                         * caller treats as non-optimal fallthrough, never
+                         * a false infeasibility verdict. */
+                        int any_art = 0;
+                        for (int32_t j = 0; j < n; j++) {
+                            if (has_art_bound[j]) { any_art = 1; break; }
+                        }
+                        status = any_art ? "dual_unbounded_boxed" : "infeasible";
+                    }
                     iterations = iter;
                     break;
                 }
@@ -9930,7 +9972,19 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             alpha_touched[j] = 0;
                         }
                     }
-                    status = "infeasible";
+                    if (!x_B_fresh) {
+                        /* see the guard above: only fresh-state emptiness
+                         * is a genuine infeasibility certificate */
+                        x_B_needs_recompute = 1;
+                        continue;
+                    }
+                    {
+                        int any_art = 0;
+                        for (int32_t j = 0; j < n; j++) {
+                            if (has_art_bound[j]) { any_art = 1; break; }
+                        }
+                        status = any_art ? "dual_unbounded_boxed" : "infeasible";
+                    }
                     iterations = iter;
                     break;
                 }
@@ -10098,9 +10152,40 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 x_B_needs_recompute = 1;
             }
 
-            /* ---- 4i. Devex weight update (Harris 1973 scheme) ---- */
-            {
-                /* Update Devex weights using sparse alpha_col pattern:
+            /* ---- 4i. Pricing weight update ---- */
+            if (pricing == 1) {
+                /* Exact dual steepest-edge update (Forrest-Goldfarb 1992),
+                 * transplanted from the exp-sedge experiment (see branch
+                 * 158b70a for the full derivation). With basis change
+                 * (leaving row r, entering column q, pivot = alpha_col[r]):
+                 *     gamma_i' = gamma_i - 2 tau_i beta_i + tau_i^2 gamma_r,
+                 *     gamma_r' = gamma_r / pivot^2,
+                 * where tau_i = alpha_col[i]/pivot and beta = B^{-1} rho
+                 * costs ONE extra sparse FTRAN on the PRE-update factor.
+                 * Unlike the experiment, weights are seeded exactly once
+                 * (gamma=1 is exact at the identity-artificial start) and
+                 * CARRIED across refactorizations — gamma is a basis
+                 * property, and the per-pivot ||rho||^2 anchor above stops
+                 * drift from compounding. */
+                lu_ftran(lu, rho, dse_beta);
+                double inv_pivot = 1.0 / pivot;
+                double gamma_r_old = devex_w[leaving_basis_pos];
+                if (gamma_r_old < 1e-12) gamma_r_old = 1e-12;
+                for (int32_t ki = 0; ki < ftran_nnz; ki++) {
+                    int32_t k = ftran_pattern[ki];
+                    if (k == leaving_basis_pos) continue;
+                    double tau = alpha_col[k] * inv_pivot;
+                    double g = devex_w[k]
+                             - 2.0 * tau * dse_beta[k]
+                             + tau * tau * gamma_r_old;
+                    if (g < 1e-12) g = 1e-12;
+                    devex_w[k] = g;
+                }
+                double gamma_r_new = gamma_r_old * inv_pivot * inv_pivot;
+                if (gamma_r_new < 1e-12) gamma_r_new = 1e-12;
+                devex_w[leaving_basis_pos] = gamma_r_new;
+            } else {
+                /* Devex weight update (Harris 1973 scheme):
                  * w_i_new = max(w_i, (alpha_col[i] / pivot)^2)
                  * The entering variable gets weight 1/pivot^2 */
                 double inv_pivot_sq = 1.0 / (pivot * pivot);
@@ -10172,7 +10257,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                     clock_gettime(CLOCK_MONOTONIC, &_rf_tmid);
                     lu_build_transposes(lu);
-                    for (int32_t k = 0; k < m; k++) devex_w[k] = 1.0;
+                    if (pricing != 1) {
+                        /* Devex resets its reference frame; steepest-edge
+                         * weights are basis properties and carry across a
+                         * refactorization unchanged. */
+                        for (int32_t k = 0; k < m; k++) devex_w[k] = 1.0;
+                    }
                     iters_since_refac = 0;
 
                     /* Recompute y, r from scratch and repair dual feasibility.
@@ -10222,6 +10312,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             }
 
             /* ---- 4l. Anti-cycling ---- */
+            x_B_fresh = 0;
             if (theta_d < 1e-12) {
                 consecutive_degenerate++;
                 stat_degenerate++;
@@ -10529,7 +10620,7 @@ done:
     free(x_ext); free(r_ext); free(basis_pos); free(bound_status);
     free(b); free(y); free(x_B); free(rhs);
     free(rho); free(alpha_col); free(e_i); free(c_B);
-    free(devex_w); free(basis);
+    free(devex_w); free(dse_beta); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched);
