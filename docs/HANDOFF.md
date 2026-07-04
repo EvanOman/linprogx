@@ -758,3 +758,17 @@ remains depending on instance.
   ~10 fewer iterations or ~30% per-iteration cost. These join the
   structural queue behind the cre selection-order question. Current
   paired standing: 13-11 linprogx with all aggregate axes won.
+
+- HYPOTHESIS SETTLED, NEGATIVE (2026-07-04, branch exp-phase1): a real
+  Maros-style dual Phase-1 (composite infeasibility costs, true bounds,
+  no boxing) replacing the big-M start. (1) cre_d's post-presolve crash
+  start is ALREADY truly dual-feasible — Phase-1 switches at iter 0 with
+  ZERO boxed columns and the 100k-pivot trajectory is bit-identical on
+  the pure problem: the walk itself is long, full stop. (2) On genuinely
+  dual-infeasible starters, Phase-2 from the Phase-1-displaced basis is
+  consistently WORSE (+79% greenbea, +103% woodw, +69% 80bau3b pivots);
+  coverage/objectives all preserved. Big-M stays the default
+  permanently. cre_d eliminations now: presolve, weights, perturbation,
+  shifting x3, M-magnitude, flips(none available), boxing/Phase-1 —
+  remaining suspects: the leaving-rule experiment (in flight) and
+  ratio-test/step-quality comparative study.
