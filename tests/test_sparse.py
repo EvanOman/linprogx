@@ -10,6 +10,7 @@ from linprogx import (
     solve_sparse,
     solve_sparse_canonical,
 )
+from linprogx.sparse import _ipm_stall_risk
 
 
 def test_csr_matrix_operations() -> None:
@@ -220,6 +221,7 @@ def test_sparse_pdhg_zero_iteration_uses_projected_zero_start() -> None:
 
 class _FallbackMatrix:
     shape = (1, 1)
+    nnz = 1
 
     def __init__(self) -> None:
         self.pdhg_calls = 0
@@ -269,6 +271,7 @@ class _FallbackMatrix:
 
 class _PdhgThreadMatrix:
     shape = (1, 1)
+    nnz = 1
 
     def __init__(self) -> None:
         self.threads: int | None = None
@@ -665,3 +668,244 @@ def test_pdhg_cleanup_stops_early_when_certificate_is_close() -> None:
     assert result["status"] == "optimal"
     assert result["iterations"] <= 640
     assert result["max_primal_residual"] <= 1e-5
+
+
+# ---------------------------------------------------------------------------
+# _ipm_stall_risk unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestIpmStallRisk:
+    """Unit tests for the structural stall-prediction signal.
+
+    The signal fires when >= 50% of columns are one-sided with a cost
+    that does not resist movement toward the infinite side (c_j <= 0
+    for lo-only, c_j >= 0 for hi-only) AND the average column nnz is
+    in [5, 8) -- network-ish sparsity with enough coupling.
+    """
+
+    def test_fires_on_zero_cost_lo_only_coupled(self) -> None:
+        # 100 columns: 60 lo-only with c=0 (60% >= 50%), avg nnz 6 in [5,8)
+        cols = 100
+        c = [0.0] * 60 + [1.0] * 40
+        lo = [0.0] * 100
+        hi = [float("inf")] * 60 + [10.0] * 40
+        nnz = 600  # avg 6.0
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is True
+
+    def test_fires_on_negative_cost_lo_only_coupled(self) -> None:
+        # 100 columns: 55 lo-only with c<0 (55% >= 50%), avg nnz 5.5
+        cols = 100
+        c = [-1.0] * 55 + [1.0] * 45
+        lo = [0.0] * 100
+        hi = [float("inf")] * 55 + [10.0] * 45
+        nnz = 550  # avg 5.5
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is True
+
+    def test_fires_on_hi_only_zero_cost_coupled(self) -> None:
+        # 100 columns: 60 hi-only with c=0 (60% >= 50%), avg nnz 7
+        cols = 100
+        c = [0.0] * 60 + [-1.0] * 40
+        lo = [float("-inf")] * 60 + [0.0] * 40
+        hi = [10.0] * 60 + [float("inf")] * 40
+        nnz = 700  # avg 7.0
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is True
+
+    def test_does_not_fire_when_all_columns_boxed(self) -> None:
+        # All columns have both finite bounds -> no at-risk columns
+        cols = 100
+        c = [0.0] * 100
+        lo = [0.0] * 100
+        hi = [10.0] * 100
+        nnz = 600
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is False
+
+    def test_does_not_fire_when_at_risk_below_threshold(self) -> None:
+        # 100 columns: 40 at-risk (40% < 50%), avg nnz 6
+        cols = 100
+        c = [0.0] * 40 + [1.0] * 60
+        lo = [0.0] * 100
+        hi = [float("inf")] * 40 + [10.0] * 60
+        nnz = 600
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is False
+
+    def test_does_not_fire_when_avg_col_nnz_too_high(self) -> None:
+        # at-risk 60% but avg nnz = 10 >= 8
+        cols = 100
+        c = [0.0] * 60 + [1.0] * 40
+        lo = [0.0] * 100
+        hi = [float("inf")] * 60 + [10.0] * 40
+        nnz = 1000  # avg 10.0
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is False
+
+    def test_does_not_fire_when_avg_col_nnz_too_low(self) -> None:
+        # at-risk 60% but avg nnz = 3 < 5 -- too sparse for coupling
+        cols = 100
+        c = [0.0] * 60 + [1.0] * 40
+        lo = [0.0] * 100
+        hi = [float("inf")] * 60 + [10.0] * 40
+        nnz = 300  # avg 3.0
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is False
+
+    def test_does_not_fire_when_cost_resists_infinity(self) -> None:
+        # lo-only with c>0 -> cost resists movement toward infinity
+        cols = 100
+        c = [1.0] * 100
+        lo = [0.0] * 100
+        hi = [float("inf")] * 100
+        nnz = 600
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is False
+
+    def test_empty_columns_returns_false(self) -> None:
+        assert _ipm_stall_risk([], [], [], 0, 0) is False
+
+    def test_exact_50_percent_boundary(self) -> None:
+        # Exactly 50% at-risk = 50 out of 100
+        cols = 100
+        c = [0.0] * 50 + [1.0] * 50
+        lo = [0.0] * 100
+        hi = [float("inf")] * 50 + [10.0] * 50
+        nnz = 600
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is True
+
+    def test_just_below_50_percent(self) -> None:
+        # 49 at-risk out of 100 = 49% < 50%
+        cols = 100
+        c = [0.0] * 49 + [1.0] * 51
+        lo = [0.0] * 100
+        hi = [float("inf")] * 49 + [10.0] * 51
+        nnz = 600
+        assert _ipm_stall_risk(c, lo, hi, nnz, cols) is False
+
+
+# ---------------------------------------------------------------------------
+# Stall-predictor routing test
+# ---------------------------------------------------------------------------
+
+
+class _StallPredictorMatrix:
+    """Mock matrix that triggers the stall predictor signal.
+
+    Models a 50x200 problem with avg col nnz = 6.0 (in the [5,8) coupling
+    band) and >= 50% at-risk one-sided columns.
+    """
+
+    shape = (50, 200)
+    nnz = 1200  # avg col nnz = 6.0
+
+    def __init__(self) -> None:
+        self.ipm_calls = 0
+        self.ds_calls = 0
+        self.pdhg_calls = 0
+
+    def solve_eq_box_dual_simplex(self, *args: object, **kwargs: object) -> dict[str, object]:
+        self.ds_calls += 1
+        return {
+            "status": "optimal",
+            "objective": -5.0,
+            "max_primal_residual": 0.0,
+            "iterations": 100,
+            "x": [1.0] * 200,
+            "y": [0.0] * 50,
+        }
+
+    def solve_eq_box_ipm(self, *args: object, **kwargs: object) -> dict[str, object]:
+        self.ipm_calls += 1
+        return {
+            "status": "iteration_limit",
+            "objective": -4.0,
+            "max_primal_residual": 1e-3,
+            "rel_primal_residual": 1e-3,
+            "rel_dual_residual": 1e-3,
+            "mu": 1e-6,
+            "iterations": 200,
+            "x": [0.5] * 200,
+            "y": [0.0] * 50,
+        }
+
+    def solve_eq_box_pdhg(self, *args: object, **kwargs: object) -> dict[str, object]:
+        self.pdhg_calls += 1
+        return {
+            "status": "iteration_limit",
+            "objective": 0.0,
+            "max_primal_residual": 1.0,
+            "iterations": 50,
+            "objective_scale": 1.0,
+            "x": [0.0] * 200,
+            "y": [0.0] * 50,
+        }
+
+    def matvec(self, x: list[float]) -> list[float]:
+        # Identity-like: return first 50 elements as Ax
+        return list(x[:50])
+
+    def to_components(self) -> tuple[list[int], list[int], list[float]]:
+        # Minimal stub; not used in routing
+        return [], [], []
+
+
+def test_stall_predictor_routes_to_ds_before_ipm() -> None:
+    """When the stall predictor fires, DS is called first and IPM is skipped."""
+    matrix = _StallPredictorMatrix()
+
+    # Build a problem that triggers the signal: 120 lo-only columns with c=0
+    # (60% of 200 columns >= 50% threshold), avg col nnz 6.0 in [5,8).
+    n = 200
+    m = 50
+    c = [0.0] * 120 + [1.0] * 80  # 120 at-risk lo-only (c<=0)
+    lo = [0.0] * n
+    hi = [float("inf")] * 120 + [10.0] * 80
+    bounds: list[tuple[float | None, float | None]] = [
+        (lo[j], hi[j] if hi[j] != float("inf") else None) for j in range(n)
+    ]
+    b = [1.0] * m
+
+    result = SparseSolver(algorithm="auto", eps=1e-6, presolve=False).solve(
+        SparseLPProblem(c, A_eq=matrix, b_eq=b, objective="min", bounds=bounds)
+    )
+
+    assert result.backend == "native-c-sparse-dual-simplex"
+    assert result.solution.status == Status.OPTIMAL
+    assert "stall predictor" in result.solution.message
+    assert matrix.ds_calls == 1
+    assert matrix.ipm_calls == 0
+    assert matrix.pdhg_calls == 0
+
+
+class _StallPredictorFailMatrix(_StallPredictorMatrix):
+    """Like _StallPredictorMatrix but DS returns iteration_limit, so
+    the code should fall through to the normal IPM path."""
+
+    def solve_eq_box_dual_simplex(self, *args: object, **kwargs: object) -> dict[str, object]:
+        self.ds_calls += 1
+        return {
+            "status": "iteration_limit",
+            "objective": 0.0,
+            "max_primal_residual": 1.0,
+            "iterations": 50000,
+            "x": [0.0] * 200,
+            "y": [0.0] * 50,
+        }
+
+
+def test_stall_predictor_falls_through_when_ds_fails() -> None:
+    """When DS fails to certify, the normal IPM path runs."""
+    matrix = _StallPredictorFailMatrix()
+
+    n = 200
+    m = 50
+    c = [0.0] * 120 + [1.0] * 80
+    lo = [0.0] * n
+    hi = [float("inf")] * 120 + [10.0] * 80
+    bounds: list[tuple[float | None, float | None]] = [
+        (lo[j], hi[j] if hi[j] != float("inf") else None) for j in range(n)
+    ]
+    b = [1.0] * m
+
+    SparseSolver(algorithm="auto", eps=1e-6, presolve=False).solve(
+        SparseLPProblem(c, A_eq=matrix, b_eq=b, objective="min", bounds=bounds)
+    )
+
+    # DS was tried first but failed; IPM should have been attempted
+    assert matrix.ds_calls >= 1
+    assert matrix.ipm_calls >= 1

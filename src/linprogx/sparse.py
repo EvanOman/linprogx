@@ -21,6 +21,36 @@ def _max_equality_residual(matrix: Any, x: list[float], b: list[float]) -> float
     return max((abs(float(lhs) - rhs) for lhs, rhs in zip(ax, b, strict=True)), default=0.0)
 
 
+def _ipm_stall_risk(c: list[float], lo: list[float], hi: list[float], nnz: int, cols: int) -> bool:
+    """Predict whether the IPM will stall on a structurally adversarial problem.
+
+    Returns True when >= 50% of columns are one-sided with a cost that does
+    not resist movement toward the infinite side (c_j <= 0 for lo-only, or
+    c_j >= 0 for hi-only) AND the average column nnz is in [5, 8) --
+    network-ish sparsity with enough per-column coupling that dual
+    adjustments cascade and the min-norm repair diverges.
+
+    The broader c_j = 0 inclusion matters because zero-cost one-sided
+    columns have their reduced cost entirely determined by the dual iterate,
+    giving the IPM no cost gradient to close the certificate.
+    """
+    if cols == 0:
+        return False
+    avg_col_nnz = nnz / cols
+    if avg_col_nnz < 5.0 or avg_col_nnz >= 8.0:
+        return False
+    inf = float("inf")
+    at_risk = 0
+    for j in range(cols):
+        lo_finite = lo[j] > -inf
+        hi_finite = hi[j] < inf
+        if lo_finite and not hi_finite and c[j] <= 0.0:
+            at_risk += 1
+        elif hi_finite and not lo_finite and c[j] >= 0.0:
+            at_risk += 1
+    return at_risk >= cols * 0.50
+
+
 @dataclass(frozen=True)
 class SparseLPProblem:
     c: list[float]
@@ -169,6 +199,45 @@ class SparseSolver:
         if algorithm == "auto":
             rows, _ = matrix.shape
             chosen = "ipm" if rows <= self.AUTO_IPM_MAX_ROWS else "pdhg"
+
+        # Stall-prediction shortcut: when the presolved problem has
+        # structurally adversarial one-sided columns with costs pointing
+        # at the infinite side, the IPM's Lagrangian certificate is at
+        # risk.  Try the dual simplex FIRST (cheap basis method) and
+        # accept its result only when it certifies optimally in original
+        # units.  If it fails or doesn't certify, fall through to the
+        # normal IPM path unchanged.
+        if algorithm == "auto" and chosen == "ipm":
+            ps_rows, ps_cols = matrix.shape
+            if (
+                ps_rows <= 4000
+                and ps_cols <= 30_000
+                and _ipm_stall_risk(solve_c, solve_lo, solve_hi, matrix.nnz, ps_cols)
+            ):
+                ds_early = matrix.solve_eq_box_dual_simplex(
+                    solve_c,
+                    solve_b,
+                    solve_lo,
+                    solve_hi,
+                    max_iter=min(self.max_iterations, 50_000),
+                )
+                if ds_early["status"] == "optimal":
+                    dx = [float(value) for value in ds_early["x"]]
+                    if reduction is not None:
+                        dx = postsolve_x(dx, reduction)
+                    objective = sum(v * coef for v, coef in zip(dx, problem.c, strict=True))
+                    residual = _max_equality_residual(problem.A_eq, dx, b)
+                    if residual <= self.eps:
+                        return Solution(
+                            Status.OPTIMAL,
+                            x=dx,
+                            objective_value=objective,
+                            iterations=int(ds_early["iterations"]),
+                            message=(
+                                "stall predictor routed to dual simplex; "
+                                f"max equality residual {residual:.3e}"
+                            ),
+                        ), "native-c-sparse-dual-simplex"
 
         result = None
         feasible_ipm_candidate: tuple[list[float], float, int, float] | None = None
