@@ -899,3 +899,17 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   experiment in BOTH paths — the legitimate version of the accidental
   win (greenbea -8%, cre_d 2x loss suggests it must be gated or scored,
   not global). 249 tests (2 new reduction/must-flip tests).
+
+- THIRTEENTH SETTLED (2026-07-04, branch exp-leaving, tiebreak kwarg
+  stays on the branch): explicit entering tie-breaks (lowest/highest
+  ratio among equal-|alpha|) are worse-or-neutral EVERYWHERE (tb=1
+  reproduces cre_d's disaster at 233,681; greenbea only +1.7% — its old
+  -8% did NOT come from the tie-break). DECOMPOSITION: the old BFRT
+  defect was two accidents — the tie-break (harmful) and the
+  tau-narrowed Harris band (helpful, the true greenbea benefit).
+  Default max-|alpha|-lowest-index is at/near this rule family's
+  optimum; no structural gate is worth building. RESIDUAL LEAD QUEUED:
+  the band width itself as an explicit knob (tighter/tau-aware Harris
+  delta) — worth ~8% on greenbea per the defect-era data, provably
+  safe on cre (zero-flip pivots are band-sensitive only via the
+  tie-break, which is now fixed).
