@@ -868,3 +868,20 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   network structure, dual steepest-edge default with cheap weights).
   That is the next multi-session program; everything else in the DS is
   done and measured.
+
+- START+PRICING UNIT (2026-07-04, branch exp-leaving): (1) crash-survival
+  instrument added (crash_survival/crash_structurals in result dict):
+  pds_10 start is GOOD (73.5% survival — start theory dead for pds; its
+  600k walk with 1M+ flips at 0% degeneracy is a PRICING-LOCALITY
+  problem); cre_d start is bad (19.8%). (2) Crash v2 (priority-heap
+  cascade, LINPROGX_DS_CRASH_V2, default off): cre_d -16%, stocfor3
+  -18%, but woodw +151% / 80bau3b +25% — gate FAIL, do not ship; the
+  cascade's REACHABLE SET, not its ordering, binds cre_d. (3)
+  Carried-DSE killed definitively even post-EXPAND (cre_d fails to
+  converge at 400k; pds_10 status regression; keep pricing=0). (4) GOLD
+  SIDE FINDING: bfrt=1 costs cre_d 2x (103,781 -> 212,390) with ZERO
+  flips fired — the BFRT terminal-band entering tie-break diverges from
+  baseline Harris even when no flippable breakpoints exist. That is a
+  reduction defect: BFRT should be byte-identical to baseline when
+  nothing can flip. FIX QUEUED; once fixed, bfrt=1 becomes Pareto-safe
+  (greenbea keeps its win, cre unaffected).
