@@ -9085,6 +9085,30 @@ static LUContext *ds_repair_singular_basis(
  *   theta_d = -r_q / (sigma * alpha_q)  >= 0
  *   r_j_new = r_j + theta_d * sigma * alpha_j
  */
+
+/* Candidate record for the bound-flipping ratio test (bfrt=1).
+ * absorption = |alpha_j| * (hi_j - lo_j) is the slope decrement when the
+ * dual step crosses this breakpoint and the (boxed) column flips. */
+typedef struct {
+    double ratio;       /* |r_j| / |alpha_j| */
+    double alpha;       /* signed pivot-row entry */
+    double absorption;  /* slope decrement if flipped (flippable only) */
+    int32_t j;          /* column index (unique -> deterministic sort) */
+    int8_t flippable;   /* boxed structural, finite true bounds, width > 0 */
+} DSBfrtCand;
+
+static int ds_bfrt_cand_cmp(const void *a, const void *b)
+{
+    const DSBfrtCand *ca = (const DSBfrtCand *)a;
+    const DSBfrtCand *cb = (const DSBfrtCand *)b;
+    if (ca->ratio < cb->ratio) return -1;
+    if (ca->ratio > cb->ratio) return 1;
+    /* deterministic tie-break on column index */
+    if (ca->j < cb->j) return -1;
+    if (ca->j > cb->j) return 1;
+    return 0;
+}
+
 static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     CSRMatrixObject *self, PyObject *args, PyObject *kwds)
 {
@@ -9092,10 +9116,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     Py_ssize_t max_iter_arg = 0;
     double tol = 1e-8;
     int pricing = 0; /* 0 = Devex (default), 1 = carried exact steepest edge */
-    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "pricing", NULL};
+    int leaving_rule = 0; /* leaving-row selection rule; 0 = current (byte-identical) */
+    int bfrt = 0; /* 1 = bound-flipping (longest-step) dual ratio test */
+    static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "pricing",
+                             "leaving_rule", "bfrt", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "OOOO|ndi", kwlist,
-            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter_arg, &tol, &pricing)) {
+            args, kwds, "OOOO|ndiii", kwlist,
+            &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter_arg, &tol, &pricing,
+            &leaving_rule, &bfrt)) {
         return NULL;
     }
     if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
@@ -9158,6 +9186,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *c_shift = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(double));
     int32_t *alpha_touched = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
 
+    /* leaving_rule==3: per-basis-row 'became infeasible at pivot t' stamp
+     * (-1 == currently feasible). Sized m. */
+    int32_t *infeas_stamp = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+
+    /* bfrt==1: breakpoint candidate array for the bound-flipping ratio
+     * test (sorted per pivot; typically only a few hundred entries used). */
+    DSBfrtCand *bfrt_cands = (bfrt == 1)
+        ? malloc((size_t)(n_total > 0 ? n_total : 1) * sizeof(DSBfrtCand))
+        : NULL;
+
     /* Bound-flip workspace: accumulated delta to x_B from flips */
     double *flip_delta_xB = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     int32_t *flip_cand = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
@@ -9186,7 +9224,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         flip_delta_xB == NULL ||
         has_art_bound == NULL || lo_true == NULL || hi_true == NULL ||
         ds_row_scale == NULL || ds_col_scale == NULL || scaled_csc_data == NULL ||
-        scaled_csr_data == NULL || c_orig == NULL) {
+        scaled_csr_data == NULL || c_orig == NULL ||
+        (bfrt == 1 && bfrt_cands == NULL)) {
         PyErr_NoMemory();
         goto done;
     }
@@ -9366,6 +9405,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
     /* Initialize Devex weights to 1 */
     for (int32_t k = 0; k < m; k++) devex_w[k] = 1.0;
+    for (int32_t k = 0; k < m; k++) infeas_stamp[k] = -1;
 
     /* ============================================================
      * 1. CRASH BASIS: greedy triangular crash + artificial fill
@@ -9726,6 +9766,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     {
         int consecutive_degenerate = 0;
         int use_bland = 0;
+        /* leaving_rule==2: deterministically rotating partial-pricing section.
+         * The basis rows are cut into ~sqrt(m) contiguous sections; each pivot
+         * the first-scanned section advances by one, so the geographic bias of
+         * a global argmax (which repeatedly drains the same dense region) is
+         * broken without any randomness. */
+        int32_t n_sections = (int32_t)(sqrt((double)(m > 1 ? m : 1)) + 0.5);
+        if (n_sections < 1) n_sections = 1;
+        int32_t section_size = (m + n_sections - 1) / (n_sections > 0 ? n_sections : 1);
+        if (section_size < 1) section_size = 1;
+        int32_t rot_section = 0;
 
         /* Refactorization triggers: lu_should_refactor (n_updates >= 500,
          * diagonal ratio > 1e4, eta fill > 4x) or iters_since_refac >= 500.
@@ -9763,34 +9813,139 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             x_B_fresh = 1;
             }
 
-            /* ---- 4b. Find leaving variable: Devex-weighted max violation ---- */
+            /* ---- 4b. Find leaving variable ----
+             * leaving_rule selects the scan/scoring strategy:
+             *   0 (default): Devex-weighted max violation^2/weight (byte-
+             *      identical to the historical behavior).
+             *   1: plain max violation (no weight) -- the Dantzig analogue.
+             *   2: Devex score restricted to a deterministically rotating
+             *      partial-pricing section (breaks geographic argmax bias).
+             *   3: max violation among the OLDEST decile of infeasibilities
+             *      (drain long-standing infeasibilities first).
+             *   4: Devex score damped by the leaving column's churn count
+             *      (de-prioritize columns that have re-entered the basis many
+             *      times, to break quasi-cycles).
+             */
             int32_t leaving_basis_pos = -1;
             double max_score = 0.0;
             int leaving_sigma = 0;
-            for (int32_t k = 0; k < m; k++) {
-                int32_t j = basis[k];
-                double viol = 0.0;
-                int sigma = 0;
-                if (isfinite(lo_ext[j]) && x_B[k] < lo_ext[j] - tol) {
-                    viol = lo_ext[j] - x_B[k];
-                    sigma = 1;
-                }
-                if (isfinite(hi_ext[j]) && x_B[k] > hi_ext[j] + tol) {
-                    double v2 = x_B[k] - hi_ext[j];
-                    if (v2 > viol) {
-                        viol = v2;
-                        sigma = -1;
+            if (leaving_rule == 3) {
+                /* Two passes: (1) compute violations, maintain per-row
+                 * 'infeasible-since' stamps, track the stamp range; (2) pick
+                 * the max-violation row whose stamp falls in the oldest ~10%
+                 * of the current stamp range. */
+                int32_t min_stamp = INT32_MAX, max_stamp = -1;
+                for (int32_t k = 0; k < m; k++) {
+                    int32_t j = basis[k];
+                    double viol = 0.0;
+                    if (isfinite(lo_ext[j]) && x_B[k] < lo_ext[j] - tol) {
+                        viol = lo_ext[j] - x_B[k];
+                    }
+                    if (isfinite(hi_ext[j]) && x_B[k] > hi_ext[j] + tol) {
+                        double v2 = x_B[k] - hi_ext[j];
+                        if (v2 > viol) viol = v2;
+                    }
+                    if (viol > 0.0) {
+                        if (infeas_stamp[k] < 0) infeas_stamp[k] = (int32_t)iter;
+                        if (infeas_stamp[k] < min_stamp) min_stamp = infeas_stamp[k];
+                        if (infeas_stamp[k] > max_stamp) max_stamp = infeas_stamp[k];
+                    } else {
+                        infeas_stamp[k] = -1;
                     }
                 }
-                if (viol > 0.0) {
-                    /* Devex score: violation^2 / weight (Harris 1973) */
-                    double w = devex_w[k];
-                    if (w < 1e-12) w = 1e-12;
-                    double score = (viol * viol) / w;
-                    if (score > max_score) {
-                        max_score = score;
-                        leaving_basis_pos = k;
-                        leaving_sigma = sigma;
+                if (max_stamp >= 0) {
+                    /* oldest decile by stamp-value range */
+                    int32_t thresh = min_stamp + (max_stamp - min_stamp) / 10;
+                    for (int32_t k = 0; k < m; k++) {
+                        if (infeas_stamp[k] < 0 || infeas_stamp[k] > thresh) continue;
+                        int32_t j = basis[k];
+                        double viol = 0.0;
+                        int sigma = 0;
+                        if (isfinite(lo_ext[j]) && x_B[k] < lo_ext[j] - tol) {
+                            viol = lo_ext[j] - x_B[k];
+                            sigma = 1;
+                        }
+                        if (isfinite(hi_ext[j]) && x_B[k] > hi_ext[j] + tol) {
+                            double v2 = x_B[k] - hi_ext[j];
+                            if (v2 > viol) { viol = v2; sigma = -1; }
+                        }
+                        if (viol > max_score) {
+                            max_score = viol;
+                            leaving_basis_pos = k;
+                            leaving_sigma = sigma;
+                        }
+                    }
+                }
+            } else if (leaving_rule == 2) {
+                /* Scan sections in rotated order; select the best Devex score
+                 * within the FIRST section that contains a violated row. */
+                for (int32_t s = 0; s < n_sections && leaving_basis_pos < 0; s++) {
+                    int32_t sec = (rot_section + s) % n_sections;
+                    int32_t k0 = sec * section_size;
+                    int32_t k1 = k0 + section_size;
+                    if (k1 > m) k1 = m;
+                    for (int32_t k = k0; k < k1; k++) {
+                        int32_t j = basis[k];
+                        double viol = 0.0;
+                        int sigma = 0;
+                        if (isfinite(lo_ext[j]) && x_B[k] < lo_ext[j] - tol) {
+                            viol = lo_ext[j] - x_B[k];
+                            sigma = 1;
+                        }
+                        if (isfinite(hi_ext[j]) && x_B[k] > hi_ext[j] + tol) {
+                            double v2 = x_B[k] - hi_ext[j];
+                            if (v2 > viol) { viol = v2; sigma = -1; }
+                        }
+                        if (viol > 0.0) {
+                            double w = devex_w[k];
+                            if (w < 1e-12) w = 1e-12;
+                            double score = (viol * viol) / w;
+                            if (score > max_score) {
+                                max_score = score;
+                                leaving_basis_pos = k;
+                                leaving_sigma = sigma;
+                            }
+                        }
+                    }
+                }
+                rot_section++;
+                if (rot_section >= n_sections) rot_section = 0;
+            } else {
+                for (int32_t k = 0; k < m; k++) {
+                    int32_t j = basis[k];
+                    double viol = 0.0;
+                    int sigma = 0;
+                    if (isfinite(lo_ext[j]) && x_B[k] < lo_ext[j] - tol) {
+                        viol = lo_ext[j] - x_B[k];
+                        sigma = 1;
+                    }
+                    if (isfinite(hi_ext[j]) && x_B[k] > hi_ext[j] + tol) {
+                        double v2 = x_B[k] - hi_ext[j];
+                        if (v2 > viol) {
+                            viol = v2;
+                            sigma = -1;
+                        }
+                    }
+                    if (viol > 0.0) {
+                        double score;
+                        if (leaving_rule == 1) {
+                            /* plain max violation (Dantzig analogue) */
+                            score = viol;
+                        } else {
+                            /* Devex score: violation^2 / weight (Harris 1973) */
+                            double w = devex_w[k];
+                            if (w < 1e-12) w = 1e-12;
+                            score = (viol * viol) / w;
+                            if (leaving_rule == 4) {
+                                int32_t ec = (enter_count != NULL) ? enter_count[j] : 0;
+                                score /= (1.0 + (double)ec);
+                            }
+                        }
+                        if (score > max_score) {
+                            max_score = score;
+                            leaving_basis_pos = k;
+                            leaving_sigma = sigma;
+                        }
                     }
                 }
             }
@@ -9996,6 +10151,27 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
                     double ratio = fabs(r_ext[j]) / fabs(alpha_j);
                     if (ratio < theta_min) theta_min = ratio;
+                    if (bfrt == 1) {
+                        /* Collect breakpoint candidates for the BFRT walk.
+                         * Flippable = boxed structural with genuinely finite
+                         * bounds. Artificial (big-M-boxed) columns act as
+                         * one-sided: flipping onto an artificial bound is
+                         * never meaningful, so they terminate the pass. */
+                        DSBfrtCand *cd = &bfrt_cands[n_admissible];
+                        cd->ratio = ratio;
+                        cd->alpha = alpha_j;
+                        cd->j = j;
+                        cd->flippable = 0;
+                        cd->absorption = 0.0;
+                        if (j < n && !has_art_bound[j] &&
+                            isfinite(lo_ext[j]) && isfinite(hi_ext[j])) {
+                            double bw = hi_ext[j] - lo_ext[j];
+                            if (bw >= 1e-14) {
+                                cd->flippable = 1;
+                                cd->absorption = fabs(alpha_j) * bw;
+                            }
+                        }
+                    }
                     n_admissible++;
                 }
 
@@ -10060,6 +10236,72 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                  */
                 double remaining_infeas = fabs(x_B[leaving_basis_pos] - leaving_bound);
 
+                if (bfrt == 1) {
+                /* ============================================================
+                 * Bound-flipping ratio test (BFRT / longest step; Fourer,
+                 * Maros ch. 10). The dual objective along the step is
+                 * piecewise linear in theta_d with a breakpoint at each
+                 * admissible column's ratio. The slope starts at the leaving
+                 * row's primal infeasibility and drops by
+                 * |alpha_j| * (hi_j - lo_j) at each BOXED breakpoint crossed
+                 * (the column flips). Non-flippable columns (one-sided,
+                 * free, artificial-boxed) drop the slope to negative
+                 * immediately and terminate the pass. Walk breakpoints in
+                 * ascending ratio order while the slope stays strictly
+                 * positive; the entering column comes from the terminal
+                 * breakpoint's Harris band (prefer larger |alpha|).
+                 *
+                 * Degenerate reduction: if the first breakpoint already
+                 * kills the slope, no flips fire and this is exactly the
+                 * old min-ratio Harris choice.
+                 * ============================================================ */
+                qsort(bfrt_cands, (size_t)n_admissible, sizeof(DSBfrtCand),
+                      ds_bfrt_cand_cmp);
+                double slope = remaining_infeas;
+                int32_t term = -1;
+                for (int32_t ci = 0; ci < n_admissible; ci++) {
+                    DSBfrtCand *cd = &bfrt_cands[ci];
+                    if (cd->flippable && cd->absorption < slope) {
+                        /* crossed breakpoint: flip (deferred execution via
+                         * the shared two-phase machinery below) */
+                        flip_cand[n_flips++] = cd->j;
+                        slope -= cd->absorption;
+                    } else {
+                        term = ci;
+                        break;
+                    }
+                }
+                if (term < 0) {
+                    /* Every candidate would flip (slope positive past the
+                     * last breakpoint). Executing flips with no entering
+                     * pivot is not dual-legitimate; un-flip the last
+                     * candidate and enter it instead — a valid maximal
+                     * pivot that keeps determinism and soundness (any
+                     * genuine dual unboundedness is certified later by the
+                     * fresh-x_B empty-ratio-test path). */
+                    term = n_admissible - 1;
+                    n_flips--;
+                    slope += bfrt_cands[term].absorption;
+                }
+                /* Entering choice: Harris band above the terminal
+                 * breakpoint, largest |alpha| (candidates are (ratio, j)
+                 * sorted, so ties resolve deterministically). All collected
+                 * candidates already satisfy |alpha| >= 1e-9. */
+                {
+                    double band_hi = bfrt_cands[term].ratio + harris_delta;
+                    double best_a = 0.0;
+                    for (int32_t ci = term; ci < n_admissible; ci++) {
+                        if (bfrt_cands[ci].ratio > band_hi) break;
+                        double aa = fabs(bfrt_cands[ci].alpha);
+                        if (aa > best_a) {
+                            best_a = aa;
+                            entering_col = bfrt_cands[ci].j;
+                            entering_alpha_row = bfrt_cands[ci].alpha;
+                        }
+                    }
+                }
+
+                } else {
                 /* Pass 2: find entering variable with largest |alpha| within Harris band.
                  * Along the way, flip boxed variables at the bottom of the band
                  * if their absorption < remaining_infeas.
@@ -10153,6 +10395,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         entering_alpha_row = alpha_j;
                     }
                 }
+                } /* end bfrt==0 sweep-1/sweep-2 path */
 
                 if (entering_col < 0) {
                     /* All candidates within the band were flipped.
@@ -10983,7 +11226,7 @@ done:
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched);
-    free(flip_delta_xB); free(flip_cand);
+    free(flip_delta_xB); free(flip_cand); free(infeas_stamp); free(bfrt_cands);
     free(has_art_bound); free(lo_true); free(hi_true);
     free(ds_row_scale); free(ds_col_scale); free(scaled_csc_data); free(scaled_csr_data); free(c_orig);
     return result;
