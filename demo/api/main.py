@@ -7,7 +7,8 @@ using linprogx.  Deployed on Render for the evanoman.com interactive demo.
 from __future__ import annotations
 
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -80,9 +81,7 @@ def _maybe_cleanup() -> None:
         return
     _last_cleanup = now
     stale = [
-        ip
-        for ip, times in _rate_buckets.items()
-        if not times or now - times[-1] > _RATE_WINDOW
+        ip for ip, times in _rate_buckets.items() if not times or now - times[-1] > _RATE_WINDOW
     ]
     for ip in stale:
         del _rate_buckets[ip]
@@ -211,7 +210,6 @@ def health() -> dict[str, str]:
 @app.post("/api/solve/production-mix", response_model=SolveResponse)
 def solve_production_mix(req: SolveRequest) -> SolveResponse:
     n_products = len(req.products)
-    n_resources = len(req.resources)
 
     # Validate usage vector lengths
     for r in req.resources:
@@ -223,16 +221,14 @@ def solve_production_mix(req: SolveRequest) -> SolveResponse:
             )
 
     # Build the LP:  maximize profit^T x  s.t.  usage * x <= capacity, x >= 0
-    c = [p.profit for p in req.products]
-
     model = linprogx.Model(name="production_mix")
     variables = [model.variable(name=p.name, lower=0.0) for p in req.products]
 
-    model.maximize({v: p.profit for v, p in zip(variables, req.products)})
+    model.maximize({v: p.profit for v, p in zip(variables, req.products, strict=True)})
 
     for resource in req.resources:
         model.add_constraint(
-            {v: u for v, u in zip(variables, resource.usage)},
+            {v: u for v, u in zip(variables, resource.usage, strict=True)},
             "<=",
             resource.capacity,
             name=resource.name,
@@ -274,8 +270,7 @@ def solve_production_mix(req: SolveRequest) -> SolveResponse:
     sensitivity = solution.sensitivity
     for i, r in enumerate(req.resources):
         used = sum(
-            r.usage[j] * (solution.x[j] if j < len(solution.x) else 0.0)
-            for j in range(n_products)
+            r.usage[j] * (solution.x[j] if j < len(solution.x) else 0.0) for j in range(n_products)
         )
         shadow = 0.0
         if sensitivity and i < len(sensitivity.shadow_prices):
@@ -294,7 +289,9 @@ def solve_production_mix(req: SolveRequest) -> SolveResponse:
 
     return SolveResponse(
         status="optimal",
-        total_profit=round(solution.objective_value, 6) if solution.objective_value is not None else None,
+        total_profit=round(solution.objective_value, 6)
+        if solution.objective_value is not None
+        else None,
         products=product_results,
         resources=resource_results,
         iterations=solution.iterations,
