@@ -1,15 +1,16 @@
-# Production Mix Optimizer -- linprogx Demo
+# Network Flow Optimizer -- linprogx Demo
 
-Interactive LP demo for evanoman.com: users adjust factory resource capacities
-with sliders and see the profit-maximizing production plan update in real time,
+Interactive supply-chain network flow demo for evanoman.com: users adjust
+supply capacities, demand requirements, and route capacities with sliders and
+watch the optimal flows reroute live through an animated SVG network diagram,
 solved by linprogx.
 
 ## Component
 
-**Main export:** `ProductionMixDemo` from `demo/web/src/ProductionMixDemo.tsx`
+**Main export:** `NetworkFlowDemo` from `demo/web/src/NetworkFlowDemo.tsx`
 
 ```tsx
-interface ProductionMixDemoProps {
+interface NetworkFlowDemoProps {
   apiUrl: string;  // e.g. "https://linprogx-demo.onrender.com"
 }
 ```
@@ -31,20 +32,34 @@ The component is self-contained React + TypeScript + Tailwind. To embed it:
 
 | File | Purpose |
 |------|---------|
-| `src/ProductionMixDemo.tsx` | Main component -- products summary, resource sliders, results grid |
-| `src/useProductionMix.ts` | Custom hook -- state, 300ms debounced API calls, abort controller, cold-start detection |
-| `src/types.ts` | TypeScript types for the API contract |
-| `src/components/ResourceSlider.tsx` | Range slider with gradient fill and reset button |
-| `src/components/ResultsDisplay.tsx` | Bars for quantities, utilization, shadow price tooltips |
+| `src/NetworkFlowDemo.tsx` | Main component -- SVG graph, controls, cost summary, flow table |
+| `src/useNetworkFlow.ts` | Custom hook -- state, 300ms debounced API calls, abort controller, cold-start detection |
+| `src/config.ts` | Default network (7 nodes, 9 edges with positions, costs, capacities) |
+| `src/types.ts` | TypeScript types for the API contract and graph layout |
+| `src/components/NetworkGraph.tsx` | Animated SVG network diagram with flow particles, edge utilization colors, hover tooltips |
+| `src/components/ControlPanel.tsx` | Sliders for supply, demand, and edge capacities with reset buttons |
 | `src/components/SolverStatus.tsx` | Loading/cold-start/error/solved states with engine credit |
+| `src/components/AnalogsBanner.tsx` | Note about analogous LP applications |
 | `src/index.css` | Tailwind directives + custom slider thumb styling |
+
+### Default network
+
+A supply-chain logistics problem:
+
+- **Supply nodes:** Seattle (400 units), Houston (500 units)
+- **Hub nodes:** Denver, Atlanta (flow conservation)
+- **Demand nodes:** New York (300), Chicago (250), Miami (200)
+- **9 edges** with per-unit shipping costs ($2-$8) and capacity limits
+
+The LP minimizes total shipping cost subject to supply limits, demand
+requirements, flow conservation at hubs, and edge capacities.
 
 ### Dev server
 
 ```bash
 cd demo/web
 npm install
-npm run dev    # starts on http://localhost:19100
+npm run dev    # starts on http://localhost:19101
 ```
 
 Set `VITE_API_URL` to override the API endpoint (defaults to the deployed Render URL).
@@ -62,7 +77,7 @@ Returns solver metadata:
   "version": "0.1.0",
   "description": "A from-scratch LP solver with two-phase simplex...",
   "github": "https://github.com/EvanOman/linprogx",
-  "demo": "production-mix-optimizer"
+  "demo": "network-flow-optimizer"
 }
 ```
 
@@ -70,20 +85,20 @@ Returns solver metadata:
 
 Returns `{"status": "ok"}`.
 
-### `POST /api/solve/production-mix`
+### `POST /api/solve/network-flow`
 
-Structured endpoint for the production-mix LP problem.
+Structured endpoint for the min-cost network flow LP.
 
 **Request:**
 ```json
 {
-  "products": [
-    {"name": "Chairs", "profit": 45},
-    {"name": "Tables", "profit": 80}
+  "nodes": [
+    {"id": "seattle", "type": "supply", "value": 400},
+    {"id": "denver", "type": "hub", "value": 0},
+    {"id": "nyc", "type": "demand", "value": 300}
   ],
-  "resources": [
-    {"name": "Wood", "capacity": 400, "usage": [5, 20]},
-    {"name": "Labor", "capacity": 450, "usage": [10, 15]}
+  "edges": [
+    {"from": "seattle", "to": "denver", "cost": 5, "capacity": 300}
   ]
 }
 ```
@@ -92,29 +107,29 @@ Structured endpoint for the production-mix LP problem.
 ```json
 {
   "status": "optimal",
-  "total_profit": 2200.0,
-  "products": [
-    {"name": "Chairs", "quantity": 24.0, "profit_contribution": 1080.0},
-    {"name": "Tables", "quantity": 14.0, "profit_contribution": 1120.0}
-  ],
-  "resources": [
+  "total_cost": 5900.0,
+  "flows": [
     {
-      "name": "Wood",
-      "used": 400.0,
-      "capacity": 400.0,
-      "utilization": 1.0,
-      "shadow_price": 1.0,
-      "binding": true
+      "from": "seattle",
+      "to": "denver",
+      "flow": 50.0,
+      "capacity": 300.0,
+      "utilization": 0.1667,
+      "cost": 5.0,
+      "flow_cost": 250.0
     }
   ],
-  "iterations": 2,
-  "solve_time_ms": 0.08,
+  "node_balances": [
+    {"id": "seattle", "type": "supply", "value": 400, "net_flow": 250.0}
+  ],
+  "iterations": 11,
+  "solve_time_ms": 0.77,
   "solver": "linprogx v0.1.0"
 }
 ```
 
 **Constraints:**
-- Max 10 products, max 10 resources
+- Max 20 nodes, max 50 edges
 - Coefficient values capped at 1,000,000
 - Solve timeout: 5 seconds
 - Rate limit: 30 requests/minute/IP
