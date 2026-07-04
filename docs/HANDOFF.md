@@ -748,3 +748,13 @@ remains depending on instance.
   losses: 80bau3b, cre_a, cre_b, cre_d, greenbea, ken_07-adjacent noise
   aside, maros_r7, pds_10, pds_20, pilot87, stocfor3, woodw (11 with
   margins from 1.5x to 16x; see the elimination ledgers above).
+
+- PAIRED VERDICTS (2026-07-04, post-refinement): pilot87 loses 5/5
+  (4.10-4.71 vs 3.44-4.20, ~0.5s median deficit; 150 genuine iterations
+  x ~29ms, dense-tail dpotrf dominant) and stocfor3 loses 5/5 (0.63-0.86
+  vs 0.53-0.58, ~0.15s; 45 iters x ~15ms). Neither is margin-milkable:
+  pilot87 needs either fewer iterations (better centering) or a cheaper
+  per-iteration factor+solve at its 58%-dense-tail shape; stocfor3 needs
+  ~10 fewer iterations or ~30% per-iteration cost. These join the
+  structural queue behind the cre selection-order question. Current
+  paired standing: 13-11 linprogx with all aggregate axes won.
