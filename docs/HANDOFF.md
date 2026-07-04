@@ -605,3 +605,15 @@ remains depending on instance.
   cost perturbation on top (documented trade above). This is the count
   lever for the whole degenerate-network family: cre_b/cre_d, pds_10/20,
   greenbea-to-0.25s.
+
+- COMPOSITION RESULT (2026-07-04): perturbation x carried-SE (both dark
+  behind pricing=1) on cre_d: rate 480 -> 2,013 piv/s and refactorization
+  pathologies gone (222 clean refacs vs 1,205), but the COUNT wall stands
+  at 100k vs HiGHS 6,121. Since no selection scheme moves the count, the
+  suspect shifts to PRESOLVE STRENGTH: HiGHS's iteration counts are on
+  its heavily-reduced problem; ours barely shrinks cre_d. NEW WORKSTREAM
+  for the cre/pds family: presolve depth (dominated columns, forcing
+  rows, duplicate columns/rows, tighter bound propagation) — likely
+  cheaper than more simplex sophistication and it compounds with
+  everything else. SE trials also flushed two false-infeasibility bugs
+  (fixed for all modes, 71f0c6a).

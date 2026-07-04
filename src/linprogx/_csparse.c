@@ -9166,6 +9166,21 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * self->csc_data so the solver operates in equilibrated space. */
     const double *a_data = scaled_csc_data;
 
+    if (pricing == 1) {
+        /* Anti-degeneracy cost perturbation, composed with steepest edge
+         * only: alone it halved cre_d's degenerate pivots but regressed
+         * Devex paths (documented trade in HANDOFF 2026-07-04); under SE
+         * the tie-breaking and the selection quality are hypothesized to
+         * compound. Deterministic multiplicative-hash psi; exit checks,
+         * objective, and dual gates all use c_orig, so this steers the
+         * path only. */
+        for (int32_t j = 0; j < n; j++) {
+            uint32_t h = (uint32_t)j * 2654435761u;
+            double psi = 0.5 + 0.5 * ((double)h / 4294967296.0);
+            c_ext[j] += 1e-9 * (1.0 + fabs(c_ext[j])) * psi;
+        }
+    }
+
     /* Set up artificial columns: indices n..n+m-1, cost 0, bounds [0,0] (fixed) */
     for (int32_t i = 0; i < m; i++) {
         c_ext[n + i] = 0.0;
