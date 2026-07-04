@@ -9985,7 +9985,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                      * exit gates, objective, and certificates all recompute
                      * from c_orig, and 1e-9-scale shifts sit far below the
                      * 1e-7 exit tolerances. */
-                    double want = 1e-9 * (1.0 + fabs(c_ext[entering_col]));
+                    /* Dose: strong enough to break dynamic ties, small
+                     * enough that accumulated per-column shift stays under
+                     * the 1e-7 c_orig exit tolerance without removal
+                     * machinery (each column shifts at most once per basis
+                     * entry; reentries are bounded by the churn the shift
+                     * itself suppresses). */
+                    double want = 5e-8 * (1.0 + fabs(c_ext[entering_col]));
                     double r_new = -((double)leaving_sigma * entering_alpha_row) * want;
                     double shift = r_new - r_ext[entering_col];
                     c_ext[entering_col] += shift;

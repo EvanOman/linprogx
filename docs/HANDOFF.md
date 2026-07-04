@@ -679,3 +679,15 @@ remains depending on instance.
   (bounded re-pivoting), and final removal before the exit gates. All
   scaffolding (knob, counters, c_orig-based gates) is in place; implement
   removal next, then re-run the pre-registered cre_d targets.
+
+- VERDICT (2026-07-04, closes the shifting round): exit-tolerance-safe
+  shift doses (5e-8 scale, 50x v1) leave cre_d's quasi-cycles intact
+  (36.5k shifts, count 100k, churn ~unchanged). Large shifts with full
+  removal+repair machinery (or dual-side EXPAND) are REQUIRED, not
+  optional — a real design-and-implement unit for the next session:
+  c_shift[] accumulator, meaningful magnitudes (fraction of candidate
+  median |r|), keep shifts through intermediate refactorizations
+  (r recomputes from shifted c_ext consistently, zero cost), remove at
+  exit + bounded dual-repair pivots before the c_orig gates. All
+  scaffolding, counters, and knobs are in place; the churn probe
+  (scratchpad probe_churn.py) is the measurement harness.
