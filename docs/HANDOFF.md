@@ -534,3 +534,34 @@ still loses to HiGHS 0.09s — routing woodw to DS needs DS end-to-end
 < 0.09s (currently ~0.5s incl. setup), so woodw stays IPM for now.
 NOTE: monthly API spend limit hit 2026-07-04 — subagent launches
 blocked until raised; continue inline or after reset.
+
+### Update 2026-07-04 (later) — inline round: LU quadratics dead; flip queue corrected
+
+Committed 113b917 / 49326d8 / 58e966f (inline, subagents blocked by spend
+limit):
+- lu_factorize per-call at m=14,633: 547ms -> 32ms (count-bucket Markowitz
+  selection + incremental active-nnz for the dense-tail density check —
+  the third and fourth quadratic-scaling bugs in this LU stack; phase
+  timers behind LINPROGX_LU_PROFILE now exist). stocfor3 DS 22.3s ->
+  2.65s (3,400 piv/s); greenbea solver-side 3.38s; woodw 0.44s.
+- Active-set dual repair (partial steps + ratio test + appended Cholesky)
+  wired after cleanup at all six certification sites. NULL RESULT on
+  pilot87/stocfor3/80bau3b: their post-eligibility tails are GENUINE
+  primal convergence (pilot87's gap at eligibility ~8.5e-4 vs the 1e-5
+  bar) — certificate work cannot flip them. Corrects the earlier
+  'wasted tail' diagnosis. Kept as fail-closed infrastructure.
+
+Flip queue after correction (11 losses, quiet-box refs):
+- pilot87/stocfor3/80bau3b/woodw/maros_r7/cre_a: need per-iteration IPM
+  cost cuts or a DS that beats the IPM route outright; certificate and
+  routing tricks are exhausted.
+- cre_b/cre_d: closest structural flips — DS needs ~2x more (per-pivot
+  solve/pricing cost now dominates after the factorization fixes; probe
+  pattern in scratchpad probe_refac.py).
+- pds_10/pds_20: DS now conceivable at m=16-34k (32ms factorizations)
+  but pivot counts/rates still ~3-5x short vs PDHG route.
+- greenbea to 0.25s: needs ~4x pivot-count cut (cheap-weight selection —
+  exact DSE algebra preserved on exp-sedge) plus ~3x rate.
+The common denominator: make DS per-pivot cost (ftran/btran/pricing) and
+pivot counts HiGHS-competitive. Today moved rates ~10x; roughly 3-25x
+remains depending on instance.
