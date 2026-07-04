@@ -565,3 +565,14 @@ Flip queue after correction (11 losses, quiet-box refs):
 The common denominator: make DS per-pivot cost (ftran/btran/pricing) and
 pivot counts HiGHS-competitive. Today moved rates ~10x; roughly 3-25x
 remains depending on instance.
+
+- MEASUREMENT (2026-07-04): cre_d DS post-factorization-fixes:
+  iteration_limit at 100k pivots / 208s (HiGHS: 6,121 pivots). The cre
+  flip blocker is a PIVOT-COUNT EXPLOSION on degenerate structure (rate
+  480/s is workable; refac only 16s of 208). Suspects: Devex reference
+  framework degrading across the long run, bound-flip storms, or
+  degenerate-pivot thrash below the Bland threshold. Next session:
+  instrument pivot-type counts (flips vs basis changes vs degenerate)
+  per 10k-pivot window on cre_d before designing the fix; the
+  exp-sedge count-cut algebra is the likely ingredient but needs a
+  cheap weight scheme.
