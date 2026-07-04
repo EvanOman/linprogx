@@ -6232,6 +6232,12 @@ typedef struct {
     int32_t bkt_min;
     int bkt_ready;
 
+    /* Total entries in ACTIVE columns, maintained incrementally: the
+     * dense-tail density check needed it every step and recomputing by
+     * scanning all m columns was the last O(m^2) term in lu_factorize
+     * (~147ms per call at m=14633). */
+    int64_t total_nnz;
+
     int32_t m;  /* matrix dimension */
 } LUActive;
 
@@ -6404,6 +6410,9 @@ static int lu_active_insert(LUActive *a, int32_t row, int32_t col, double value)
     } else {
         a->col_count[col]++;
     }
+    if (a->col_active[col]) {
+        a->total_nnz++;
+    }
     a->row_count[row]++;
     return 0;
 }
@@ -6438,6 +6447,7 @@ static int lu_active_init(LUActive *a, int32_t m,
         a->col_active[j] = 1;
     }
     a->bkt_ready = 0;
+    a->total_nnz = 0;
     a->bkt_head = calloc((size_t)m + 1, sizeof(int32_t));
     a->bkt_next = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
     a->bkt_prev = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
@@ -6501,6 +6511,9 @@ static void lu_active_remove_row(LUActive *a, int32_t row) {
         } else {
             a->col_count[col]--;
         }
+        if (a->col_active[col]) {
+            a->total_nnz--;
+        }
         lu_pool_free(a, idx);
         idx = next;
     }
@@ -6529,6 +6542,9 @@ static void lu_active_remove_col(LUActive *a, int32_t col) {
         idx = next;
     }
     a->col_head[col] = -1;
+    if (a->col_active[col]) {
+        a->total_nnz -= a->col_count[col];
+    }
     if (a->bkt_ready && a->col_active[col]) {
         lu_bkt_unlink(a, col);
     }
@@ -6601,6 +6617,9 @@ static LUContext *lu_factorize(int32_t m,
                                int *alloc_fail) {
     LUContext *ctx = NULL;
     LUActive active;
+    int lu_prof = getenv("LINPROGX_LU_PROFILE") != NULL;
+    double tp_mark = lu_prof ? linprogx_monotonic_seconds() : 0.0;
+    double tp_init = 0.0, tp_pivot = 0.0, tp_elim = 0.0, tp_step = 0.0;
     /* Dense workspace arrays, allocated once and reused every step */
     double *mult_arr = NULL;       /* mult_arr[row] = L multiplier for update rows */
     unsigned char *is_update = NULL; /* marks update rows */
@@ -6659,6 +6678,10 @@ static LUContext *lu_factorize(int32_t m,
         goto oom;
     }
 
+    if (lu_prof) {
+        double t = linprogx_monotonic_seconds();
+        tp_init -= t; /* completed after the call below */
+    }
     if (lu_active_init(&active, m, csc_indptr, csc_indices, csc_values) < 0) {
         goto oom;
     }
@@ -6677,16 +6700,17 @@ static LUContext *lu_factorize(int32_t m,
         goto oom;
     }
 
+    if (lu_prof) {
+        tp_init += linprogx_monotonic_seconds();
+        tp_mark = linprogx_monotonic_seconds();
+    }
     /* Main elimination loop */
     for (int32_t step = 0; step < m; step++) {
         /* ---- Check for dense-tail switch ---- */
         int32_t remaining = m - step;
         if (remaining > 1) {
-            /* Count active entries to estimate density */
-            int64_t active_nnz = 0;
-            for (int32_t j = 0; j < m; j++) {
-                if (active.col_active[j]) active_nnz += active.col_count[j];
-            }
+            /* Density from the incrementally-maintained active-entry count */
+            int64_t active_nnz = active.total_nnz;
             double density = (double)active_nnz / ((double)remaining * (double)remaining);
             if (remaining <= LU_DENSE_TAIL_DIM || density > LU_DENSE_TAIL_DENSITY) {
                 /* Switch to dense LU for the remaining submatrix */
@@ -6833,6 +6857,9 @@ static LUContext *lu_factorize(int32_t m,
             }
         }
 
+        if (lu_prof) {
+            tp_step = linprogx_monotonic_seconds();
+        }
         /* ---- Markowitz pivot selection ---- */
         /* Search up to 4 "tiers" of minimum column count among active columns.
          * Within each tier, scan all entries to find the best Markowitz score
@@ -6893,6 +6920,11 @@ static LUContext *lu_factorize(int32_t m,
             }
         }
 pivot_found:
+        if (lu_prof) {
+            double t = linprogx_monotonic_seconds();
+            tp_pivot += t - tp_step;
+            tp_step = t;
+        }
 
         if (best_pivot_row < 0) {
             ctx->singular_step = step;
@@ -7063,6 +7095,9 @@ pivot_found:
                 mult_arr[update_rows[ur]] = 0.0;
                 is_update[update_rows[ur]] = 0;
             }
+        }
+        if (lu_prof) {
+            tp_elim += linprogx_monotonic_seconds() - tp_step;
         }
     }
 
@@ -7241,6 +7276,12 @@ assemble:
     free(u_row); free(u_val);
     free(l_colptr); free(u_colptr);
     free(dense_buf); free(dense_row_map); free(dense_col_map);
+    if (lu_prof) {
+        fprintf(stderr,
+                "lu profile: m=%d init=%.4f pivot=%.4f elim=%.4f assemble=%.4f\n",
+                m, tp_init, tp_pivot, tp_elim,
+                linprogx_monotonic_seconds() - tp_mark - tp_pivot - tp_elim);
+    }
     return ctx;
 
 oom:
