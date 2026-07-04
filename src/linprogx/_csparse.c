@@ -8260,6 +8260,46 @@ static int lu_should_refactor(const LUContext *ctx) {
 /* ---- Bounded-variable dual simplex Phase-2 ---- */
 
 /*
+ * Conditioning-aware triangular crash (Bixby 1992, "Implementing the simplex
+ * method: the initial basis", spirit).
+ *
+ * DS_CRASH_STAB: relative stability threshold for accepting a column into the
+ *   triangular crash. A column is only accepted at its largest-magnitude
+ *   uncovered row r if |a_rj| >= DS_CRASH_STAB * max_i |a_ij|. Keeping the
+ *   pivot large relative to the column's own entries bounds the magnitude of
+ *   the lower-triangular multipliers and hence the growth in the LU factor.
+ *   0.5 is a standard, conservative choice (CPLEX/Bixby use a tolerance in
+ *   this range); it trades a few extra artificial fills for a well-conditioned
+ *   start.
+ * DS_CRASH_MAX_GROWTH: post-factorization guard. If the crash basis factorizes
+ *   but max|U_ii| / min|U_ii| exceeds this, the basis is catastrophically
+ *   ill-conditioned (e.g. presolved lp_woodw at kappa ~1e19) and the dual
+ *   simplex cannot make dual-feasible progress from it. We discard the crash
+ *   and restart from the pure-artificial identity basis, which is perfectly
+ *   conditioned.
+ */
+#define DS_CRASH_STAB 0.5
+#define DS_CRASH_MAX_GROWTH 1e10
+
+/* Candidate column for the triangular crash, sorted by quality. */
+typedef struct {
+    int32_t col;      /* structural column index */
+    int32_t penalty;  /* bound-type penalty: free(0) < one-sided(1)
+                       *   < boxed(2) < fixed(3) */
+    int32_t nnz;      /* number of nonzeros in the column */
+} DsCrashCand;
+
+/* Order: prefer free/wide columns (low penalty), then fewer nonzeros
+ * (slack-like singletons first), deterministic tie-break by column index. */
+static int ds_crash_cand_cmp(const void *pa, const void *pb) {
+    const DsCrashCand *a = (const DsCrashCand *)pa;
+    const DsCrashCand *b = (const DsCrashCand *)pb;
+    if (a->penalty != b->penalty) return a->penalty - b->penalty;
+    if (a->nnz != b->nnz) return a->nnz - b->nnz;
+    return a->col - b->col;
+}
+
+/*
  * Helper: build CSC representation of the m x m basis matrix.
  *
  * Basis columns with index < n_structural come from A's CSC arrays.
@@ -8731,30 +8771,100 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         }
         for (int32_t i = 0; i < m; i++) row_to_bpos[i] = -1;
 
-        /* Greedy crash: scan columns in natural order and assign to uncovered rows. */
+        /* Conditioning-aware triangular crash (Bixby 1992 spirit).
+         *
+         * A singleton-cascade builds a provably nonsingular lower-triangular
+         * basis: a column is only assigned to a pivot row once it is its own
+         * *uncovered-row singleton* (exactly one nonzero left in an uncovered
+         * row). Assigning that unique entry as the pivot and covering the row
+         * is precisely one step of a symbolic triangular permutation, so the
+         * accepted columns can never be linearly dependent — unlike a plain
+         * "max uncovered entry" greedy, whose off-pivot fill can (and on
+         * greenbea did) produce a singular basis that collapses to identity.
+         *
+         * Seeds (initial singletons) are drained in quality order (free/wide
+         * columns and fewer-nonzero, slack-like columns first); the cascade
+         * then proceeds FIFO. A column is accepted only if its pivot passes the
+         * relative stability threshold |a_rj| >= DS_CRASH_STAB * max_i|a_ij|,
+         * bounding the triangular multipliers. Rows left uncovered (columns
+         * that never cascade down to a singleton, or fail stability) get
+         * artificials below. All magnitudes use the equilibrated matrix
+         * (a_data) so the crash sees the same scaling as the factorization —
+         * critical for woodw. */
         int32_t n_basis = 0;
         {
-            for (int32_t j = 0; j < n && n_basis < m; j++) {
-                /* Find row with max |value| in column j that is uncovered */
-                int32_t best_row = -1;
-                double best_abs = 0.0;
-                for (Py_ssize_t p = self->csc_indptr[j]; p < self->csc_indptr[j + 1]; p++) {
+            int32_t *uncov = malloc((size_t)(n > 0 ? n : 1) * sizeof(int32_t));
+            int8_t *col_done = calloc((size_t)(n > 0 ? n : 1), sizeof(int8_t));
+            int32_t *queue = malloc((size_t)(n > 0 ? n : 1) * sizeof(int32_t));
+            DsCrashCand *cand =
+                malloc((size_t)(n > 0 ? n : 1) * sizeof(DsCrashCand));
+            if (uncov == NULL || col_done == NULL || queue == NULL ||
+                cand == NULL) {
+                free(uncov); free(col_done); free(queue); free(cand);
+                free(row_covered); free(row_to_bpos);
+                PyErr_NoMemory(); goto done;
+            }
+            for (int32_t j = 0; j < n; j++) {
+                int32_t nnz_j =
+                    (int32_t)(self->csc_indptr[j + 1] - self->csc_indptr[j]);
+                uncov[j] = nnz_j;
+                int lo_fin = isfinite(lo_ext[j]);
+                int hi_fin = isfinite(hi_ext[j]);
+                int32_t pen;
+                if (!lo_fin && !hi_fin) {
+                    pen = 0;  /* free: best basic */
+                } else if (lo_fin && hi_fin) {
+                    pen = (hi_ext[j] - lo_ext[j] <= 1e-30) ? 3   /* fixed */
+                                                           : 2;  /* boxed */
+                } else {
+                    pen = 1;  /* one-sided */
+                }
+                cand[j].col = j;
+                cand[j].penalty = pen;
+                cand[j].nnz = nnz_j;
+            }
+            /* Seed queue with the initial singleton columns in quality order. */
+            qsort(cand, (size_t)n, sizeof(DsCrashCand), ds_crash_cand_cmp);
+            int32_t qhead = 0, qtail = 0;
+            for (int32_t idx = 0; idx < n; idx++) {
+                int32_t j = cand[idx].col;
+                if (uncov[j] == 1) queue[qtail++] = j;
+            }
+
+            while (qhead < qtail && n_basis < m) {
+                int32_t j = queue[qhead++];
+                if (col_done[j] || uncov[j] != 1) continue;
+                col_done[j] = 1;
+                /* Locate the unique uncovered row and the column's max |entry|. */
+                int32_t pr = -1;
+                double pv = 0.0, colmax = 0.0;
+                for (Py_ssize_t p = self->csc_indptr[j];
+                     p < self->csc_indptr[j + 1]; p++) {
+                    double av = fabs(a_data[p]);
+                    if (av > colmax) colmax = av;
                     int32_t row = (int32_t)self->csc_rows[p];
-                    if (!row_covered[row]) {
-                        double av = fabs(a_data[p]);
-                        if (av > best_abs) {
-                            best_abs = av;
-                            best_row = row;
-                        }
+                    if (!row_covered[row]) { pr = row; pv = av; }
+                }
+                if (pr < 0 || colmax <= 1e-12) continue;
+                /* Relative stability: reject a small pivot; leave the row for an
+                 * artificial rather than inflate the triangular multipliers. */
+                if (pv < DS_CRASH_STAB * colmax) continue;
+                basis[n_basis] = j;
+                row_covered[pr] = 1;
+                row_to_bpos[pr] = n_basis;
+                n_basis++;
+                /* Cascade: covering row pr may turn its other columns into
+                 * singletons. */
+                for (Py_ssize_t p = self->indptr[pr];
+                     p < self->indptr[pr + 1]; p++) {
+                    int32_t jj = (int32_t)self->indices[p];
+                    if (!col_done[jj] && uncov[jj] > 0) {
+                        uncov[jj]--;
+                        if (uncov[jj] == 1 && qtail < n) queue[qtail++] = jj;
                     }
                 }
-                if (best_row >= 0 && best_abs > 1e-12) {
-                    basis[n_basis] = j;
-                    row_covered[best_row] = 1;
-                    row_to_bpos[best_row] = n_basis;
-                    n_basis++;
-                }
             }
+            free(uncov); free(col_done); free(queue); free(cand);
         }
 
         /* Fill uncovered rows with artificials */
@@ -8778,7 +8888,67 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
                                 a_data, basis,
                                 b_indptr, b_indices, b_values);
-        if (lu == NULL || lu->singular_step >= 0) {
+
+        /* Repair singular crash columns in place. The singleton-cascade crash
+         * is triangular and hence nonsingular by construction, so this is a
+         * numerical safety net for the rare near-dependency (e.g. a
+         * stability-skipped pivot leaving a tiny residual coupling). Swap the
+         * offending columns for artificials and refactorize, keeping the bulk
+         * of the structural coverage. The cap is small: if more than a handful
+         * of columns are dependent the crash is structurally unusable and the
+         * clean pure-identity fallback below is both faster and better
+         * conditioned than swapping columns one at a time down to identity. */
+        if (lu != NULL && lu->singular_step >= 0) {
+            int max_repairs = 16 + m / 100;
+            int8_t *in_basis = calloc((size_t)n_total, sizeof(int8_t));
+            if (in_basis == NULL) { PyErr_NoMemory(); goto done; }
+            for (int32_t k = 0; k < m; k++) in_basis[basis[k]] = 1;
+            int repairs = 0;
+            while (lu != NULL && lu->singular_step >= 0 && repairs < max_repairs) {
+                int32_t bad_pos = lu->perm_col[lu->singular_step];
+                in_basis[basis[bad_pos]] = 0;
+                /* Prefer the identity column for row bad_pos; else any free
+                 * artificial. */
+                int32_t art = -1;
+                if (!in_basis[n + bad_pos]) {
+                    art = n + bad_pos;
+                } else {
+                    for (int32_t i = 0; i < m; i++) {
+                        if (!in_basis[n + i]) { art = n + i; break; }
+                    }
+                }
+                if (art < 0) break;  /* no artificial available (shouldn't happen) */
+                basis[bad_pos] = art;
+                in_basis[art] = 1;
+                lu_context_free(lu);
+                lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
+                                        a_data, basis,
+                                        b_indptr, b_indices, b_values);
+                repairs++;
+            }
+            free(in_basis);
+        }
+
+        int reject_crash = (lu == NULL || lu->singular_step >= 0);
+        if (!reject_crash) {
+            /* Post-crash conditioning guard: estimate growth from the U
+             * diagonals. A crash basis that factorizes but is catastrophically
+             * ill-conditioned (presolved woodw ~ kappa 1e19) leaves the dual
+             * simplex numerically stuck; the pure-artificial identity is
+             * perfectly conditioned, so prefer it over limping on the crash. */
+            double dmax = 0.0, dmin = 1e300;
+            for (int32_t k = 0; k < m; k++) {
+                double d = fabs(lu->u_diag[k]);
+                if (d > dmax) dmax = d;
+                if (d > 0.0 && d < dmin) dmin = d;
+            }
+            double growth = (dmin > 0.0 && dmin < 1e300)
+                                ? dmax / dmin : INFINITY;
+            if (growth > DS_CRASH_MAX_GROWTH) {
+                reject_crash = 1;
+            }
+        }
+        if (reject_crash) {
             /* Fall back to pure identity basis (all artificials) */
             lu_context_free(lu);
             lu = NULL;
@@ -9723,31 +9893,53 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             lu_btran(lu, c_B, y);
 
             /* ---- 5a. Check for active artificial bounds ---- */
+            /* A structural column with an infinite true bound may sit parked at
+             * a big-M artificial bound. This is dual-infeasible for the true
+             * problem ONLY if its reduced cost is meaningfully nonzero (the
+             * objective would keep improving past M -> genuine unboundedness).
+             * If the reduced cost is ~0 the point is a degenerate optimum:
+             * complementary slackness holds and any feasible value of x_j
+             * (including the parked one) is optimal. The r~0 gate is what
+             * distinguishes this from the one-sided-column bug these exit
+             * checks were built to catch (which had strictly nonzero rj). */
             {
-                int any_art_active = 0;
+                /* Gap-budget acceptance: a column parked at an artificial
+                 * bound with residual reduced cost rj damages the duality
+                 * gap by |rj| * |x_orig_j|. A per-column tolerance alone
+                 * would let a big-M park (|x| ~ 1e9) hide hundreds of
+                 * absolute gap error, so the damage is bounded against an
+                 * objective-scaled certificate budget instead. rj exactly
+                 * zero (degenerate optimum) always passes. */
+                double obj_budget = 1.0;
+                for (int32_t j = 0; j < n; j++) {
+                    obj_budget += fabs(c_orig[j] * ds_col_scale[j] * x_ext[j]);
+                }
                 for (int32_t j = 0; j < n; j++) {
                     if (!has_art_bound[j]) continue;
                     if (basis_pos[j] >= 0) continue;
-                    /* Nonbasic at its artificial bound? */
                     double art_lo = lo_ext[j], art_hi = hi_ext[j];
                     double true_lo = lo_true[j], true_hi = hi_true[j];
-                    if (bound_status[j] == DS_BOUND_LO &&
-                        !isfinite(true_lo) && fabs(x_ext[j] - art_lo) < tol) {
-                        any_art_active = 1;
+                    int at_art_lo = (bound_status[j] == DS_BOUND_LO &&
+                                     !isfinite(true_lo) &&
+                                     fabs(x_ext[j] - art_lo) < tol);
+                    int at_art_hi = (bound_status[j] == DS_BOUND_HI &&
+                                     !isfinite(true_hi) &&
+                                     fabs(x_ext[j] - art_hi) < tol);
+                    if (!at_art_lo && !at_art_hi) continue;
+                    /* Fresh reduced cost in original units. */
+                    double c_orig_j = c_orig[j];
+                    double rj = c_orig_j;
+                    for (Py_ssize_t p = self->csc_indptr[j];
+                         p < self->csc_indptr[j + 1]; p++) {
+                        int32_t row = (int32_t)self->csc_rows[p];
+                        rj -= self->csc_data[p] * (ds_row_scale[row] * y[row]);
+                    }
+                    double x_orig_j = ds_col_scale[j] * x_ext[j];
+                    double damage = fabs(rj) * fmax(1.0, fabs(x_orig_j));
+                    if (damage > 1e-7 * obj_budget) {
+                        status = "dual_infeasible";
                         break;
                     }
-                    if (bound_status[j] == DS_BOUND_HI &&
-                        !isfinite(true_hi) && fabs(x_ext[j] - art_hi) < tol) {
-                        any_art_active = 1;
-                        break;
-                    }
-                }
-                if (any_art_active) {
-                    /* Solution sits on an artificial bound — not valid for
-                     * the original problem. Report as dual_infeasible
-                     * (could retry with larger M, but for safety return
-                     * the iterate so the router can fall back to IPM). */
-                    status = "dual_infeasible";
                 }
             }
 
@@ -9789,13 +9981,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                     /* FIXED variables: r_j is unconstrained (can't move) */
 
-                    /* Also check: if at a bound that doesn't exist in the
-                     * true problem (artificial bound active in basis sense) */
-                    if (bound_status[j] == DS_BOUND_LO && !tlo) {
+                    /* Also check: if at a bound that doesn't exist in the true
+                     * problem (artificial bound active in the basis sense).
+                     * Only a nonzero reduced cost makes this dual-infeasible; a
+                     * reduced cost of ~0 is a degenerate optimum where x_j may
+                     * legitimately take any feasible value (see 5a). The sign
+                     * tests above (|rj| within dtol) have already passed here,
+                     * so this only fires for genuinely nonzero rj. */
+                    if (bound_status[j] == DS_BOUND_LO && !tlo &&
+                        fabs(rj) > dtol) {
                         status = "dual_infeasible";
                         break;
                     }
-                    if (bound_status[j] == DS_BOUND_HI && !thi) {
+                    if (bound_status[j] == DS_BOUND_HI && !thi &&
+                        fabs(rj) > dtol) {
                         status = "dual_infeasible";
                         break;
                     }

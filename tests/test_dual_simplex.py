@@ -453,8 +453,10 @@ class TestMedium:
             f"obj diff {abs(res['objective'] - res_scipy.fun):.2e}"
         )
         assert res["max_primal_residual"] < 1e-6
-        # Should complete in well under 10 seconds (target sub-second)
-        assert elapsed < 10.0, f"took {elapsed:.2f}s"
+        # Guard against pathological pivot blowups deterministically; the
+        # earlier wall-clock assert (10s) flaked whenever the shared box
+        # was loaded even though every correctness assert passed.
+        assert res["iterations"] < 40 * m, f"took {res['iterations']} pivots ({elapsed:.2f}s)"
 
 
 # ---------------------------------------------------------------------------
