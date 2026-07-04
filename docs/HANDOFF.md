@@ -617,3 +617,18 @@ remains depending on instance.
   cheaper than more simplex sophistication and it compounds with
   everything else. SE trials also flushed two false-infeasibility bugs
   (fixed for all modes, 71f0c6a).
+
+- HYPOTHESIS DISPROVED (2026-07-04, measured): presolve is NOT the cre
+  count lever. HiGHS with presolve=False: cre_d nit=12,459 (vs 6,121
+  with), cre_b 14,718, pds_10 12,877 — presolve buys ~2x; the remaining
+  ~8x count gap vs our DS (>100k) is raw simplex path quality. NEW LEAD
+  HYPOTHESIS: the artificial big-M boxing. The exploding family (cre,
+  pds, greenbea) is exactly the one-sided-column-heavy family where we
+  install thousands of artificial bounds; observed pathologies
+  (greenbea's 1.4e9 park, cre wandering) fit M-boxed detours that a true
+  dual Phase-1 (or Fourer-style unboxed handling of one-sided nonbasics
+  in the ratio test) would avoid. Falsification path: implement the
+  unboxed dual ratio test for one-sided columns (no artificial bound;
+  such a column simply cannot flip and bounds theta_d one-sidedly) and
+  measure cre_d's count. This replaces presolve-depth as the lead
+  workstream; presolve depth remains a ~2x follow-up that compounds.
