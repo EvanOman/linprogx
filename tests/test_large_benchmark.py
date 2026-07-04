@@ -3,9 +3,12 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any, cast
 
+import clarabel as _clarabel
 import numpy as np
 import pytest
+import scipy
 
 from linprogx.sparse import SparseLPProblem, SparseSolver
 
@@ -25,8 +28,7 @@ assert cycle_spec.loader is not None
 sys.modules["bench_cycle"] = bench_cycle
 cycle_spec.loader.exec_module(bench_cycle)
 
-scipy = pytest.importorskip("scipy")
-clarabel = pytest.importorskip("clarabel")
+clarabel = cast(Any, _clarabel)
 
 
 def test_large_benchmark_clarabel_formulation_solves_feasible_eq_bounds_lp() -> None:

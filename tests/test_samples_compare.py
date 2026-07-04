@@ -1,17 +1,13 @@
 from __future__ import annotations
 
+import clarabel  # noqa: F401
 import pytest
+import scipy  # noqa: F401
 
 from linprogx import Solver
 from linprogx.compare import compare_with_clarabel, compare_with_scipy
 from linprogx.samples import SAMPLES, STANDARD_BENCHMARKS
 from linprogx.types import Status
-
-scipy = pytest.importorskip("scipy")
-del scipy
-clarabel = pytest.importorskip("clarabel")
-del clarabel
-
 
 ALL_SAMPLES = (*SAMPLES, *STANDARD_BENCHMARKS)
 

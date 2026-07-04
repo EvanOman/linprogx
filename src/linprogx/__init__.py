@@ -1,3 +1,5 @@
+__version__ = "0.1.0"
+
 from linprogx.builder import Model
 from linprogx.solver import Solver, solve, solve_canonical
 from linprogx.sparse import (

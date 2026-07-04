@@ -1,13 +1,11 @@
 # linprogx
 
 [![CI](https://github.com/EvanOman/linprogx/actions/workflows/ci.yml/badge.svg)](https://github.com/EvanOman/linprogx/actions/workflows/ci.yml)
-![coverage](assets/coverage.svg)
+![coverage](https://raw.githubusercontent.com/EvanOman/linprogx/main/assets/coverage.svg)
 
 `linprogx` is a small linear programming solver written from scratch in Python, with an optional C extension for the tableau operations that run in the tight loop.
 
 It solves continuous linear programs with maximization or minimization objectives, `<=`, `>=`, and equality constraints, finite or infinite variable bounds, and free variables. The core algorithm is a two-phase primal simplex method: phase I builds a feasible basis with artificial variables, and phase II optimizes the requested objective.
-
-Reference link saved with the project: https://www.linkedin.com/posts/antonvorobets_if-you-think-ai-can-write-advanced-analytics-share-7460672846042710016-z_ya?utm_source=share&utm_medium=member_desktop&rcm=ACoAAAk_CVIBr27sXDGNG8kKqOPnWZAdJrVOA7Q
 
 ## TL;DR
 
@@ -29,12 +27,27 @@ This is an inspectable, hand-built solver. On the included benchmarks it is comp
 
 ## Install
 
-The sparse `_csparse` extension links OpenBLAS for its dense-tail
-factorization, so install the dev package first (Debian/Ubuntu shown):
+### From PyPI
+
+```bash
+pip install linprogx
+```
+
+**Build requirement:** The `_csparse` C extension links OpenBLAS for its
+dense-tail factorization. Install the development headers before building
+from source (Debian/Ubuntu shown):
 
 ```bash
 sudo apt-get install -y libopenblas-dev
-git clone git@github.com:EvanOman/linprogx.git
+```
+
+On macOS with Homebrew: `brew install openblas`.
+
+### From source (development)
+
+```bash
+sudo apt-get install -y libopenblas-dev
+git clone https://github.com/EvanOman/linprogx.git
 cd linprogx
 uv sync --extra dev
 ```
@@ -214,13 +227,13 @@ The benchmark compares `linprogx` against SciPy/HiGHS and Clarabel on 24 dense L
 
 On these tiny dense examples, `linprogx` is usually faster than SciPy/HiGHS because the benchmark is dominated by setup overhead rather than numerical linear algebra. Clarabel is much closer on runtime. Objective agreement is exact against SciPy/HiGHS in this run; Clarabel's small deltas are expected from an interior-point conic solve.
 
-![Runtime on sample LPs](assets/perf_runtime_samples.png)
+![Runtime on sample LPs](https://raw.githubusercontent.com/EvanOman/linprogx/main/assets/perf_runtime_samples.png)
 
-![Runtime on Klee-Minty LPs](assets/perf_runtime_klee_minty.png)
+![Runtime on Klee-Minty LPs](https://raw.githubusercontent.com/EvanOman/linprogx/main/assets/perf_runtime_klee_minty.png)
 
-![Runtime ratio against linprogx](assets/perf_speed_ratios.png)
+![Runtime ratio against linprogx](https://raw.githubusercontent.com/EvanOman/linprogx/main/assets/perf_speed_ratios.png)
 
-![Objective deltas against linprogx](assets/perf_objective_delta.png)
+![Objective deltas against linprogx](https://raw.githubusercontent.com/EvanOman/linprogx/main/assets/perf_objective_delta.png)
 
 ## Large Online Benchmark
 
@@ -248,7 +261,7 @@ Current local result:
 | SciPy/HiGHS | optimal | 237.053663 | 2.842e-13 | 0.030s | Open-source sparse/dense LP baseline |
 | Clarabel | optimal | 237.053663 | 1.951e-10 | 0.101s | Open-source conic interior-point baseline |
 
-![Dense 160x320 runtime](assets/dense_160x320_runtime.png)
+![Dense 160x320 runtime](https://raw.githubusercontent.com/EvanOman/linprogx/main/assets/dense_160x320_runtime.png)
 
 The result is the expected shape: `linprogx` is correct and usable on a larger dense case, but mature compiled solvers are substantially faster. This is the benchmark to watch as the tableau implementation improves.
 
@@ -281,7 +294,7 @@ Current local result:
 
 On this Netlib-scale sparse case, `linprogx-sparse` now reaches the published objective to about `1.4e-08` relative error with a max equality residual below the configured `2e-5` tolerance, with no per-problem tuning. The solver is a portfolio: a dependency-free presolve (empty/singleton/doubleton rows) feeds either a native interior point method (small/degenerate problems) or a sparse PDHG with Ruiz equilibration, restarted iterate averaging, an adaptive primal weight, an adaptive step size, and KKT-based termination (large problems); `algorithm="auto"` routes by reduced problem size. DFL001 routes to PDHG and runs faster than both HiGHS and Clarabel on this benchmark.
 
-![Large Netlib DFL001 runtime](assets/large_dfl001_runtime.png)
+![Large Netlib DFL001 runtime](https://raw.githubusercontent.com/EvanOman/linprogx/main/assets/large_dfl001_runtime.png)
 
 ### Sparse Netlib CYCLE Guardrail
 

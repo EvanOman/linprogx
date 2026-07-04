@@ -18,11 +18,15 @@ lint-fix:
 type:
     uv run ty check .
 
+security:
+    uv run --extra dev bandit -q --severity-level medium -r src bench.py bench_cycle.py bench_dense.py bench_large.py bench_plots.py bench_sparse_fast.py
+    uv run --extra dev pip-audit
+
 test:
     uv run pytest
 
 test-cov:
-    uv run pytest --cov=src --cov-report=term-missing
+    uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=85
 
 plots:
     uv run python bench_plots.py --repeats 50
@@ -41,7 +45,7 @@ cycle-bench:
 
 fc: fmt lint-fix lint type test
 
-ci: lint format-check type test
+ci: lint format-check type security test-cov
 
 install:
     uv sync --extra dev
