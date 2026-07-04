@@ -9507,6 +9507,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     int64_t total_refacs = 0;
     double refac_time_total = 0.0;
     double refac_factorize_time = 0.0;
+    /* pivot-type composition, for degenerate-structure diagnosis */
+    int64_t stat_flips = 0;
+    int64_t stat_degenerate = 0;
+    int64_t stat_bland_pivots = 0;
+    int64_t stat_max_degen_streak = 0;
     {
         int consecutive_degenerate = 0;
         int use_bland = 0;
@@ -9860,6 +9865,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             alpha_touched[j] = 0;
                         }
                     }
+                    stat_flips += n_flips;
                     if (n_flips > 0) {
                         /* Recompute y and reduced costs from scratch.
                          * Dense BTRAN uses ws_v; clear it afterward. */
@@ -10218,12 +10224,19 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             /* ---- 4l. Anti-cycling ---- */
             if (theta_d < 1e-12) {
                 consecutive_degenerate++;
+                stat_degenerate++;
+                if (consecutive_degenerate > stat_max_degen_streak) {
+                    stat_max_degen_streak = consecutive_degenerate;
+                }
                 if (consecutive_degenerate >= 200) {
                     use_bland = 1;
                 }
             } else {
                 consecutive_degenerate = 0;
                 use_bland = 0;
+            }
+            if (use_bland) {
+                stat_bland_pivots++;
             }
 
             /* Clear sparse workspaces at pattern positions so they are
@@ -10492,7 +10505,7 @@ build_result:
         }
 
         result = Py_BuildValue(
-            "{s:s,s:d,s:d,s:n,s:N,s:N,s:d,s:d,s:L,s:d,s:d}",
+            "{s:s,s:d,s:d,s:n,s:N,s:N,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:d,s:d}",
             "status", status,
             "objective", objective,
             "max_primal_residual", max_residual,
@@ -10502,6 +10515,10 @@ build_result:
             "ftran_mean_density", ftran_mean_density,
             "btran_mean_density", btran_mean_density,
             "refactorizations", (long long)total_refacs,
+            "bound_flips", (long long)stat_flips,
+            "degenerate_pivots", (long long)stat_degenerate,
+            "bland_pivots", (long long)stat_bland_pivots,
+            "max_degenerate_streak", (long long)stat_max_degen_streak,
             "refac_time", refac_time_total,
             "refac_factorize_time", refac_factorize_time);
     }

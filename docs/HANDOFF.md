@@ -576,3 +576,17 @@ remains depending on instance.
   per 10k-pivot window on cre_d before designing the fix; the
   exp-sedge count-cut algebra is the likely ingredient but needs a
   cheap weight scheme.
+
+- MEASUREMENT + NEGATIVE (2026-07-04, committed as counters-only): DS
+  pivot-type counters (bound_flips / degenerate_pivots / bland_pivots /
+  max_degenerate_streak in the result dict) show cre_d's 100k-pivot
+  explosion is 88% DEGENERATE pivots with streaks resetting just under
+  the Bland threshold, zero bound flips. A deterministic 1e-9 cost
+  perturbation (GMSW-style, exit checks untouched on c_orig) HALVED the
+  degeneracy (88k -> 52k, streaks 202 -> 55) and sped stocfor3 (2.65 ->
+  2.32s, degeneracy 0) but did NOT flip cre_d (48k non-degenerate pivots
+  vs HiGHS's 6.1k TOTAL — selection quality is the binding constraint)
+  and regressed greenbea +21% / woodw +14% pivots via steered paths.
+  REVERTED; retry it TOGETHER WITH a cheap steepest-edge scheme (the
+  count lever), where its stocfor3-style cleanups may compound instead
+  of trading. The counters stay.
