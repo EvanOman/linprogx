@@ -9,9 +9,10 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Install the package from the sdist (builds C extensions against OpenBLAS)
-COPY dist/linprogx-0.1.0.tar.gz /tmp/linprogx-0.1.0.tar.gz
-RUN pip install --no-cache-dir /tmp/linprogx-0.1.0.tar.gz
+# Copy source and build the package (C extensions compile against OpenBLAS)
+COPY pyproject.toml MANIFEST.in LICENSE README.md ./
+COPY src/ src/
+RUN pip install --no-cache-dir .
 
 # Install API dependencies
 RUN pip install --no-cache-dir fastapi==0.115.12 uvicorn==0.34.2 pydantic==2.11.3
