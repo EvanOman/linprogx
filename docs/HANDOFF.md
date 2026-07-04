@@ -632,3 +632,19 @@ remains depending on instance.
   such a column simply cannot flip and bounds theta_d one-sidedly) and
   measure cre_d's count. This replaces presolve-depth as the lead
   workstream; presolve depth remains a ~2x follow-up that compounds.
+
+- HYPOTHESIS DISPROVED (2026-07-04): big-M magnitude. LINPROGX_DS_BIGM_FACTOR
+  knob added; factors 1e5 and 1e3 give BIT-IDENTICAL cre_d trajectories
+  (88,431 degenerate pivots, 570 refacs, same everything) — the boxed
+  columns never bind mid-path, so M-detours cannot be the count driver.
+  Elimination ledger for the ~8x raw-problem count gap vs HiGHS: presolve
+  (~2x only), selection weights (SE: no effect), degeneracy perturbation
+  (halves thrash, count unmoved), M magnitude (zero effect). NEXT
+  INSTRUMENTATION: per-column basis-entry counts (which columns enter
+  repeatedly) — churn concentrated on a small set would indicate a
+  cycling-adjacent loop the streak-based anti-cycling misses; churn
+  spread wide would indicate the leaving-side VIOLATION SELECTION is
+  systematically choosing rows whose fix undoes prior work (then study
+  HiGHS-style dual Phase-1 vs our artificial-ejection start: count how
+  many of the 100k pivots merely eject the ~m starting artificials and
+  whether ejection order thrashes).

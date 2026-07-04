@@ -9438,7 +9438,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     for (int32_t i = 0; i < m; i++) {
         if (fabs(b[i]) > bigM_scale) bigM_scale = fabs(b[i]);
     }
-    double bigM = 1e5 * bigM_scale;
+    double bigM_factor = 1e5;
+    {
+        /* experiment knob: probe whether big-M magnitude drives the path
+         * explosion on one-sided-column-heavy instances (cre/pds family) */
+        const char *env = getenv("LINPROGX_DS_BIGM_FACTOR");
+        if (env != NULL && atof(env) > 0.0) {
+            bigM_factor = atof(env);
+        }
+    }
+    double bigM = bigM_factor * bigM_scale;
 
     for (int32_t k = 0; k < m; k++) c_B[k] = c_ext[basis[k]];
     lu_btran(lu, c_B, y);
