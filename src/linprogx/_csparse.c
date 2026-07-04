@@ -8989,6 +8989,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
     /* Bound-flip workspace: accumulated delta to x_B from flips */
     double *flip_delta_xB = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    int32_t *flip_cand = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
 
     /* Artificial bound tracking: 1 if column j has a big-M artificial bound */
     int8_t *has_art_bound = calloc((size_t)(n > 0 ? n : 1), sizeof(int8_t));
@@ -9903,13 +9904,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                  * Sweep 2: pick the best pivot from remaining candidates within Harris band. */
 
                 /* Sweep 1: flip boxed candidates at the minimum ratio.
-                 * NOTE: bound flips are disabled pending a correct
-                 * implementation that accounts for primal/dual state
-                 * interaction. The flip mechanism must either recompute
-                 * x_B after flips before the pivot step, or separate
-                 * flip-only and pivot iterations. See Milestone 4 notes.
-                 * For now, all candidates are processed as pivot candidates. */
-                for (int32_t j = 0; 0 && j < n_total; j++) {
+                 * The primal/dual interaction that once kept this disabled
+                 * is handled by accumulating each flip's column delta into
+                 * flip_delta_xB and applying ONE ftran-based x_B correction
+                 * after the entering choice, before any pivot bookkeeping
+                 * reads x_B. The entering pivot's dual step (theta_d at or
+                 * above every flipped ratio) is what legitimizes the
+                 * flipped columns' reduced-cost sign changes. */
+                for (int32_t j = 0; j < n_total; j++) {
                     if (basis_pos[j] >= 0) continue;
                     if (bound_status[j] == DS_BOUND_FIXED) continue;
 
@@ -9941,16 +9943,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         continue;
                     }
 
-                    /* Flip j: update x and bound_status (NOT reduced costs) */
-                    if (bound_status[j] == DS_BOUND_LO) {
-                        x_ext[j] = hi_ext[j];
-                        bound_status[j] = DS_BOUND_HI;
-                    } else {
-                        x_ext[j] = lo_ext[j];
-                        bound_status[j] = DS_BOUND_LO;
-                    }
+                    /* Collect as a flip candidate; execution is deferred
+                     * until an entering pivot exists, because flips are
+                     * only dual-legitimate together with a dual step that
+                     * crosses their ratio (executing them with no entering
+                     * candidate ping-pongs forever). */
+                    flip_cand[n_flips++] = j;
                     remaining_infeas -= absorption;
-                    n_flips++;
                 }
 
                 /* Sweep 2: pick best pivot (largest |alpha|) within Harris band */
@@ -9998,6 +9997,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                     stat_flips += n_flips;
                     if (n_flips > 0) {
+                        memset(flip_delta_xB, 0, (size_t)m * sizeof(double));
+                        x_B_needs_recompute = 1;
                         /* Recompute y and reduced costs from scratch.
                          * Dense BTRAN uses ws_v; clear it afterward. */
                         for (int32_t k = 0; k < m; k++) c_B[k] = c_ext[basis[k]];
@@ -10025,6 +10026,52 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         rho[rho_nz_rows[ki]] = 0.0;
                     iterations = iter + 1;
                     continue;
+                }
+
+                if (entering_col < 0 && n_flips > 0) {
+                    /* No pivot beyond the flip set: do NOT flip (no dual
+                     * step would legitimize it); enter the most stable
+                     * flip candidate as an ordinary pivot instead. */
+                    for (int32_t fi = 0; fi < n_flips; fi++) {
+                        int32_t j = flip_cand[fi];
+                        double aj = alpha_scratch[j];
+                        if (fabs(aj) > fabs(entering_alpha_row) || entering_col < 0) {
+                            entering_col = j;
+                            entering_alpha_row = aj;
+                        }
+                    }
+                    n_flips = 0;
+                }
+                if (entering_col >= 0 && n_flips > 0) {
+                    /* Execute the deferred flips now that a dual step at or
+                     * above every flipped ratio is guaranteed, then apply
+                     * the batched x_B correction before any pivot
+                     * bookkeeping reads x_B. e_i is free scratch here. */
+                    for (int32_t fi = 0; fi < n_flips; fi++) {
+                        int32_t j = flip_cand[fi];
+                        double flip_delta;
+                        if (bound_status[j] == DS_BOUND_LO) {
+                            flip_delta = hi_ext[j] - x_ext[j];
+                            x_ext[j] = hi_ext[j];
+                            bound_status[j] = DS_BOUND_HI;
+                        } else {
+                            flip_delta = lo_ext[j] - x_ext[j];
+                            x_ext[j] = lo_ext[j];
+                            bound_status[j] = DS_BOUND_LO;
+                        }
+                        for (Py_ssize_t pp = self->csc_indptr[j];
+                             pp < self->csc_indptr[j + 1]; pp++) {
+                            flip_delta_xB[(int32_t)self->csc_rows[pp]] +=
+                                a_data[pp] * flip_delta;
+                        }
+                    }
+                    stat_flips += n_flips;
+                    lu_ftran(lu, flip_delta_xB, e_i);
+                    for (int32_t k = 0; k < m; k++) {
+                        x_B[k] -= e_i[k];
+                        e_i[k] = 0.0;
+                    }
+                    memset(flip_delta_xB, 0, (size_t)m * sizeof(double));
                 }
 
                 /* Compute theta_d for the chosen entering variable */
@@ -10765,7 +10812,7 @@ done:
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched);
-    free(flip_delta_xB);
+    free(flip_delta_xB); free(flip_cand);
     free(has_art_bound); free(lo_true); free(hi_true);
     free(ds_row_scale); free(ds_col_scale); free(scaled_csc_data); free(scaled_csr_data); free(c_orig);
     return result;

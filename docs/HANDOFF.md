@@ -708,3 +708,19 @@ remains depending on instance.
   large dual step), then audit the flip admissibility condition in the
   ratio test (n_flips accounting is correct; the flips themselves never
   occur).
+
+- BUG FIX (2026-07-04): the bound-flip ratio test was HARD-DISABLED
+  (`0 &&` in the sweep loop, an M4-era TODO about primal/dual
+  interaction) — the dual simplex has been running without its flip
+  stage since birth. Fixed with the two-phase form: COLLECT flip
+  candidates without mutating, choose the entering pivot first (a dual
+  step at/above every flipped ratio is what legitimizes the sign
+  changes; executing flips with no entering candidate ping-pongs
+  forever — measured), then execute flips with one batched
+  ftran-corrected x_B update via the (previously unused) flip_delta_xB
+  workspace. Constructed must-flip LP: 3 flips fire, correct optimum;
+  247 tests green; woodw pivots -14%; cre_d bit-identical (it genuinely
+  has no flip moves — its 100k-pivot walk now survives EVERY lever:
+  flips, ties, weights, M, presolve). The cre count gap is the one
+  remaining mystery, now requiring deep comparative study rather than
+  another quick lever.
