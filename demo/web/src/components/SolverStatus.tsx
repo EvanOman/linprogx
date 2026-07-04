@@ -1,8 +1,8 @@
-import type { SolveStatus, SolveResponse } from "../types";
+import type { SolveStatus, NetworkFlowResponse } from "../types";
 
 interface SolverStatusProps {
   status: SolveStatus;
-  result: SolveResponse | null;
+  result: NetworkFlowResponse | null;
   error: string | null;
   onRetry: () => void;
 }

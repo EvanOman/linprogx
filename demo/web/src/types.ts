@@ -1,43 +1,47 @@
-// --- API Request Types ---
+// --- Network Flow API Request Types ---
 
-export interface ProductInput {
-  name: string;
-  profit: number;
+export interface NodeInput {
+  id: string;
+  type: "supply" | "hub" | "demand";
+  value: number;
 }
 
-export interface ResourceInput {
-  name: string;
+export interface EdgeInput {
+  from: string;
+  to: string;
+  cost: number;
   capacity: number;
-  usage: number[];
 }
 
-export interface SolveRequest {
-  products: ProductInput[];
-  resources: ResourceInput[];
+export interface NetworkFlowRequest {
+  nodes: NodeInput[];
+  edges: EdgeInput[];
 }
 
-// --- API Response Types ---
+// --- Network Flow API Response Types ---
 
-export interface ProductResult {
-  name: string;
-  quantity: number;
-  profit_contribution: number;
-}
-
-export interface ResourceResult {
-  name: string;
-  used: number;
+export interface FlowResult {
+  from: string;
+  to: string;
+  flow: number;
   capacity: number;
   utilization: number;
-  shadow_price: number;
-  binding: boolean;
+  cost: number;
+  flow_cost: number;
 }
 
-export interface SolveResponse {
+export interface NodeBalance {
+  id: string;
+  type: "supply" | "hub" | "demand";
+  value: number;
+  net_flow: number;
+}
+
+export interface NetworkFlowResponse {
   status: string;
-  total_profit: number;
-  products: ProductResult[];
-  resources: ResourceResult[];
+  total_cost: number;
+  flows: FlowResult[];
+  node_balances: NodeBalance[];
   iterations: number;
   solve_time_ms: number;
   solver: string;
@@ -52,3 +56,21 @@ export interface SolverInfo {
 // --- Internal State ---
 
 export type SolveStatus = "idle" | "loading" | "cold-start" | "solved" | "error";
+
+// --- Graph Layout Types ---
+
+export interface NodePosition {
+  id: string;
+  label: string;
+  type: "supply" | "hub" | "demand";
+  x: number;
+  y: number;
+  defaultValue: number;
+}
+
+export interface EdgeDefinition {
+  from: string;
+  to: string;
+  defaultCost: number;
+  defaultCapacity: number;
+}
