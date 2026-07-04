@@ -832,3 +832,26 @@ remains depending on instance.
   loss before the dtrsv tail solves to a paired-majority win.
   HEAD-TO-HEAD: 14-10 LINPROGX. Remaining losses: 80bau3b, cre_a,
   cre_b, cre_d, greenbea, maros_r7, pds_10, pds_20, stocfor3, woodw.
+
+### Strategic map after EXPAND (2026-07-04, build 8e54134) — the remaining 10
+
+Head-to-head 14-10 linprogx; all aggregate axes won. Per-loss attack map:
+- cre_b (5.8 vs 1.9) / cre_d (4.8 vs 1.0): public route is IPM; its gap
+  is the dense-tail t^3-per-iteration economics — needs IPM factor
+  advances (supernodal tail? rank-update reuse across iterations?). The
+  DS now SOLVES both (EXPAND) but at ~200s — DS flips here would need
+  the start-distance + pricing program (slack-heavy crash for one-sided
+  families + DSE default) to cut ~8x count AND ~10x rate. Long haul
+  either way; IPM side likely shorter.
+- pds_10 (2.9 vs 1.3) / pds_20 (15.4 vs 10.3): PDHG route; DS
+  viability probe with EXPAND+BFRT queued (terminates now?). Same
+  start/pricing program as cre if counts are sane.
+- greenbea (3.0-3.4 vs 0.24): DS route; needs ~4x count (start-distance
+  program) + ~3x rate. maros_r7 (1.9-2.2 vs 0.9): IPM factor-bound;
+  supernodal panel-solve v2 with contiguous storage is the known
+  remaining idea. woodw (0.16 vs 0.09), 80bau3b (0.29 vs 0.17),
+  stocfor3 (0.66 vs 0.54), cre_a (0.11 vs 0.08): per-iteration IPM
+  economics; margins 20-120ms; levers left are uplook-prefix BLAS-ing,
+  setup trimming, and iteration-count work (centering).
+All instrumentation in place: dual_progress/degen_progress, churn
+counters, refac phase profile, LU profile, paired-stat protocol.
