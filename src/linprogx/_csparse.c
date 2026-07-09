@@ -4301,7 +4301,66 @@ static void chol_refactor_supernodal(
 #endif
             if (!used_blas) {
                 scalar_updates++;
-                if (wk == 1) {
+                if (zero_copy_mode && update->srcpos_runs_contiguous) {
+                    /* CONTIGUOUS scalar kernels (measured: 100% of the
+                     * fine-grained update streams on stocfor3/ken_13 are
+                     * position-contiguous). The srcpos maps are implied
+                     * (pos_first + index), so the per-element srcpos loads
+                     * disappear and the SV reads become sequential; every
+                     * F element is written exactly once per update, so any
+                     * within-update order is bit-identical to the map walk. */
+                    Py_ssize_t tc2 = update->target_end - update->target_begin;
+                    Py_ssize_t pc2 = update->pivot_end - update->pivot_begin;
+                    const int32_t *rp =
+                        ctx->snode_update_target_rowpos + update->target_begin;
+                    const double *BV =
+                        SV + (Py_ssize_t)update->target_pos_first * wk;
+                    const double *AV =
+                        SV + (Py_ssize_t)update->pivot_pos_first * wk;
+                    if (wk == 1) {
+                        if (pc2 == 1) {
+                            double aval = AV[0];
+                            double *fcol = F + update->pivot_col_first;
+                            for (Py_ssize_t ti = 0; ti < tc2; ti++) {
+                                fcol[(Py_ssize_t)rp[ti] * w] -= BV[ti] * aval;
+                            }
+                        } else if (update->pivot_cols_contiguous) {
+                            for (Py_ssize_t ti = 0; ti < tc2; ti++) {
+                                double bval = BV[ti];
+                                double *frow = F + (Py_ssize_t)rp[ti] * w +
+                                               update->pivot_col_first;
+                                for (Py_ssize_t pi = 0; pi < pc2; pi++) {
+                                    frow[pi] -= bval * AV[pi];
+                                }
+                            }
+                        } else {
+                            const int32_t *pcol =
+                                ctx->snode_update_pivot_col + update->pivot_begin;
+                            for (Py_ssize_t ti = 0; ti < tc2; ti++) {
+                                double bval = BV[ti];
+                                double *frow = F + (Py_ssize_t)rp[ti] * w;
+                                for (Py_ssize_t pi = 0; pi < pc2; pi++) {
+                                    frow[pcol[pi]] -= bval * AV[pi];
+                                }
+                            }
+                        }
+                    } else {
+                        const int32_t *pcol =
+                            ctx->snode_update_pivot_col + update->pivot_begin;
+                        for (Py_ssize_t ti = 0; ti < tc2; ti++) {
+                            const double *brow = BV + ti * (Py_ssize_t)wk;
+                            double *frow = F + (Py_ssize_t)rp[ti] * w;
+                            for (Py_ssize_t pi = 0; pi < pc2; pi++) {
+                                const double *arow = AV + pi * (Py_ssize_t)wk;
+                                double total = 0.0;
+                                for (int32_t c = 0; c < wk; c++) {
+                                    total += brow[c] * arow[c];
+                                }
+                                frow[pcol[pi]] -= total;
+                            }
+                        }
+                    }
+                } else if (wk == 1) {
                     for (Py_ssize_t ti = update->target_begin; ti < update->target_end; ti++) {
                         int32_t target_srcpos = ctx->snode_update_target_srcpos[ti];
                         int32_t target_rowpos = ctx->snode_update_target_rowpos[ti];
