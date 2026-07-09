@@ -1077,3 +1077,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   centering/corrector quality) and the newton-solve slice (~0.22s CSC
   walks) — algorithm-quality work, not bookkeeping. Fingerprints exact
   on stocfor3/maros_r7/ken_18.
+
+- ORDERING UNIT (2026-07-09, exp-panel, merged): question CLOSED with
+  numbers. True-fill census (Liu colcounts, cross-validated): current
+  exact-min-degree is at-or-better than MMD/RCM/natural on woodw
+  (51k nnzL — its "8x tail waste" is the deliberate rate trade,
+  STRUCTURAL, no ordering win), stocfor3 (279k, best), cre_a, 80bau3b.
+  ONE blind spot found: maros_r7's banded/QP structure (min-degree
+  scrambles it; natural = 2.36x fewer flops). SHIPPED: two-candidate
+  symbolic evaluation after min-degree (chol_order_flops Liu walk,
+  fill early-abort at 4x, keep natural only on >=10% predicted win,
+  <=0.01s cost, LINPROGX_ORDER_EVAL=0 kill-switch). Fires ONLY on
+  maros_r7 across 19 IPM instances: 167->31 supernodes, width 101,
+  fill -32%, paired wall -23% (1.330 vs 1.725) despite 12->15 iters;
+  residual 8.1e-6 -> 2.55e-11; objective 1497187.25 (closer to netlib
+  1497185.17). maros_r7 vs HiGHS now 1.46x (session start 2.2x;
+  cumulative ~2.8 -> ~1.14s). Deferral threshold exonerated (resolves
+  to m/2, defers ~nothing at suite sizes). Further ordering
+  sophistication: at most 10-20% fill headroom on stocfor3, nothing
+  elsewhere — not worth a unit.
