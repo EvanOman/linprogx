@@ -1027,3 +1027,19 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   supernodal refactor genuinely wins ~0.16s once bookkeeping is paid.
   woodw is flop-bound (tail wastes 8x flops vs true fill — ordering/
   fill question); cre_a has no dominant slice (margins 15-30ms).
+
+- DOSE FOOT-GUN RESOLVED (2026-07-09): exp-leaving's expand_dtau
+  default was 1e-13 (inert) with the certified 1e-11 applied via
+  LINPROGX_DS_EXPAND_DTAU in ledger probes — an unset env var silently
+  invalidated the first perturbation acceptance run (it measured the
+  solver with EXPAND effectively off). Branch default now aligned to
+  1e-11 (exp-leaving 4b8710e); ledger verified reproducing with no env
+  var on BOTH branches (greenbea 9,668 / woodw 1,945; perf worktree
+  independently verified 9,668 from both fixture dirs). Perturbation
+  acceptance re-running at the certified dose. Secondary observation
+  kept from the inert-dose run (perturb=1 vs perturb=0, both at
+  1e-13): perturbation diffuses cre_d's pool (top1 0.083->0.017,
+  6.9e5 bound flips) and travels ~10x further per cap, but does not
+  finish; on pds_10 it CONCENTRATES (top1 -> 1.0). Certificates
+  correctly rejected every bad exit (greenbea dual_infeasible at dose
+  1e-5); implementation audited clean.
