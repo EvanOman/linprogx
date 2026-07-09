@@ -1115,3 +1115,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   signature: earlier/PROGRESSIVE shift removal as optimality
   approaches (cre_d's removal never fires at the cap) — could let
   perturbation close its last mile; own unit if cre-DS ever matters.
+
+- MCC ECONOMICS UNIT (2026-07-09, exp-panel, merged): the session's
+  factor cheapening had turned Gondzio correctors OFF nearly everywhere
+  (old ratio gate 5.5; maros natural-order ratio fell 7.6->3.62 =
+  the 12->15 iter regression). SHIPPED: gate 3.0 (full 10-instance
+  iters x wall matrix documented in the code comment; populations
+  separate cleanly: >=3.0 win-or-neutral, hostile band <=1.67).
+  maros_r7 15->12 iters, -6% wall paired 5/5 (now ~1.04s, ~1.33x vs
+  HiGHS 0.78; session cumulative 2.8->1.04); pilot87 150->128 iters
+  (-15%, win deepens). NEGATIVE PINNED: step-growth acceptance tests
+  cannot detect corrector harm (gamma sweep: no setting rescues
+  80bau3b's 62->105 explosion or osa_14's +10% wall while all degrade
+  the friendly set) — corrector hostility is PATH-STABILITY, not
+  economics; woodw <=30 / stocfor3 <=38 / cre_a unreachable by any
+  global corrector setting on the cost-ratio axis. OPEN SCIENCE
+  QUESTION for a dedicated unit: why does 80bau3b's trajectory shatter
+  under one accepted recentering round? Answering it is the only path
+  to woodw's force-1 0.102s (-21%).
