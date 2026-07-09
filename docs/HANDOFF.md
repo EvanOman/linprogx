@@ -966,3 +966,25 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   REMAINING maros_r7 GAP (~2.0-2.1 vs 0.9): refactor-bound
   (~1.1-1.3s/solve in supernodal refactor) — next lever is refactor
   cost itself (panel assembly, dpotrf blocking) or a DS route.
+
+- REFACTOR-COST UNIT (2026-07-09, exp-panel, merged eb8d435): profile
+  showed NO dominant slice (memory movement ~60%, BLAS ~40%; 68.7
+  ms/refactor, 13 refactors on maros_r7; symbolic confirmed lazy-once;
+  1-thread supernodal BLAS policy confirmed correct). SHIPPED lever (a):
+  resident per-supernode panels (16-byte-padded slots, ~factor
+  footprint, calloc-fail -> row-wise fallback) + zero-copy dgemm
+  operands (consecutive-run srcpos verified at symbolic time; gather
+  eliminated) + single-pass panel init. Bit-identical everywhere.
+  maros_r7: 61.5 ms/refactor (-10.5%), wall -4.6% (median 1.991 vs
+  2.086); ken_18 (supernodal via prefix-flops gate, width 1.3): wall
+  -15..-21%, CPU -16..-23%. Row-wise instances byte-identical (path
+  untouched). NEGATIVES PINNED: fused beta=1 dgemm into F (1/109
+  updates applicable, perturbs last digit); BLAS_MIN 4096/512 (scalar
+  fused subtract beats small dgemm+scatter; knob LINPROGX_SNODE_BLAS_MIN
+  default 32768). SERIAL FLOOR REACHED: ~55-60 ms/refactor (~26ms
+  irreducible 1-thread BLAS, ~15ms assemble shared with row-wise,
+  ~20ms minimized bookkeeping); we are within ~10%. maros_r7 ~1.95-2.0
+  vs 0.9 CANNOT close by serial refactor work — the >30% levers are
+  (i) level-scheduled parallel supernode factorization across etree
+  subtrees (determinism achievable: per-panel update order fixed) and
+  (ii) fewer refactors (iteration count / factor reuse).
