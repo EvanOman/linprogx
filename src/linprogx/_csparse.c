@@ -2294,6 +2294,80 @@ static int64_t heap_pop(MinHeap *h) {
     return top;
 }
 
+/* Symbolic Cholesky cost of eliminating the symmetric pattern (Bp, Bi)
+ * in the order given by `perm` (NULL = natural order): computes the
+ * column counts of L via Liu's row-subtree walk over the elimination
+ * tree (each below-diagonal row entry climbs the partial etree marking
+ * new subtree members; total work O(nnz(B) + nnz(L))) and returns
+ * sum(colcount^2), writing nnz(L) to *nnz_out. If abort_nnz > 0 the walk
+ * stops once the running fill exceeds it and returns -1.0 -- candidate
+ * orders whose fill explodes (e.g. the natural order of a network
+ * problem) cost almost nothing to reject. */
+static double chol_order_flops(
+    int32_t m, const Py_ssize_t *Bp, const int32_t *Bi,
+    const int32_t *perm, double abort_nnz, double *nnz_out) {
+    int32_t *parent = malloc((size_t)(m > 0 ? m : 1) * sizeof(int32_t));
+    int32_t *mark = malloc((size_t)(m > 0 ? m : 1) * sizeof(int32_t));
+    int32_t *count = malloc((size_t)(m > 0 ? m : 1) * sizeof(int32_t));
+    int32_t *pinv = NULL;
+    double result = -1.0;
+    double nnz = 0.0;
+    if (parent == NULL || mark == NULL || count == NULL) {
+        goto done;
+    }
+    if (perm != NULL) {
+        pinv = malloc((size_t)(m > 0 ? m : 1) * sizeof(int32_t));
+        if (pinv == NULL) {
+            goto done;
+        }
+        for (int32_t k = 0; k < m; k++) {
+            pinv[perm[k]] = k;
+        }
+    }
+    for (int32_t k = 0; k < m; k++) {
+        parent[k] = -1;
+        mark[k] = -1;
+        count[k] = 1; /* diagonal */
+    }
+    nnz = (double)m;
+    for (int32_t k = 0; k < m; k++) {
+        int32_t ok = perm != NULL ? perm[k] : k;
+        mark[k] = k;
+        for (Py_ssize_t p = Bp[ok]; p < Bp[ok + 1]; p++) {
+            int32_t i = pinv != NULL ? pinv[Bi[p]] : Bi[p];
+            if (i >= k) {
+                continue;
+            }
+            while (mark[i] != k) {
+                mark[i] = k;
+                count[i]++;
+                nnz += 1.0;
+                if (parent[i] == -1) {
+                    parent[i] = k;
+                    break;
+                }
+                i = parent[i];
+            }
+        }
+        if (abort_nnz > 0.0 && nnz > abort_nnz) {
+            goto done;
+        }
+    }
+    result = 0.0;
+    for (int32_t k = 0; k < m; k++) {
+        result += (double)count[k] * (double)count[k];
+    }
+done:
+    if (nnz_out != NULL) {
+        *nnz_out = nnz;
+    }
+    free(parent);
+    free(mark);
+    free(count);
+    free(pinv);
+    return result;
+}
+
 /* Compute an exact minimum-degree elimination order for the symmetric
  * pattern given by (indptr, indices) over m nodes. Writes the order
  * (a permutation of 0..m-1) into `order`. Returns 0 on success, -1 on
@@ -3341,6 +3415,44 @@ static CholContext *chol_setup(
         if (status != 0) {
             goto fail;
         }
+        /* Ordering-quality check: minimum degree scrambles problems whose
+         * natural order is already elimination-friendly (banded / QP-like
+         * structure -- maros_r7's natural order factors with 2.4x fewer
+         * flops and 32% less fill than its min-degree order). Evaluate
+         * both candidates symbolically and keep the natural order only on
+         * a decisive (>= 10%) predicted-flop win; the natural walk aborts
+         * as soon as its fill passes 4x the min-degree fill, so
+         * fill-explosive naturals (network problems) cost ~nothing to
+         * reject. One global rule, no per-instance switches. */
+        {
+            static int order_eval = -1;
+            if (order_eval < 0) {
+                const char *e = getenv("LINPROGX_ORDER_EVAL");
+                order_eval = (e != NULL && atoi(e) == 0) ? 0 : 1;
+            }
+            double md_nnz = 0.0, nat_nnz = 0.0;
+            double md_flops = order_eval
+                ? chol_order_flops(m, Bp, Bi, ctx->perm, 0.0, &md_nnz)
+                : -1.0;
+            if (md_flops >= 0.0) {
+                double nat_flops = chol_order_flops(m, Bp, Bi, NULL,
+                                                    4.0 * md_nnz, &nat_nnz);
+                if (debug_setup) {
+                    fprintf(stderr,
+                            "chol_setup order: md_flops=%.3e md_nnz=%.0f "
+                            "nat_flops=%.3e nat_nnz=%.0f -> %s\n",
+                            md_flops, md_nnz, nat_flops, nat_nnz,
+                            (nat_flops >= 0.0 && nat_flops < 0.9 * md_flops)
+                                ? "natural" : "min-degree");
+                }
+                if (nat_flops >= 0.0 && nat_flops < 0.9 * md_flops) {
+                    for (int32_t k = 0; k < m; k++) {
+                        ctx->perm[k] = k;
+                    }
+                }
+            }
+            SETUP_MARK("order-eval");
+        }
     }
     for (int32_t k = 0; k < m; k++) {
         ctx->pinv[ctx->perm[k]] = k;
@@ -3560,10 +3672,15 @@ static CholContext *chol_setup(
     SETUP_MARK("colcounts");
     {
         double flops = 0.0;
+        double fill = 0.0;
         for (int32_t k = 0; k < m; k++) {
             flops += (double)count[k] * (double)count[k];
+            fill += (double)count[k];
         }
         ctx->factor_flops = flops;
+        if (getenv("LINPROGX_CHOL_DEBUG") != NULL) {
+            fprintf(stderr, "chol_setup fill: nnzL=%.0f flops=%.3e\n", fill, flops);
+        }
         if (factor_flops_cap > 0.0) {
             if (getenv("LINPROGX_CHOL_DEBUG") != NULL) {
                 fprintf(stderr, "chol_setup: factor flops %.3e (cap %.3e)\n", flops,
