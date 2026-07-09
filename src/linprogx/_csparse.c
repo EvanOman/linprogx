@@ -49,6 +49,35 @@ static void ensure_supernodal_blas_threads(void) {
     }
     set_blas_threads(cached);
 }
+/* Size-gated OpenBLAS threading for individual supernodal panel kernels.
+ * The elimination tree of the factor-bound instances is root-chain
+ * dominated (measured maros_r7: max DAG speedup 1.28x, so supernode-level
+ * task parallelism cannot pay), but ~90% of the refactor flops concentrate
+ * in a few dozen large dpotrf/dtrsm/dgemm calls on the root-chain panels
+ * (maros_r7: 27 calls >= 5e6 flops carry 89%). Those calls run with the
+ * same fixed 4-thread policy as the row-wise dense tail; the hundreds of
+ * small calls keep the 1-thread supernodal policy (fork-join overhead
+ * loses below ~1e6 flops at machine rates). The gate depends only on
+ * symbolic structure -- never on wall time or worker scheduling -- so any
+ * given system factors identically on every run; LINPROGX_SNODE_BLAS_PAR=1
+ * restores the fully serial numerics exactly. */
+static void supernodal_call_blas_threads(double flops) {
+    static int par_threads = -1;
+    static double par_min = 0.0;
+    if (par_threads < 0) {
+        const char *e = getenv("LINPROGX_SNODE_BLAS_PAR");
+        int parsed = e != NULL ? atoi(e) : 0;
+        par_threads = parsed > 0 ? parsed : 4;
+        e = getenv("LINPROGX_SNODE_BLAS_PAR_MIN");
+        double fparsed = e != NULL ? atof(e) : 0.0;
+        par_min = fparsed > 0.0 ? fparsed : 4e6;
+    }
+    if (flops >= par_min) {
+        set_blas_threads(par_threads);
+    } else {
+        ensure_supernodal_blas_threads();
+    }
+}
 #endif
 #include <stddef.h>
 #include <stdint.h>
@@ -3879,7 +3908,7 @@ static void tail_dense_chol(double *M, Py_ssize_t t) {
 static void supernode_diag_chol(double *M, Py_ssize_t w) {
 #ifdef LINPROGX_HAVE_BLAS
     if (g_tail_use_blas && w >= 64 && w <= INT32_MAX) {
-        ensure_supernodal_blas_threads();
+        supernodal_call_blas_threads((double)w * (double)w * (double)w / 3.0);
         int blas_n = (int)w;
         int blas_info = 0;
         for (Py_ssize_t i = 0; i < w; i++) {
@@ -4078,7 +4107,8 @@ static void chol_refactor_supernodal(
 #ifdef LINPROGX_HAVE_BLAS
             if (pc > 0 && tc > 0 && wk > 0 && pc <= INT32_MAX && tc <= INT32_MAX &&
                 wk <= INT32_MAX && pc * tc * (Py_ssize_t)wk >= blas_min_flops) {
-                ensure_supernodal_blas_threads();
+                supernodal_call_blas_threads(
+                    2.0 * (double)pc * (double)tc * (double)wk);
                 const double *Abuf;
                 const double *Bbuf;
                 double *Cbuf = ctx->snode_update_c;
@@ -4246,7 +4276,7 @@ static void chol_refactor_supernodal(
         int used_trsm = 0;
 #ifdef LINPROGX_HAVE_BLAS
         if (off_rows > 0 && w >= 16 && w <= INT32_MAX && off_rows <= INT32_MAX) {
-            ensure_supernodal_blas_threads();
+            supernodal_call_blas_threads((double)w * (double)w * (double)off_rows);
             int blas_m = w;
             int blas_n = (int)off_rows;
             int lda = w;
