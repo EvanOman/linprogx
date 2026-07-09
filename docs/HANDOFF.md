@@ -1096,3 +1096,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   to m/2, defers ~nothing at suite sizes). Further ordering
   sophistication: at most 10-20% fill headroom on stocfor3, nothing
   elsewhere — not worth a unit.
+
+- SIXTEENTH SETTLED — PERTURBATION x EXPAND (2026-07-09, exp-leaving
+  4b8710e, corrected run at certified dtau=1e-11; all p=0 baselines
+  reproduce the ledger exactly incl. cre_d 103,781): NO-SHIP as an
+  always-on DS setting; perturb stays a dark, audited, deterministic,
+  certificate-safe research knob wired into no route. The two
+  anti-degeneracy mechanisms are RIVALS that compose per-instance:
+  DESTRUCTIVELY on cre_d (p=1 diffuses the pool 0.516->0.050 and gets
+  within 1.5 absolute of the optimum but drowns in a flip storm —
+  12.1M bound flips vs ZERO on the p=0 optimal run; removal never
+  fires; caps at 300k) and CONSTRUCTIVELY on pds_10: FIRST-EVER
+  CERTIFIED OPTIMAL COMPLETION, 173,257 pivots (p=0 caps at 300k),
+  published objective, resid 0.0, top1 1.0 -> 0.26. woodw fails every
+  dose (+38.6% at 1e-5; 1e-6 strictly worse everywhere with EXPAND
+  live). Not route-relevant for the scoreboard (DS pds_10 ~ minutes vs
+  PDHG 2.9s) — science, not wall. QUEUED IDEA from the near-miss
+  signature: earlier/PROGRESSIVE shift removal as optimality
+  approaches (cre_d's removal never fires at the cap) — could let
+  perturbation close its last mile; own unit if cre-DS ever matters.
