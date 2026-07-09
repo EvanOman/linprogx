@@ -2645,6 +2645,17 @@ typedef struct SNodeUpdate {
     int32_t source;
     int32_t pivot_col_first;
     int pivot_cols_contiguous;
+    /* Source-row POSITIONS of the pivot/target maps. In a sorted union row
+     * list the pivot rows (rows inside the target's column range) are one
+     * consecutive run of positions, and by the fill/nesting property every
+     * source row at or after that run also appears in the target panel, so
+     * the target map is a consecutive run too. When verified at symbolic
+     * time (srcpos_runs_contiguous), the numeric update can hand the
+     * RESIDENT source panel directly to dgemm as two strided views
+     * (lda == source width) with zero gather copies. */
+    int32_t pivot_pos_first;
+    int32_t target_pos_first;
+    int srcpos_runs_contiguous;
     Py_ssize_t pivot_begin;
     Py_ssize_t pivot_end;
     Py_ssize_t target_begin;
@@ -2827,6 +2838,30 @@ static void chol_fill_snode_update_maps(
             break;
         }
     }
+    /* Verify (do not assume) that both srcpos maps are consecutive position
+     * runs; the numeric zero-copy update path is only taken when they are. */
+    Py_ssize_t tcnt = update->target_end - update->target_begin;
+    update->pivot_pos_first =
+        pc > 0 ? ctx->snode_update_pivot_srcpos[update->pivot_begin] : 0;
+    update->target_pos_first =
+        tcnt > 0 ? ctx->snode_update_target_srcpos[update->target_begin] : 0;
+    update->srcpos_runs_contiguous = pc > 0 && tcnt > 0;
+    for (Py_ssize_t i = 0; i < pc && update->srcpos_runs_contiguous; i++) {
+        if (ctx->snode_update_pivot_srcpos[update->pivot_begin + i] !=
+            update->pivot_pos_first + (int32_t)i) {
+            update->srcpos_runs_contiguous = 0;
+        }
+    }
+    for (Py_ssize_t i = 0; i < tcnt && update->srcpos_runs_contiguous; i++) {
+        if (ctx->snode_update_target_srcpos[update->target_begin + i] !=
+            update->target_pos_first + (int32_t)i) {
+            update->srcpos_runs_contiguous = 0;
+        }
+    }
+    /* NOTE (measured, maros_r7): the target ROW POSITIONS are almost never
+     * one consecutive run (1 of 109 BLAS updates), so a fused
+     * alpha=-1/beta=1 dgemm writing straight into the target panel is not
+     * worth its bit-exactness cost; the scatter pass stays. */
 }
 
 static int chol_build_supernode_symbolic(CholContext *ctx) {
@@ -2859,11 +2894,19 @@ static int chol_build_supernode_symbolic(CholContext *ctx) {
             ctx->col_snode[j] = s;
         }
         ctx->snode_row_ptr[s + 1] = ctx->snode_row_ptr[s] + nr;
+        /* pad each resident panel slot to an even double count so every
+         * panel base stays 16-byte aligned for the dense panel kernels */
         ctx->snode_panel_ptr[s + 1] =
-            ctx->snode_panel_ptr[s] + nr * (Py_ssize_t)(j1 - j0);
+            ctx->snode_panel_ptr[s] + ((panel_n + 1) & ~(Py_ssize_t)1);
     }
-    ctx->snode_panel = calloc((size_t)(ctx->snode_panel_cap > 0 ?
-                                       ctx->snode_panel_cap : 1),
+    /* RESIDENT panels: every supernode's row-major (nr x w) panel lives at
+     * snode_panel + snode_panel_ptr[s] for the whole refactor, so descendant
+     * updates read the already-factored source panel contiguously instead of
+     * per-entry Lx indirection. Total is bounded by |L| plus amalgamation
+     * padding (~ the factor's own footprint); on allocation failure the
+     * symbolic build fails and the caller falls back to the row-wise path. */
+    ctx->snode_panel = calloc((size_t)(ctx->snode_panel_ptr[ns] > 0 ?
+                                       ctx->snode_panel_ptr[ns] : 1),
                               sizeof(double));
     ctx->snode_rows = calloc((size_t)(ctx->snode_row_ptr[ns] > 0 ?
                                       ctx->snode_row_ptr[ns] : 1),
@@ -3948,6 +3991,23 @@ static void chol_refactor_supernodal(
     int blas_threads = 0;
 #endif
     int profile = getenv("LINPROGX_SUPERNODAL_PROFILE") != NULL;
+    /* Zero-copy update reads from the resident source panels (default).
+     * LINPROGX_SNODE_ZEROCOPY=0 restores the per-entry Lx-indirection reads
+     * for A/B measurement; the values read are bit-identical either way. */
+    static int zero_copy_mode = -1;
+    if (zero_copy_mode < 0) {
+        const char *e = getenv("LINPROGX_SNODE_ZEROCOPY");
+        zero_copy_mode = (e != NULL && atoi(e) == 0) ? 0 : 1;
+    }
+    /* Minimum pc*tc*wk flops for a descendant update to use dgemm; below it
+     * the scalar loops win on call overhead. Machine constant (override:
+     * LINPROGX_SNODE_BLAS_MIN), calibrated with the zero-copy operands. */
+    static Py_ssize_t blas_min_flops = -1;
+    if (blas_min_flops < 0) {
+        const char *e = getenv("LINPROGX_SNODE_BLAS_MIN");
+        long parsed = e != NULL ? atol(e) : 0;
+        blas_min_flops = parsed > 0 ? (Py_ssize_t)parsed : 32768;
+    }
     double t0 = profile ? setup_clock() : 0.0;
     double t_assemble = 0.0, t_panel = 0.0, t_gather = 0.0, t_gemm = 0.0;
     double t_scatter_update = 0.0, t_scalar_update = 0.0, t_chol = 0.0;
@@ -3966,15 +4026,31 @@ static void chol_refactor_supernodal(
         Py_ssize_t row_begin = ctx->snode_row_ptr[s];
         Py_ssize_t row_end = ctx->snode_row_ptr[s + 1];
         Py_ssize_t nr = row_end - row_begin;
-        double *F = ctx->snode_panel;
-        memset(F, 0, (size_t)(nr * (Py_ssize_t)w) * sizeof(double));
-
         Py_ssize_t panel_base = ctx->snode_panel_ptr[s];
-        for (Py_ssize_t rpos = 0; rpos < nr; rpos++) {
-            for (int32_t c = 0; c < w; c++) {
-                Py_ssize_t offset = ctx->snode_panel_cx[panel_base + rpos * (Py_ssize_t)w + c];
-                if (offset >= 0) {
-                    F[rpos * (Py_ssize_t)w + c] = ctx->Cx[offset];
+        /* factor in the panel's RESIDENT slot so later supernodes can read
+         * this factored panel contiguously as their update source; the A/B
+         * baseline (zero_copy_mode == 0) reuses the buffer base as scratch,
+         * reproducing the historical layout and alignment exactly */
+        double *F = zero_copy_mode ? ctx->snode_panel + panel_base
+                                   : ctx->snode_panel;
+        if (zero_copy_mode) {
+            /* single pass: the cx-map walk already visits every panel slot,
+             * so write zero-or-Cx unconditionally instead of memset+gather */
+            const Py_ssize_t *cxmap = ctx->snode_panel_cx + panel_base;
+            Py_ssize_t panel_n = nr * (Py_ssize_t)w;
+            for (Py_ssize_t idx = 0; idx < panel_n; idx++) {
+                Py_ssize_t offset = cxmap[idx];
+                F[idx] = offset >= 0 ? ctx->Cx[offset] : 0.0;
+            }
+        } else {
+            memset(F, 0, (size_t)(nr * (Py_ssize_t)w) * sizeof(double));
+            for (Py_ssize_t rpos = 0; rpos < nr; rpos++) {
+                for (int32_t c = 0; c < w; c++) {
+                    Py_ssize_t offset =
+                        ctx->snode_panel_cx[panel_base + rpos * (Py_ssize_t)w + c];
+                    if (offset >= 0) {
+                        F[rpos * (Py_ssize_t)w + c] = ctx->Cx[offset];
+                    }
                 }
             }
         }
@@ -3992,33 +4068,50 @@ static void chol_refactor_supernodal(
             int32_t k1 = ctx->snode_start[source + 1];
             int32_t wk = k1 - k0;
             Py_ssize_t source_panel = ctx->snode_panel_ptr[source];
+            /* factored source panel, resident and contiguous (row-major
+             * nr_source x wk); bit-identical to the Lx-map reads including
+             * amalgamation padding, which is exactly 0.0 in both */
+            const double *SV = ctx->snode_panel + source_panel;
             Py_ssize_t pc = update->pivot_end - update->pivot_begin;
             Py_ssize_t tc = update->target_end - update->target_begin;
             int used_blas = 0;
 #ifdef LINPROGX_HAVE_BLAS
             if (pc > 0 && tc > 0 && wk > 0 && pc <= INT32_MAX && tc <= INT32_MAX &&
-                wk <= INT32_MAX && pc * tc * (Py_ssize_t)wk >= 32768) {
+                wk <= INT32_MAX && pc * tc * (Py_ssize_t)wk >= blas_min_flops) {
                 ensure_supernodal_blas_threads();
-                double *Abuf = ctx->snode_update_a;
-                double *Bbuf = ctx->snode_update_b;
+                const double *Abuf;
+                const double *Bbuf;
                 double *Cbuf = ctx->snode_update_c;
-                for (Py_ssize_t pi = 0; pi < pc; pi++) {
-                    int32_t pivot_srcpos =
-                        ctx->snode_update_pivot_srcpos[update->pivot_begin + pi];
-                    for (int32_t c = 0; c < wk; c++) {
-                        Py_ssize_t lx = ctx->snode_panel_lx[
-                            source_panel + (Py_ssize_t)pivot_srcpos * wk + c];
-                        Abuf[(Py_ssize_t)c + pi * (Py_ssize_t)wk] = ctx->Lx[lx];
+                if (zero_copy_mode && update->srcpos_runs_contiguous) {
+                    /* the pivot/target maps are consecutive position runs, so
+                     * the dgemm operands are strided views straight into the
+                     * resident source panel (lda == ldb == wk, same as the
+                     * packed layout) -- no gather copies at all */
+                    Abuf = SV + (Py_ssize_t)update->pivot_pos_first * wk;
+                    Bbuf = SV + (Py_ssize_t)update->target_pos_first * wk;
+                } else {
+                    double *Apack = ctx->snode_update_a;
+                    double *Bpack = ctx->snode_update_b;
+                    for (Py_ssize_t pi = 0; pi < pc; pi++) {
+                        int32_t pivot_srcpos =
+                            ctx->snode_update_pivot_srcpos[update->pivot_begin + pi];
+                        for (int32_t c = 0; c < wk; c++) {
+                            Py_ssize_t lx = ctx->snode_panel_lx[
+                                source_panel + (Py_ssize_t)pivot_srcpos * wk + c];
+                            Apack[(Py_ssize_t)c + pi * (Py_ssize_t)wk] = ctx->Lx[lx];
+                        }
                     }
-                }
-                for (Py_ssize_t ti = 0; ti < tc; ti++) {
-                    int32_t target_srcpos =
-                        ctx->snode_update_target_srcpos[update->target_begin + ti];
-                    for (int32_t c = 0; c < wk; c++) {
-                        Py_ssize_t lx = ctx->snode_panel_lx[
-                            source_panel + (Py_ssize_t)target_srcpos * wk + c];
-                        Bbuf[(Py_ssize_t)c + ti * (Py_ssize_t)wk] = ctx->Lx[lx];
+                    for (Py_ssize_t ti = 0; ti < tc; ti++) {
+                        int32_t target_srcpos =
+                            ctx->snode_update_target_srcpos[update->target_begin + ti];
+                        for (int32_t c = 0; c < wk; c++) {
+                            Py_ssize_t lx = ctx->snode_panel_lx[
+                                source_panel + (Py_ssize_t)target_srcpos * wk + c];
+                            Bpack[(Py_ssize_t)c + ti * (Py_ssize_t)wk] = ctx->Lx[lx];
+                        }
                     }
+                    Abuf = Apack;
+                    Bbuf = Bpack;
                 }
                 if (profile) {
                     double t1 = setup_clock();
@@ -4078,8 +4171,10 @@ static void chol_refactor_supernodal(
                     for (Py_ssize_t ti = update->target_begin; ti < update->target_end; ti++) {
                         int32_t target_srcpos = ctx->snode_update_target_srcpos[ti];
                         int32_t target_rowpos = ctx->snode_update_target_rowpos[ti];
-                        double bval = ctx->Lx[ctx->snode_panel_lx[
-                            source_panel + (Py_ssize_t)target_srcpos]];
+                        double bval = zero_copy_mode
+                            ? SV[target_srcpos]
+                            : ctx->Lx[ctx->snode_panel_lx[
+                                  source_panel + (Py_ssize_t)target_srcpos]];
                         if (update->pivot_cols_contiguous) {
                             double *frow =
                                 F + (Py_ssize_t)target_rowpos * w + update->pivot_col_first;
@@ -4087,8 +4182,10 @@ static void chol_refactor_supernodal(
                                  pi++) {
                                 int32_t pivot_srcpos = ctx->snode_update_pivot_srcpos[pi];
                                 Py_ssize_t local = pi - update->pivot_begin;
-                                double aval = ctx->Lx[ctx->snode_panel_lx[
-                                    source_panel + (Py_ssize_t)pivot_srcpos]];
+                                double aval = zero_copy_mode
+                                    ? SV[pivot_srcpos]
+                                    : ctx->Lx[ctx->snode_panel_lx[
+                                          source_panel + (Py_ssize_t)pivot_srcpos]];
                                 frow[local] -= bval * aval;
                             }
                         } else {
@@ -4096,8 +4193,10 @@ static void chol_refactor_supernodal(
                                  pi++) {
                                 int32_t pivot_srcpos = ctx->snode_update_pivot_srcpos[pi];
                                 int32_t pivot_col = ctx->snode_update_pivot_col[pi];
-                                double aval = ctx->Lx[ctx->snode_panel_lx[
-                                    source_panel + (Py_ssize_t)pivot_srcpos]];
+                                double aval = zero_copy_mode
+                                    ? SV[pivot_srcpos]
+                                    : ctx->Lx[ctx->snode_panel_lx[
+                                          source_panel + (Py_ssize_t)pivot_srcpos]];
                                 F[(Py_ssize_t)target_rowpos * w + pivot_col] -= bval * aval;
                             }
                         }
@@ -4106,16 +4205,24 @@ static void chol_refactor_supernodal(
                     for (Py_ssize_t ti = update->target_begin; ti < update->target_end; ti++) {
                         int32_t target_srcpos = ctx->snode_update_target_srcpos[ti];
                         int32_t target_rowpos = ctx->snode_update_target_rowpos[ti];
+                        const double *brow = SV + (Py_ssize_t)target_srcpos * wk;
                         for (Py_ssize_t pi = update->pivot_begin; pi < update->pivot_end; pi++) {
                             int32_t pivot_srcpos = ctx->snode_update_pivot_srcpos[pi];
                             int32_t pivot_col = ctx->snode_update_pivot_col[pi];
                             double total = 0.0;
-                            for (int32_t c = 0; c < wk; c++) {
-                                Py_ssize_t b_lx = ctx->snode_panel_lx[
-                                    source_panel + (Py_ssize_t)target_srcpos * wk + c];
-                                Py_ssize_t a_lx = ctx->snode_panel_lx[
-                                    source_panel + (Py_ssize_t)pivot_srcpos * wk + c];
-                                total += ctx->Lx[b_lx] * ctx->Lx[a_lx];
+                            if (zero_copy_mode) {
+                                const double *arow = SV + (Py_ssize_t)pivot_srcpos * wk;
+                                for (int32_t c = 0; c < wk; c++) {
+                                    total += brow[c] * arow[c];
+                                }
+                            } else {
+                                for (int32_t c = 0; c < wk; c++) {
+                                    Py_ssize_t b_lx = ctx->snode_panel_lx[
+                                        source_panel + (Py_ssize_t)target_srcpos * wk + c];
+                                    Py_ssize_t a_lx = ctx->snode_panel_lx[
+                                        source_panel + (Py_ssize_t)pivot_srcpos * wk + c];
+                                    total += ctx->Lx[b_lx] * ctx->Lx[a_lx];
+                                }
                             }
                             F[(Py_ssize_t)target_rowpos * w + pivot_col] -= total;
                         }
