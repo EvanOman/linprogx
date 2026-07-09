@@ -1005,3 +1005,25 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   (-26%), wall ~2.8 -> ~1.6s. QUEUED IDEA (own unit, if ken_18 ever
   matters): deterministic fixed-chunk parallel reduction for ken_18's
   root update stream (worker-count-invariant by construction).
+
+- QUARTET UNIT (2026-07-09, exp-panel, merged 4f8c904): decomposition
+  says C IPM is >=95% of wall on all four (fixed overhead is NOT the
+  story). SHIPPED: dense-tail BLAS threshold 400->256
+  (LINPROGX_TAIL_BLAS_MIN; the 400 gate predated the 1e-11 dpotrf
+  ridge). 80bau3b (tail=354, was paying the scalar hand kernel 62x):
+  -31% paired median / -45% quiet (0.196 vs HiGHS ~0.17-0.18 —
+  NEAR-FLIP, needs quiet-box confirmation); ken_11 (tail=336): -11%,
+  FLIPS head-to-head to a 5/5 win (0.234 vs 0.307). 256 is the
+  stability boundary (192/128 flip cre_a's tail and cost +6 iters).
+  Census: no other instance in [256,400). NEGATIVES PINNED: forced
+  supernodal routing on the quartet (80bau3b -40% but matched by the
+  threshold fix; woodw/stocfor3 ties; cre_a +5 iters) — the current
+  factor_flops/8 routing model OVERPREDICTS supernodal by ~7x on
+  stocfor3 because fragmentation bookkeeping scales with n_updates
+  (30k/refactor), not flops. QUEUED (concrete): cheapen the supernodal
+  symbolic build (linear merges vs per-row binary searches in
+  chol_fill_snode_update_maps/chol_find_offset) + add an
+  update-count overhead term to the routing model — stocfor3's
+  supernodal refactor genuinely wins ~0.16s once bookkeeping is paid.
+  woodw is flop-bound (tail wastes 8x flops vs true fill — ordering/
+  fill question); cre_a has no dominant slice (margins 15-30ms).
