@@ -2607,6 +2607,10 @@ typedef struct {
     double prefix_flops;          /* sum of colcount^2 over the sparse prefix */
     double factor_flops;          /* sum of colcount^2 over all of L */
     double *Tdense;               /* tail_len x tail_len, row-major */
+    int tail_dense_valid;         /* 1 iff Tdense holds the current factored
+                                   * tail block (row-wise refactor always sets
+                                   * it; the supernodal path only when the
+                                   * fill-Tdense solve mode is active) */
     /* Fundamental supernode partition of L (consecutive columns sharing
      * lower structure). snode_start has n_snodes+1 entries; supernode s
      * spans columns [snode_start[s], snode_start[s+1]). Foundation for a
@@ -3902,6 +3906,38 @@ static void chol_refactor_dense_columns(
     dense_chol_factor(ctx->cap, kd);
 }
 
+/* PANEL-SOLVE V2 (dense-tail path): the supernodal refactor writes the whole
+ * factor -- including the trailing dense-tail columns -- into the scattered
+ * CSC Lx, but the per-iteration triangular solve wants the tail as one
+ * contiguous row-major block so it can run two dtrsv calls instead of a
+ * column-by-column scalar walk over 2000+ nearly-dense columns. The row-wise
+ * refactor factors that block directly in ctx->Tdense; the supernodal path
+ * never touched Tdense, so the fast dtrsv branch of chol_solve_sparse read a
+ * zero buffer (silent NaN unless the caller forced blas=0). Here we gather the
+ * tail columns of the already-factored Lx into Tdense once per refactor, in
+ * the exact row-major-lower layout the dtrsv path expects
+ * (Tdense[(i-tstart)*tlen + (j-tstart)] == L[i,j]). One linear pass over the
+ * tail nnz; the dense triangle is structurally complete because the dense-tail
+ * split was chosen precisely where the remaining columns fill in fully. */
+static void chol_supernodal_fill_tdense(CholContext *ctx) {
+    int32_t tstart = ctx->tail_start;
+    Py_ssize_t tlen = ctx->tail_len;
+    if (tlen <= 0 || ctx->Tdense == NULL) {
+        return;
+    }
+    double *T = ctx->Tdense;
+    memset(T, 0, (size_t)tlen * (size_t)tlen * sizeof(double));
+    for (int32_t j = tstart; j < ctx->m; j++) {
+        Py_ssize_t col = (Py_ssize_t)(j - tstart);
+        for (Py_ssize_t p = ctx->Lp[j]; p < ctx->Lp[j + 1]; p++) {
+            int32_t i = ctx->Li[p];
+            if (i >= tstart) {
+                T[(Py_ssize_t)(i - tstart) * tlen + col] = ctx->Lx[p];
+            }
+        }
+    }
+}
+
 static void chol_refactor_supernodal(
     CholContext *ctx, CSRMatrixObject *A, const double *csc_values,
     const double *D, double delta) {
@@ -4145,6 +4181,41 @@ static void chol_refactor_supernodal(
             t0 = t1;
         }
     }
+    /* Dense-tail solve mode for the supernodal factor (the row-wise path
+     * always uses the dtrsv tail via its own Tdense). The supernodal panels
+     * leave the whole factor in the scattered CSC Lx; the trailing dense-tail
+     * columns still have to be triangular-solved every IPM iteration.
+     *   default / "2" : keep the tail on the sequential scalar CSC walk. The
+     *                   walk is already contiguous per column and the tail
+     *                   solve is memory-bandwidth-bound, so BLAS-2 dtrsv gives
+     *                   no speedup -- measured slower on maros_r7.
+     *   "1"           : gather the tail into Tdense and run the dtrsv path.
+     *   "0"           : reproduce the historical (broken) baseline where the
+     *                   dtrsv path ran on a stale/zero Tdense and the caller
+     *                   had to fall back to the floored scalar retry.
+     * Modes 1 and 2 both produce a correct first-attempt solve; mode 0 exists
+     * only for A/B measurement against the shipped bug. */
+    static int snode_solve = -2;
+    if (snode_solve == -2) {
+        const char *e = getenv("LINPROGX_SNODE_SOLVE");
+        snode_solve = e != NULL ? atoi(e) : 2;
+    }
+    if (snode_solve == 1) {
+        chol_supernodal_fill_tdense(ctx);
+        ctx->tail_dense_valid = 1;
+    } else if (snode_solve == 0) {
+        /* leave Tdense stale and advertise it as valid: the dtrsv path then
+         * reads garbage exactly as the pre-fix code did. */
+        ctx->tail_dense_valid = 1;
+    } else {
+        /* scalar tail walk over the correct CSC Lx */
+        ctx->tail_dense_valid = 0;
+    }
+    if (profile) {
+        double t1 = setup_clock();
+        t_scatter_lx += t1 - t0;
+        t0 = t1;
+    }
     chol_refactor_dense_columns(ctx, A, csc_values, D);
     if (profile) {
         double t1 = setup_clock();
@@ -4302,6 +4373,8 @@ static void chol_refactor(
             g_refac_copyback += linprogx_monotonic_seconds() - tp0;
         }
     }
+    /* The row-wise refactor factored the tail block directly in Tdense. */
+    ctx->tail_dense_valid = 1;
 
     /* Dense-column low-rank data: U = A_dense sqrt(D_dense),
      * W = M_s^-1 U, capacitance C = I + U'W (dense Cholesky). */
@@ -4391,7 +4464,8 @@ static void chol_solve_sparse(CholContext *ctx, const double *rhs, double *out) 
         const char *e = getenv("LINPROGX_TAIL_DTRSV");
         tail_dtrsv = (e != NULL && atoi(e) == 0) ? 0 : 1;
     }
-    if (tail_dtrsv && g_tail_use_blas && tlen >= 400 && ctx->Tdense != NULL) {
+    if (tail_dtrsv && g_tail_use_blas && tlen >= 400 && ctx->Tdense != NULL &&
+        ctx->tail_dense_valid) {
         ensure_blas_threads();
         int bn = (int)tlen;
         int incx = 1;
