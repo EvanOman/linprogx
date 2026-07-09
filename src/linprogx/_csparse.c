@@ -2665,6 +2665,10 @@ typedef struct {
     int32_t n_snodes;
     int32_t *snode_start;
     int snode_symbolic_ready;
+    Py_ssize_t snode_panel_entries;  /* sum over supernodes of nr*w */
+    Py_ssize_t n_snode_updates_est;  /* (source,target) update pairs */
+    double snode_narrow_flops;       /* sum colcount^2, supernode width < 16 */
+    double snode_wide_flops;         /* sum colcount^2, supernode width >= 16 */
     int32_t *col_snode;          /* column -> supernode id */
     Py_ssize_t *snode_row_ptr;   /* row lists for each supernode panel */
     int32_t *snode_rows;
@@ -2804,20 +2808,6 @@ static int32_t chol_ereach(const CholContext *ctx, int32_t k) {
     return top;
 }
 
-static Py_ssize_t int32_lower_bound(const int32_t *values, Py_ssize_t n, int32_t target) {
-    Py_ssize_t lo = 0;
-    Py_ssize_t hi = n;
-    while (lo < hi) {
-        Py_ssize_t mid = lo + (hi - lo) / 2;
-        if (values[mid] < target) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo;
-}
-
 static void chol_count_snode_update_maps(
     const CholContext *ctx, int32_t source, int32_t target,
     Py_ssize_t *pivot_count, Py_ssize_t *target_count) {
@@ -2833,13 +2823,18 @@ static void chol_count_snode_update_maps(
     const int32_t *target_rows = ctx->snode_rows + target_begin;
     Py_ssize_t pc = 0;
     Py_ssize_t tc = 0;
+    /* both row lists are sorted ascending: one linear merge instead of a
+     * binary search per source row */
+    Py_ssize_t tpos = 0;
     for (Py_ssize_t pos = k1 - k0; pos < src_end - src_begin; pos++) {
         int32_t row = src_rows[pos];
         if (row >= j0 && row < j1) {
             pc++;
         }
-        Py_ssize_t target_pos = int32_lower_bound(target_rows, target_len, row);
-        if (target_pos < target_len && target_rows[target_pos] == row) {
+        while (tpos < target_len && target_rows[tpos] < row) {
+            tpos++;
+        }
+        if (tpos < target_len && target_rows[tpos] == row) {
             tc++;
         }
     }
@@ -2861,6 +2856,7 @@ static void chol_fill_snode_update_maps(
     Py_ssize_t target_len = ctx->snode_row_ptr[target + 1] - target_begin;
     const int32_t *src_rows = ctx->snode_rows + src_begin;
     const int32_t *target_rows = ctx->snode_rows + target_begin;
+    Py_ssize_t tpos = 0;
     for (Py_ssize_t pos = k1 - k0; pos < src_end - src_begin; pos++) {
         int32_t row = src_rows[pos];
         if (row >= j0 && row < j1) {
@@ -2868,10 +2864,12 @@ static void chol_fill_snode_update_maps(
             ctx->snode_update_pivot_col[*pivot_at] = row - j0;
             (*pivot_at)++;
         }
-        Py_ssize_t target_pos = int32_lower_bound(target_rows, target_len, row);
-        if (target_pos < target_len && target_rows[target_pos] == row) {
+        while (tpos < target_len && target_rows[tpos] < row) {
+            tpos++;
+        }
+        if (tpos < target_len && target_rows[tpos] == row) {
             ctx->snode_update_target_srcpos[*target_at] = (int32_t)pos;
-            ctx->snode_update_target_rowpos[*target_at] = (int32_t)target_pos;
+            ctx->snode_update_target_rowpos[*target_at] = (int32_t)tpos;
             (*target_at)++;
         }
     }
@@ -2918,7 +2916,18 @@ static int chol_build_supernode_symbolic(CholContext *ctx) {
     Py_ssize_t *update_count = NULL;
     Py_ssize_t *cursor = NULL;
 
-    ctx->col_snode = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+    if (ctx->col_snode == NULL) {
+        /* normally built during chol_setup for the routing model; rebuild
+         * here only if that allocation failed */
+        ctx->col_snode = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+        if (ctx->col_snode != NULL) {
+            for (int32_t s = 0; s < ns; s++) {
+                for (int32_t j = ctx->snode_start[s]; j < ctx->snode_start[s + 1]; j++) {
+                    ctx->col_snode[j] = s;
+                }
+            }
+        }
+    }
     ctx->snode_row_ptr = calloc((size_t)ns + 1, sizeof(Py_ssize_t));
     ctx->snode_panel_ptr = calloc((size_t)ns + 1, sizeof(Py_ssize_t));
     if (ctx->col_snode == NULL || ctx->snode_row_ptr == NULL ||
@@ -2992,14 +3001,24 @@ static int chol_build_supernode_symbolic(CholContext *ctx) {
             int32_t col = j0 + c;
             Py_ssize_t lx = ctx->Lp[col];
             Py_ssize_t lx_end = ctx->Lp[col + 1];
+            /* rows[] and column col's C pattern are both sorted ascending,
+             * so the (row, col) -> Cx offset map is one linear merge
+             * instead of a binary search per panel entry */
+            Py_ssize_t cx = ctx->Cp[col];
+            Py_ssize_t cx_end = ctx->Cp[col + 1];
             for (Py_ssize_t rpos = 0; rpos < nr; rpos++) {
                 Py_ssize_t dst = panel_base + rpos * (Py_ssize_t)w + c;
-                ctx->snode_panel_cx[dst] = chol_find_offset(ctx, rows[rpos], col);
+                int32_t row = rows[rpos];
+                while (cx < cx_end && ctx->Ci[cx] < row) {
+                    cx++;
+                }
+                ctx->snode_panel_cx[dst] =
+                    (cx < cx_end && ctx->Ci[cx] == row) ? cx : -1;
                 if (rpos < c) {
                     ctx->snode_panel_lx[dst] = -1;
                     continue;
                 }
-                if (lx < lx_end && ctx->Li[lx] == rows[rpos]) {
+                if (lx < lx_end && ctx->Li[lx] == row) {
                     ctx->snode_panel_lx[dst] = lx;
                     lx++;
                 } else {
@@ -3151,9 +3170,16 @@ static int chol_ensure_supernode_symbolic(CholContext *ctx) {
     if (ctx->snode_symbolic_ready < 0) {
         return -1;
     }
+    int debug = getenv("LINPROGX_CHOL_DEBUG") != NULL;
+    double t0 = debug ? linprogx_monotonic_seconds() : 0.0;
     if (chol_build_supernode_symbolic(ctx) != 0) {
         ctx->snode_symbolic_ready = -1;
         return -1;
+    }
+    if (debug) {
+        fprintf(stderr, "snode symbolic build: %.4fs (ns=%d updates=%zd)\n",
+                linprogx_monotonic_seconds() - t0, ctx->n_snodes,
+                ctx->n_snode_updates);
     }
     ctx->snode_symbolic_ready = 1;
     return 0;
@@ -3683,10 +3709,70 @@ static CholContext *chol_setup(
                 }
                 fprintf(stderr,
                         "chol_setup supernodes: m=%d fundamental=%d count=%d "
-                        "mean=%.1f largest=%d relax=%.2f\n",
+                        "mean=%.1f largest=%d relax=%.2f factor_flops=%.3e\n",
                         m, fundamental_ns, ns, (double)m / (double)ns, big,
-                        relax_frac);
+                        relax_frac, ctx->factor_flops);
             }
+        }
+    }
+    /* Cheap structural quantities for the supernodal-vs-row-wise routing
+     * model, computed directly from Lp/Li before (and without) the full
+     * lazy symbolic build: the panel footprint (total resident panel
+     * entries) and the number of (source, target) update pairs, which is
+     * the per-refactor bookkeeping unit that fragmented partitions pay. */
+    ctx->snode_panel_entries = 0;
+    ctx->n_snode_updates_est = 0;
+    ctx->snode_narrow_flops = 0.0;
+    ctx->snode_wide_flops = 0.0;
+    if (ctx->n_snodes > 0) {
+        int32_t ns = ctx->n_snodes;
+        ctx->col_snode = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
+        int32_t *umark = calloc((size_t)ns, sizeof(int32_t));
+        if (ctx->col_snode != NULL && umark != NULL) {
+            for (int32_t s = 0; s < ns; s++) {
+                for (int32_t j = ctx->snode_start[s]; j < ctx->snode_start[s + 1]; j++) {
+                    ctx->col_snode[j] = s;
+                }
+            }
+            for (int32_t s = 0; s < ns; s++) {
+                int32_t j0 = ctx->snode_start[s];
+                int32_t j1 = ctx->snode_start[s + 1];
+                Py_ssize_t w = (Py_ssize_t)(j1 - j0);
+                Py_ssize_t below = ctx->Lp[j1] - ctx->Lp[j1 - 1] - 1;
+                Py_ssize_t nr = w + below;
+                ctx->snode_panel_entries += nr * w;
+                /* colcount(j0+c) == nr - c inside a (relaxed) supernode:
+                 * the union row list is the group's columns plus the
+                 * below-diagonal structure of its last column */
+                double fl = 0.0;
+                for (Py_ssize_t cc = 0; cc < w; cc++) {
+                    double cnt = (double)(nr - cc);
+                    fl += cnt * cnt;
+                }
+                if (w < 16) {
+                    ctx->snode_narrow_flops += fl;
+                } else {
+                    ctx->snode_wide_flops += fl;
+                }
+                for (Py_ssize_t p = ctx->Lp[j1 - 1] + 1; p < ctx->Lp[j1]; p++) {
+                    int32_t t = ctx->col_snode[ctx->Li[p]];
+                    if (t > s && umark[t] != s + 1) {
+                        umark[t] = s + 1;
+                        ctx->n_snode_updates_est++;
+                    }
+                }
+            }
+        } else {
+            free(ctx->col_snode);
+            ctx->col_snode = NULL;
+        }
+        free(umark);
+        if (debug_setup) {
+            fprintf(stderr,
+                    "chol_setup routing: panel_entries=%zd updates=%zd "
+                    "narrow=%.3e wide=%.3e\n",
+                    ctx->snode_panel_entries, ctx->n_snode_updates_est,
+                    ctx->snode_narrow_flops, ctx->snode_wide_flops);
         }
     }
     SETUP_MARK("supernodes");
@@ -4560,11 +4646,55 @@ static int chol_auto_supernodal(const CholContext *ctx) {
     if (ctx->prefix_flops >= 1e8) {
         return 1;
     }
-    if (ctx->tail_len < 512) {
+    if (ctx->tail_len >= 512 &&
+        (double)ctx->m / (double)ctx->n_snodes >= 4.0) {
+        return 1;
+    }
+    /* Refactor cost model (per-refactor milliseconds, machine-calibrated
+     * global constants):
+     *   row-wise    = prefix_Mflop * R(m) + tail_Mflop / kernel_rate
+     *     R(m) ramps 1.0 -> 2.6 as m grows past the cache-resident range
+     *     (the up-looking scatter loses locality for m in the ten-
+     *     thousands: ken_13 measured ~2.5 ms/Mflop at m=11k, osa_14
+     *     ~0.9 at m=2.3k); the dense-tail rate is the same 58x BLAS /
+     *     8x hand-kernel split the tail-selection model uses.
+     *   supernodal  = narrow_Mflop * 1.0 + wide_Mflop / 58
+     *     narrow (width < 16) flops run in the scalar update loops,
+     *     wide flops in dpotrf/dtrsm/dgemm panels.
+     * The scalar-rate calibration (1.0 ms/Mflop) is only trustworthy in
+     * the FINE-GRAINED update regime (narrow flops per update pair
+     * <= 500, the ken/stocfor3 shape); coarse scalar updates (osa/cre
+     * shapes, thousands of flops per pair) measured 2-3x slower per
+     * flop and are excluded rather than mispriced -- measured: osa_30 /
+     * osa_60 / cre_b all lose wall when flipped despite modeled ratios
+     * of 1.3-2.2. Flip only on a decisive (1.3x) and material (0.5ms)
+     * modeled advantage inside the calibrated regime; everything else
+     * keeps the measured status quo. */
+    if (ctx->n_snode_updates_est <= 0) {
         return 0;
     }
-    double mean_width = (double)ctx->m / (double)ctx->n_snodes;
-    return mean_width >= 4.0;
+    double npu = ctx->snode_narrow_flops / (double)ctx->n_snode_updates_est;
+    if (npu > 500.0) {
+        return 0;
+    }
+    double ramp = (double)ctx->m / 12000.0;
+    if (ramp > 1.0) {
+        ramp = 1.0;
+    }
+    double row_ms = ctx->prefix_flops * 1e-6 * (1.0 + 1.6 * ramp);
+    if (ctx->tail_len > 0) {
+        double t = (double)ctx->tail_len;
+        double tail_mflop = t * t * t / 3.0 * 1e-6;
+#ifdef LINPROGX_HAVE_BLAS
+        int tail_blas = ctx->tail_len >= tail_blas_min();
+#else
+        int tail_blas = 0;
+#endif
+        row_ms += tail_mflop / (tail_blas ? 58.0 : 8.0);
+    }
+    double sup_ms = ctx->snode_narrow_flops * 1e-6 +
+                    ctx->snode_wide_flops * 1e-6 / 58.0;
+    return row_ms > 1.3 * sup_ms && row_ms - sup_ms > 0.5;
 }
 
 /* y = (A D A' + delta I) x using the assembled (permuted) matrix. */
