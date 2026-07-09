@@ -1062,3 +1062,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   (0.706 vs 1.076); ken_11 win deepens (0.386 vs 0.547). cre_a/ken_07
   model-positive but under materiality floor. stocfor3 obj shifts 4e-12
   rel (summation order), same iterations, certified.
+
+- FINE-UPDATE KERNEL UNIT (2026-07-09, exp-panel, merged): profile
+  showed the 113ns/update was ~flops (123 fmas/update at 0.92ns/fma),
+  not headers; the fat was per-ELEMENT (6 memory ops/fma). Structural
+  fact: 100.0% of updates on stocfor3 (30,075) and ken_13 (32,403) are
+  srcpos-position-contiguous. SHIPPED: contiguous scalar kernels
+  (implied srcpos, sequential SV reads; wk=1/pc=1, wk=1/pc>1, general
+  shapes; bit-exact by construction; fallback retained). Scalar slice
+  3.4->2.8ms (-18%, 0.76ns/fma ~ FLOOR at ~4 mem ops/fma; irreducible
+  F-scatter irregularity; floor est 2.2-2.5ms — do not squeeze
+  further). stocfor3 vs HiGHS gap now ~8-13% (best pair 0.622 vs
+  0.620 — touching); remaining levers are ITERATION COUNT (45 iters,
+  centering/corrector quality) and the newton-solve slice (~0.22s CSC
+  walks) — algorithm-quality work, not bookkeeping. Fingerprints exact
+  on stocfor3/maros_r7/ken_18.
