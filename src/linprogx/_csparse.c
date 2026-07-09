@@ -6707,8 +6707,36 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             H[j] = h;
             D[j] = 1.0 / h;
         }
+        /* Lagged-factor probe (LINPROGX_IPM_LAG=1, default off): skip every
+         * other refactor in the mid-phase and take quasi-Newton steps on
+         * the stale factor. Deterministic (iteration/mu based). */
+        static int lag_mode = -1;
+        if (lag_mode < 0) {
+            const char *e = getenv("LINPROGX_IPM_LAG");
+            lag_mode = e != NULL ? atoi(e) : 0;
+        }
+        int skip_refactor = lag_mode > 0 && iter > 0 && (iter & 1) != 0 &&
+                            mu < 1e-2 && mu > 1e-4 && chol->n_dense == 0;
         double t_phase = linprogx_monotonic_seconds();
-        chol_refactor_mode(chol, self, csc_vals, D, delta_it, refactor_supernodal);
+        if (skip_refactor) {
+            /* inexact Newton on a stale factor: refresh Cx (and the diag
+             * regularization) so chol_matvec sees the CURRENT normal
+             * equations -- iterative refinement then converges toward the
+             * true Newton step with the stale L as preconditioner.
+             * MEASURED NEGATIVE (2026-07-09, cre_b/cre_d): both the naive
+             * lagged-Jacobian form (stale Cx) and this corrected
+             * inexact-Newton form (fresh Cx, 6 IR rounds), at skip windows
+             * mu in (1e-7,1e-2) and (1e-4,1e-2), reach iteration ~60 near
+             * the baseline path but FAIL CERTIFICATION at exit (cre_d
+             * naive: +59% iterations). The cre endgame does not tolerate
+             * mid-phase step inexactness; a shippable version needs
+             * per-step residual guards with refactor-and-redo, which is
+             * beyond a probe. Kept dark behind LINPROGX_IPM_LAG=1. */
+            chol_assemble_normal(chol, self, csc_vals, D, delta_it);
+            nw.refine_rounds = 6;
+        } else {
+            chol_refactor_mode(chol, self, csc_vals, D, delta_it, refactor_supernodal);
+        }
         t_refactor += linprogx_monotonic_seconds() - t_phase;
 
         /* affine direction */
