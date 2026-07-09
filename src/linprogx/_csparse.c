@@ -36,6 +36,24 @@ static void ensure_blas_threads(void) {
      * (1000-1600); the full core count oversubscribes and is erratic. */
     set_blas_threads(4);
 }
+/* Minimum dense-tail size for the BLAS dpotrf/dtrsv tail kernels; smaller
+ * tails keep the scalar hand kernels. A machine throughput constant
+ * (fork-join + kernel-startup overhead vs t^3/3 work), overridable via
+ * LINPROGX_TAIL_BLAS_MIN for probing. Measured sweep (80bau3b tail=354:
+ * hand kernel 0.354s vs dpotrf 0.196s at identical 62 iterations) moved
+ * the default 400 -> 256. Below ~256 the BLAS win no longer covers the
+ * trajectory risk on small degenerate blocks: cre_a (tail=211) forced
+ * onto dpotrf costs +6 IPM iterations, so 256 also acts as the
+ * stability boundary the old 400 was protecting. */
+static Py_ssize_t tail_blas_min(void) {
+    static Py_ssize_t cached = -1;
+    if (cached < 0) {
+        const char *e = getenv("LINPROGX_TAIL_BLAS_MIN");
+        long parsed = e != NULL ? atol(e) : 0;
+        cached = parsed > 0 ? (Py_ssize_t)parsed : 256;
+    }
+    return cached;
+}
 static void ensure_supernodal_blas_threads(void) {
     /* The supernodal path issues many small panel BLAS calls; one OpenBLAS
      * thread avoids thread-team overhead and measured faster on maros_r7,
@@ -4465,13 +4483,13 @@ static void chol_refactor(
          * on the rare indefinite case dpotrf returns info>0 and we
          * fall back to the hand kernel with its dynamic pivot boost.
          *
-         * Only large tails go to BLAS: below ~400 the dense block is a
-         * negligible share of runtime, and the hand kernel's per-pivot
-         * 1e-12 floor keeps small degenerate blocks (e.g. cre_a's
-         * 140-col tail) on a more stable trajectory than dpotrf's
-         * unfloored factorization. The threshold is a global
-         * throughput calibration, not a per-instance switch. */
-        if (g_tail_use_blas && tlen >= 400) {
+         * Only large tails go to BLAS; smaller tails keep the hand
+         * kernel. The threshold is a global throughput calibration
+         * (LINPROGX_TAIL_BLAS_MIN overrides for probing), not a
+         * per-instance switch. The 1e-11 relative ridge below emulates
+         * the hand kernel's per-pivot floor, so degenerate blocks (the
+         * cre family) stay certifiable on the BLAS path. */
+        if (g_tail_use_blas && tlen >= tail_blas_min()) {
             ensure_blas_threads();
             int blas_n = (int)tlen;
             int blas_info = 0;
@@ -4601,8 +4619,8 @@ static void chol_solve_sparse(CholContext *ctx, const double *rhs, double *out) 
         const char *e = getenv("LINPROGX_TAIL_DTRSV");
         tail_dtrsv = (e != NULL && atoi(e) == 0) ? 0 : 1;
     }
-    if (tail_dtrsv && g_tail_use_blas && tlen >= 400 && ctx->Tdense != NULL &&
-        ctx->tail_dense_valid) {
+    if (tail_dtrsv && g_tail_use_blas && tlen >= tail_blas_min() &&
+        ctx->Tdense != NULL && ctx->tail_dense_valid) {
         ensure_blas_threads();
         int bn = (int)tlen;
         int incx = 1;
