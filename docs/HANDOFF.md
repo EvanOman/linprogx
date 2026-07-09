@@ -1043,3 +1043,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   finish; on pds_10 it CONCENTRATES (top1 -> 1.0). Certificates
   correctly rejected every bad exit (greenbea dual_infeasible at dose
   1e-5); implementation audited clean.
+
+- STOCFOR3/ROUTING UNIT (2026-07-09, exp-panel, merged): symbolic build
+  now linear merges (bit-identical maps; stocfor3 13.9->9.5ms, maros_r7
+  46->22ms, ken_18 81->53ms; chol_find_offset deleted). ROUTING was the
+  real lever: row-wise stocfor3 burned 4.3x CPU (2.40 vs 0.556s,
+  4-thread tail x46 refactors) vs supernodal at identical 45 iters.
+  Cost model (row_ms = prefix_Mflop*R(m) + tail_Mflop/(58|8); sup_ms =
+  narrow*1.0 + wide/58; R(m) cache ramp 1.0->2.6) was FALSIFIED on
+  coarse update streams (osa_30/osa_60/cre_b predicted flips, measured
+  losses: scalar updates at 2-4k flops/pair run 2-3x slower per flop
+  than fine streams) — shipped CONSTRAINED to npu<=500 regime, 1.3x
+  margin, 0.5ms floor; legacy sufficient rules retained. FLIPS:
+  stocfor3 (0.728->0.607 wall, -17%), ken_11, ken_13 (clean pair
+  0.802->0.441). vs HiGHS: stocfor3 ~0.61 vs 0.54-0.58 NARROWED NOT
+  FLIPPED (remaining lever: 113ns/update x 30k fine updates x 46
+  refactors bookkeeping, or iteration count); ken_13 now a 5/5 WIN
+  (0.706 vs 1.076); ken_11 win deepens (0.386 vs 0.547). cre_a/ken_07
+  model-positive but under materiality floor. stocfor3 obj shifts 4e-12
+  rel (summation order), same iterations, certified.
