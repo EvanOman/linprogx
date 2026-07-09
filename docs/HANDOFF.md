@@ -948,3 +948,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   collapse (targets: cre_d < 40k, pds_10 completes under 100k) WITHOUT
   >10% path regressions on greenbea/woodw/stocfor3/80bau3b, and exit
   removal must leave all certificates on c_orig intact.
+
+- PANEL-SOLVE V2 UNIT (2026-07-09, branch exp-panel, merged 0145c8f):
+  investigation found a LATENT BUG dominating maros_r7 — the supernodal
+  refactor never populated ctx->Tdense, so the default supernodal+BLAS
+  route fed zeros to the dtrsv tail solve, NaN'd its first IPM attempt
+  (numerical_error, ~0.4s wasted) and survived only via the blas=False
+  floored retry. FIX: tail_dense_valid flag; row-wise refactor sets it,
+  supernodal leaves the tail on the scalar CSC walk (measured FASTER
+  than gather+dtrsv: 0.44s vs 0.60s — the dense-tail trisolve is
+  BLAS-2 bandwidth-bound, so contiguity buys nothing; the literal
+  panel-solve-v2 premise is empirically FALSE for the tail).
+  LINPROGX_SNODE_SOLVE: 2=scalar default, 1=gather+dtrsv, 0=old bug.
+  maros_r7 2.79s -> 2.21s median (5/5 paired wins, identical 12 iters,
+  objective 1497192.0196); pilot87/cre_b/woodw/80bau3b/stocfor3/cre_a
+  byte-identical (row-wise path untouched). 249 tests green.
+  REMAINING maros_r7 GAP (~2.0-2.1 vs 0.9): refactor-bound
+  (~1.1-1.3s/solve in supernodal refactor) — next lever is refactor
+  cost itself (panel assembly, dpotrf blocking) or a DS route.
