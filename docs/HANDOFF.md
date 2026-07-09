@@ -1133,3 +1133,23 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   QUESTION for a dedicated unit: why does 80bau3b's trajectory shatter
   under one accepted recentering round? Answering it is the only path
   to woodw's force-1 0.102s (-21%).
+
+- CRE PAIR UNIT (2026-07-09, exp-panel, merged): MEASURED-CLOSED for
+  IPM factor economics at current machinery. Profile: every slice at
+  floor (uplook 1.3ns/flop scalar-scatter rate, tail dpotrf 75 GF/s
+  @4thr, t=1707/1654, ~1.6e9 flops); correctors already optimal (record
+  CORRECTED: cre MCC rounds are useful — MCC=0 costs 62->71 / 64->76
+  iters). Direction (a) coarse-stream supernodal REFUTED BY ARITHMETIC:
+  best-case supernodal ~62ms vs row-wise 53ms/refactor even with a
+  perfect coarse kernel (row tail runs at near-peak threaded BLAS —
+  nothing to save). Direction (b) fewer-full-factors: naive lagged
+  Jacobian fails cert/+59% iters; corrected inexact-Newton (fresh Cx,
+  6 Richardson IR rounds, mu-windowed skips) TRACKS THE BASELINE PATH
+  (60 iters vs 62/64) and cuts cre_b ~19% wall but fails exit
+  certification even with skips stopped before the endgame. Probe kept
+  dark (LINPROGX_IPM_LAG, default off, dead conditionals on default
+  path). ENTRY POINT for a hardened build: per-step residual guards
+  with refactor-and-redo (never accept an inexact step that violates
+  the bound), CG instead of Richardson, exact endgame — the 60-iter
+  path-tracking says the physics allows it; the exit says the guards
+  must be real.
