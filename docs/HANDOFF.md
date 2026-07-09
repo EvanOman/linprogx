@@ -988,3 +988,20 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   (i) level-scheduled parallel supernode factorization across etree
   subtrees (determinism achievable: per-panel update order fixed) and
   (ii) fewer refactors (iteration count / factor reuse).
+
+- PARALLEL-FACTOR UNIT (2026-07-09, exp-panel, merged): PERMANENT
+  NEGATIVE for level-scheduled supernode task parallelism — full
+  dependency-DAG analysis (etree_analysis.py) gives speedup ceilings of
+  1.28x on maros_r7 (78% of flops in width-1 levels; last 12 supernodes
+  = 93%, snode 166 alone 38%) and 1.14x on ken_18 (79% of flops = the
+  serial owner-applied root update stream). Machinery not built; do not
+  rebuild without a new etree shape. SHIPPED PIVOT: size-gated per-call
+  OpenBLAS threading (dpotrf/dtrsm/dgemm >= 4e6 flops run 4-thread;
+  symbolic-only gate; LINPROGX_SNODE_BLAS_PAR / _PAR_MIN). maros_r7
+  refactor 59.7->50.8 ms (-15%), wall -4.6% (median 1.601 vs 1.679);
+  run-to-run bit-identity verified x5; PAR=1 restores serial numerics
+  exactly; ken_18 serial by gate (byte-identical); row-wise instances
+  untouched. Session cumulative on maros_r7: refactor 68.7->50.8
+  (-26%), wall ~2.8 -> ~1.6s. QUEUED IDEA (own unit, if ken_18 ever
+  matters): deterministic fixed-chunk parallel reduction for ken_18's
+  root update stream (worker-count-invariant by construction).
