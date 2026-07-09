@@ -6208,7 +6208,19 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     g_solve_tail = 0.0;
 
     int max_mcc = 2;
-    double mcc_ratio = 5.5;
+    /* 3.0 recalibrated 2026-07-09 after this session's factor cheapening
+     * (zero-copy supernodal panels, natural-order maros) shifted every
+     * instance's refactor/solve ratio down: measured force-on matrix put
+     * the corrector-profitable population at ratio >= 3.0 (maros_r7 3.62:
+     * -11% wall / 15->12 iters; pilot87 3.09: -22% / 150->128) and the
+     * corrector-hostile population below it (osa_14 1.67: +10% wall;
+     * 80bau3b 1.32: 62->105 iterations at one round; ken_11 0.37 / ken_13
+     * 0.68: fewer iterations but net wall loss). woodw (1.52) and
+     * stocfor3 (0.38) would mildly gain but are inseparable from the
+     * hostile band on this axis, and no acceptance-strictness setting
+     * (LINPROGX_IPM_MCC_GAMMA sweep 0.05-0.2) rescues the hostile
+     * trajectories -- the damage is invisible at acceptance time. */
+    double mcc_ratio = 3.0;
     {
         const char *mcc_env = getenv("LINPROGX_IPM_MCC");
         if (mcc_env != NULL) {
@@ -6232,6 +6244,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
      * are neutral, maros_r7 mildly gains — the 5.5 threshold keeps only
      * the gaining population enabled. */
     int mcc_budget = 0;
+    Py_ssize_t mcc_accepted = 0; /* accepted corrector rounds (debug stat) */
     {
         double refactor_units;
         if (refactor_supernodal) {
@@ -6246,6 +6259,14 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         if (solve_units > 0.0 &&
             refactor_units >= mcc_ratio * solve_units) {
             mcc_budget = max_mcc;
+        }
+        if (debug) {
+            fprintf(stderr,
+                    "ipm mcc gate: refactor_units=%.3e solve_units=%.3e "
+                    "ratio=%.2f budget=%d\n",
+                    refactor_units, solve_units,
+                    solve_units > 0.0 ? refactor_units / solve_units : -1.0,
+                    mcc_budget);
         }
     }
 
@@ -6878,8 +6899,25 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                     }
                 }
             }
-            if (ap_c < ap || ad_c < ad || ap_c + ad_c < ap + ad + 0.01) {
-                break;
+            {
+                /* Acceptance: both steps must hold and the combined step
+                 * must grow materially. gamma scales the required growth
+                 * with the remaining step headroom (Gondzio-style
+                 * proportional acceptance); gamma=0 reproduces the
+                 * original absolute +0.01 test. */
+                static double mcc_gamma = -1.0;
+                if (mcc_gamma < 0.0) {
+                    const char *e = getenv("LINPROGX_IPM_MCC_GAMMA");
+                    mcc_gamma = e != NULL ? atof(e) : 0.0;
+                }
+                double need = 0.01;
+                double headroom_gain = mcc_gamma * (2.0 - ap - ad);
+                if (headroom_gain > need) {
+                    need = headroom_gain;
+                }
+                if (ap_c < ap || ad_c < ad || ap_c + ad_c < ap + ad + need) {
+                    break;
+                }
             }
             for (Py_ssize_t j = 0; j < n; j++) {
                 dx[j] += dx_a[j];
@@ -6891,6 +6929,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             }
             ap = ap_c;
             ad = ad_c;
+            mcc_accepted++;
         }
 
         ap *= 0.995;
@@ -7044,6 +7083,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         }
     }
     if (debug) {
+        fprintf(stderr, "ipm mcc: budget=%d accepted_rounds=%zd\n",
+                mcc_budget, mcc_accepted);
         fprintf(stderr, "ipm timers: refactor=%.2fs newton_solves=%.2fs\n",
                 t_refactor, t_newton);
         if (g_refac_profile) {
