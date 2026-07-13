@@ -6151,6 +6151,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     double t_refactor = 0.0;
     double t_newton = 0.0;
     double mu_hist[10];
+    Py_ssize_t mu_safeguard_shrinks = 0;
+    Py_ssize_t mu_safeguard_breaks = 0;
     Py_ssize_t last_cleanup_attempt = -1000;
     for (int hh = 0; hh < 10; hh++) {
         mu_hist[hh] = INFINITY;
@@ -7032,6 +7034,66 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
 
         ap *= 0.995;
         ad *= 0.995;
+        /* Endgame mu safeguard (global, fail-closed, deterministic): in the
+         * certificate window (pre-step mu below 1e-7) a degraded affine
+         * direction at breakdown mu can pass the one-sided ratio test with a
+         * near-full dual step and inflate the complementarity products by
+         * orders of magnitude in a single step (measured on 80bau3b under
+         * forced correctors: mu 3.96e-9 -> 2.29e-4 at one iteration, then ~50
+         * extra iterations re-converging). Before committing, compute the
+         * tentative post-step mu over the same complementarity products used
+         * for the barrier parameter; if it would grow past 10x the pre-step
+         * mu, shrink the step (bounded halvings), and if no shrunk step is
+         * safe skip the step entirely so the exit machinery certifies the
+         * current converged iterate rather than mutating it into a worse one.
+         * Two global constants (1e-7 window, 10x blowup); no per-problem
+         * tuning; deterministic arithmetic only. */
+        if (mu < 1e-7) {
+            double pre_mu = mu;
+            int halvings = 0;
+            double post_mu;
+            for (;;) {
+                double post_sum = 0.0;
+                for (Py_ssize_t j = 0; j < n; j++) {
+                    unsigned char kind = bound_kind[j];
+                    if (kind & 1) {
+                        post_sum += (sl[j] + ap * dx[j]) * (zl[j] + ad * dzl[j]);
+                    }
+                    if (kind & 2) {
+                        post_sum += (su[j] - ap * dx[j]) * (zu[j] + ad * dzu[j]);
+                    }
+                }
+                post_mu = post_sum / (double)n_comp;
+                if (post_mu <= 10.0 * pre_mu || halvings >= 3) {
+                    break;
+                }
+                ap *= 0.5;
+                ad *= 0.5;
+                halvings++;
+            }
+            if (post_mu > 10.0 * pre_mu) {
+                /* No safe step within the shrink budget: the direction is
+                 * garbage. Skip the step; the best-iterate restore and exit
+                 * certification below run on the converged iterate. */
+                mu_safeguard_breaks++;
+                if (trace_mode) {
+                    fprintf(stderr,
+                            "SAFEGUARD it=%zd BREAK pre_mu=%.3e post_mu=%.3e "
+                            "ap=%.3e ad=%.3e\n",
+                            (Py_ssize_t)iter, pre_mu, post_mu, ap, ad);
+                }
+                break;
+            }
+            if (halvings > 0) {
+                mu_safeguard_shrinks++;
+                if (trace_mode) {
+                    fprintf(stderr,
+                            "SAFEGUARD it=%zd SHRINK halvings=%d pre_mu=%.3e "
+                            "post_mu=%.3e ap=%.3e ad=%.3e\n",
+                            (Py_ssize_t)iter, halvings, pre_mu, post_mu, ap, ad);
+                }
+            }
+        }
         last_ap = ap;
         last_ad = ad;
         for (Py_ssize_t j = 0; j < n; j++) {
@@ -7183,6 +7245,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     if (debug) {
         fprintf(stderr, "ipm mcc: budget=%d accepted_rounds=%zd\n",
                 mcc_budget, mcc_accepted);
+        fprintf(stderr, "ipm safeguard: shrinks=%zd breaks=%zd\n",
+                mu_safeguard_shrinks, mu_safeguard_breaks);
         fprintf(stderr, "ipm lag: attempts=%zd accepts=%zd redos=%zd\n",
                 lag_attempts, lag_accepts, lag_redos);
         fprintf(stderr, "ipm timers: refactor=%.2fs newton_solves=%.2fs\n",
