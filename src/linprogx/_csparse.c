@@ -222,6 +222,10 @@ static int g_kernel_threads = 1;
  * certificate depends on the per-pivot 1e-12 floor */
 static int g_tail_use_blas = 1;
 
+/* Block width of the block up-looking Cholesky kernel (rows per group and
+ * SIMD lane count of the interleaved accumulator). */
+#define CHOL_BLOCK_MAX 4
+
 /* Refactor phase timers (debug only, guarded by LINPROGX_REFAC_PROFILE). */
 static int g_refac_profile = 0;
 static double g_refac_uplook = 0.0;
@@ -2794,6 +2798,15 @@ typedef struct {
      * produced it, so replaying it is bit-exact. */
     Py_ssize_t *rpat_ptr;
     int32_t *rpat;
+    /* Ascending-column copy of each row's pattern (same rpat_ptr bounds).
+     * The block up-looking kernel processes a group of consecutive rows in
+     * a single merged increasing-index pass, so it needs each row's pattern
+     * sorted by column index rather than in chol_ereach topological order.
+     * NULL until the block kernel is first requested (lazy build). */
+    int32_t *rpat_asc;
+    double *xblock;    /* interleaved block accumulator: xblock[i*B + r] is
+                        * row (block_start+r)'s dense value at index i, for
+                        * the block up-looking kernel (B = CHOL_BLOCK_MAX). */
     double *work;      /* dense accumulator for the factorization */
     double *work2;     /* dense buffer for triangular solves */
     /* Dense-column splitting (Sherman-Morrison-Woodbury): columns whose
@@ -2813,6 +2826,10 @@ typedef struct {
      * into the same CSC storage, so the solves are untouched. */
     int32_t tail_start;           /* first tail column; == m disables */
     int32_t tail_len;
+    int block_gate;               /* 1 when the block up-looking kernel is
+                                   * structurally predicted to pay (saveable
+                                   * scatter-pair fraction >= threshold);
+                                   * computed once at symbolic time */
     double prefix_flops;          /* sum of colcount^2 over the sparse prefix */
     double factor_flops;          /* sum of colcount^2 over all of L */
     double *Tdense;               /* tail_len x tail_len, row-major */
@@ -2896,6 +2913,8 @@ static void chol_free(CholContext *ctx) {
     free(ctx->emark);
     free(ctx->rpat_ptr);
     free(ctx->rpat);
+    free(ctx->rpat_asc);
+    free(ctx->xblock);
     free(ctx->work);
     free(ctx->work2);
     free(ctx->dense_cols);
@@ -4092,6 +4111,150 @@ static CholContext *chol_setup(
         }
     }
 
+    /* --- Block-ability census: how many uplook scatter pairs would be
+     * saved by streaming consecutive rows as a block. Pure structural
+     * analysis of rpat/Lp/tail_start; no numeric effect. For a block of
+     * consecutive rows, a shared pattern column j is walked once over the
+     * union prefix (max walk among block rows) instead of once per row, so
+     * the saved loads on column j are
+     *   (sum of per-row walk lengths) - (max per-row walk length).
+     * walk_k(j) = number of rows k'<k that also have j in pattern (== the
+     * cursor offset row k reads on column j). Restricted to prefix columns
+     * (j < tail_start), the sparse scatter loop the block kernel targets.
+     *
+     * The b=CHOL_BLOCK_MAX saveable fraction is computed unconditionally
+     * (one O(pattern entries) pass at symbolic time) and gates the block
+     * up-looking kernel: below the threshold the shared-stream savings do
+     * not cover the merge overhead (measured: cre_a at 32% loses, 80bau3b/
+     * pilot87 at 44-46% are flat, cre_b at 58% and osa_14 at 70% win), so
+     * the row-at-a-time kernel is kept. Global structural rule; the
+     * threshold is a machine-level calibration, not per-problem tuning. */
+    ctx->block_gate = 0;
+    {
+        int census_verbose = getenv("LINPROGX_BLOCK_CENSUS") != NULL;
+        int32_t ts = ctx->tail_start; /* == m means no dense tail split */
+        int32_t *colcnt = calloc((size_t)m, sizeof(int32_t));
+        int32_t *blk_sum = calloc((size_t)m, sizeof(int32_t));
+        int32_t *blk_max = calloc((size_t)m, sizeof(int32_t));
+        int8_t *intouch = calloc((size_t)m, sizeof(int8_t));
+        int32_t *touched = calloc((size_t)m, sizeof(int32_t));
+        if (colcnt && blk_sum && blk_max && intouch && touched) {
+            if (census_verbose) {
+                /* consecutive-pair nesting census (block-size 2) */
+                Py_ssize_t pairs_total = 0, pairs_nested = 0;
+                Py_ssize_t shared_cols = 0, union_cols = 0;
+                for (int32_t k = 0; k + 1 < m; k += 2) {
+                    Py_ssize_t a0 = ctx->rpat_ptr[k], a1 = ctx->rpat_ptr[k + 1];
+                    Py_ssize_t b0 = ctx->rpat_ptr[k + 1];
+                    Py_ssize_t b1 = ctx->rpat_ptr[k + 2];
+                    Py_ssize_t na = 0, nb = 0, inter = 0;
+                    for (Py_ssize_t s = a0; s < a1; s++) {
+                        int32_t j = ctx->rpat[s];
+                        if (ts == m || j < ts) { colcnt[j] = 1; na++; }
+                    }
+                    for (Py_ssize_t s = b0; s < b1; s++) {
+                        int32_t j = ctx->rpat[s];
+                        if (ts == m || j < ts) {
+                            nb++;
+                            if (colcnt[j] == 1) inter++;
+                        }
+                    }
+                    for (Py_ssize_t s = a0; s < a1; s++) {
+                        int32_t j = ctx->rpat[s];
+                        if (ts == m || j < ts) colcnt[j] = 0;
+                    }
+                    pairs_total++;
+                    Py_ssize_t smaller = na < nb ? na : nb;
+                    if (smaller > 0 && inter == smaller) pairs_nested++;
+                    shared_cols += inter;
+                    union_cols += na + nb - inter;
+                }
+                memset(colcnt, 0, (size_t)m * sizeof(int32_t));
+
+                /* fraction of rows whose rpat is already ascending */
+                Py_ssize_t rows_with_pat = 0, rows_ascending = 0;
+                for (int32_t k = 0; k < m; k++) {
+                    Py_ssize_t s0 = ctx->rpat_ptr[k], s1 = ctx->rpat_ptr[k + 1];
+                    if (s1 <= s0) continue;
+                    rows_with_pat++;
+                    int asc = 1;
+                    for (Py_ssize_t s = s0 + 1; s < s1; s++) {
+                        if (ctx->rpat[s] <= ctx->rpat[s - 1]) { asc = 0; break; }
+                    }
+                    rows_ascending += asc;
+                }
+                fprintf(stderr,
+                        "BLOCK_CENSUS rpat_order: rows_with_pat=%zd "
+                        "ascending=%zd (%.1f%%)\n",
+                        rows_with_pat, rows_ascending,
+                        rows_with_pat
+                            ? 100.0 * (double)rows_ascending / rows_with_pat
+                            : 0.0);
+                fprintf(stderr, "BLOCK_CENSUS m=%d tail_start=%d\n", m, ts);
+                fprintf(stderr,
+                        "BLOCK_CENSUS pair_nesting: pairs=%zd nested=%zd "
+                        "(%.1f%%) shared_cols=%zd union_cols=%zd "
+                        "overlap=%.1f%%\n",
+                        pairs_total, pairs_nested,
+                        pairs_total
+                            ? 100.0 * (double)pairs_nested / pairs_total : 0.0,
+                        shared_cols, union_cols,
+                        union_cols
+                            ? 100.0 * (double)shared_cols / union_cols : 0.0);
+            }
+
+            /* scatter-pair savings; b=CHOL_BLOCK_MAX always (sets the gate),
+             * smaller sizes only for the verbose census */
+            for (int32_t b = census_verbose ? 2 : CHOL_BLOCK_MAX;
+                 b <= CHOL_BLOCK_MAX; b++) {
+                memset(colcnt, 0, (size_t)m * sizeof(int32_t));
+                double W = 0.0, saved = 0.0;
+                for (int32_t bt = 0; bt < m; bt += b) {
+                    int32_t ntouch = 0;
+                    int32_t kend = bt + b < m ? bt + b : m;
+                    for (int32_t k = bt; k < kend; k++) {
+                        for (Py_ssize_t s = ctx->rpat_ptr[k];
+                             s < ctx->rpat_ptr[k + 1]; s++) {
+                            int32_t j = ctx->rpat[s];
+                            if (!(ts == m || j < ts)) continue;
+                            int32_t w = colcnt[j];
+                            W += (double)w;
+                            if (!intouch[j]) {
+                                intouch[j] = 1;
+                                touched[ntouch++] = j;
+                            }
+                            blk_sum[j] += w;
+                            if (w > blk_max[j]) blk_max[j] = w;
+                            colcnt[j]++;
+                        }
+                    }
+                    for (int32_t t = 0; t < ntouch; t++) {
+                        int32_t j = touched[t];
+                        saved += (double)(blk_sum[j] - blk_max[j]);
+                        blk_sum[j] = 0;
+                        blk_max[j] = 0;
+                        intouch[j] = 0;
+                    }
+                }
+                if (b == CHOL_BLOCK_MAX) {
+                    ctx->block_gate = W > 0.0 && saved >= 0.5 * W;
+                }
+                if (census_verbose) {
+                    fprintf(stderr,
+                            "BLOCK_CENSUS b=%d scatter_pairs=%.0f "
+                            "saveable=%.0f (%.1f%%) gate=%d\n",
+                            b, W, saved, W > 0 ? 100.0 * saved / W : 0.0,
+                            b == CHOL_BLOCK_MAX ? ctx->block_gate : -1);
+                }
+            }
+        }
+        free(colcnt);
+        free(blk_sum);
+        free(blk_max);
+        free(intouch);
+        free(touched);
+    }
+
     free(head);
     free(mark);
     free(colbuf);
@@ -4770,6 +4933,280 @@ static void chol_refactor_supernodal(
     }
 }
 
+/* ===================================================================== *
+ * Block up-looking kernel.
+ *
+ * The row-at-a-time up-looking Cholesky is bound by the dependent random
+ * loads of each pattern column's (Li, Lx) entries. Consecutive rows share
+ * most of their elimination pattern, so this kernel processes a group of
+ * B consecutive rows as one block: each shared pattern column's entry
+ * stream is walked ONCE and B per-row accumulators are updated together,
+ * amortizing the random-load stream across the block.
+ *
+ * The block is processed in a single merged pass over the union of the
+ * rows' patterns in ascending column index (a valid up-looking elimination
+ * order: every dependency runs low index -> high index). Each row keeps its
+ * own accumulator column and its own diagonal, and the per-column scatter
+ * order is unchanged, so in EXACT arithmetic the factor is identical to the
+ * row-at-a-time path. Because the columns are visited in ascending-index
+ * order rather than chol_ereach topological order, the floating-point
+ * rounding differs, so the result is outcome-identical (same factor in
+ * exact arithmetic; same IPM trajectory) rather than bit-identical.
+ * LINPROGX_UPLOOK_BLOCK=0/1 restores the bit-exact row-at-a-time path.
+ * ===================================================================== */
+
+/* Lazily build the ascending-column pattern copy and the interleaved block
+ * accumulator. Returns 0 on success, -1 on allocation failure (caller then
+ * falls back to the row-at-a-time path). */
+static int chol_ensure_block(CholContext *ctx) {
+    if (ctx->rpat_asc != NULL && ctx->xblock != NULL) {
+        return 0;
+    }
+    int32_t m = ctx->m;
+    if (ctx->rpat_asc == NULL) {
+        Py_ssize_t npat = ctx->rpat_ptr[m];
+        int32_t *asc = malloc((size_t)(npat > 0 ? npat : 1) * sizeof(int32_t));
+        if (asc == NULL) {
+            return -1;
+        }
+        for (int32_t k = 0; k < m; k++) {
+            Py_ssize_t s0 = ctx->rpat_ptr[k];
+            Py_ssize_t len = ctx->rpat_ptr[k + 1] - s0;
+            for (Py_ssize_t t = 0; t < len; t++) {
+                asc[s0 + t] = ctx->rpat[s0 + t];
+            }
+            if (len > 1) {
+                qsort(asc + s0, (size_t)len, sizeof(int32_t), cmp_int32);
+            }
+        }
+        ctx->rpat_asc = asc;
+    }
+    if (ctx->xblock == NULL) {
+        double *xb = calloc((size_t)m * CHOL_BLOCK_MAX, sizeof(double));
+        if (xb == NULL) {
+            return -1;
+        }
+        ctx->xblock = xb;
+    }
+    return 0;
+}
+
+/* Fused processing of one merged pattern column j for the members of the
+ * current block that contain it. rlist[0..rc) holds the member SLOTS (in
+ * ascending row order) whose pattern includes column j; lkj[slot] holds
+ * that member's L[k][j] value (already divided by L[j][j]); lkj is zero for
+ * non-member slots so the wide shared loop leaves them untouched. B is the
+ * runtime block stride into xblock. */
+static inline void chol_block_column(
+    CholContext *ctx, int32_t j, const int32_t *rlist, int rc,
+    const double *lkj) {
+    Py_ssize_t base = ctx->Lp[j];
+    int32_t cur = ctx->cursor[j];
+    Py_ssize_t end = base + cur;
+    const int32_t *Li = ctx->Li;
+    const double *Lx = ctx->Lx;
+    double *xblock = ctx->xblock;
+    /* Shared pre-block entries: walked once, all CHOL_BLOCK_MAX accumulator
+     * lanes updated. The fixed-width inner loop auto-vectorizes to a single
+     * FMA; inactive lanes carry lkj == 0 and are no-ops. The accumulator
+     * stride is CHOL_BLOCK_MAX so one index's lanes share a cache line. */
+    for (Py_ssize_t p = base + 1; p < end; p++) {
+        int32_t idx = Li[p];
+        double v = Lx[p];
+        double *xb = xblock + (Py_ssize_t)idx * CHOL_BLOCK_MAX;
+        for (int32_t r = 0; r < CHOL_BLOCK_MAX; r++) {
+            xb[r] -= v * lkj[r];
+        }
+    }
+    /* Block-internal entries: each member writes its L[k][j], and later
+     * members in the same block walk it (the genuine intra-block
+     * dependency). Ascending member order matches the ascending Li layout
+     * built at symbolic time. */
+    for (int t = 0; t < rc; t++) {
+        int32_t slot = rlist[t];
+        for (Py_ssize_t p = base + cur; p < end; p++) {
+            int32_t idx = Li[p];
+            xblock[(Py_ssize_t)idx * CHOL_BLOCK_MAX + slot] -= Lx[p] * lkj[slot];
+        }
+        ctx->Lx[end] = lkj[slot];
+        end++;
+    }
+    ctx->cursor[j] = (int32_t)(end - base);
+}
+
+/* Block up-looking factorization of the sparse prefix and tail rows. Mirrors
+ * the row-at-a-time loop in chol_refactor but groups B consecutive rows.
+ * Blocks never straddle tail_start. */
+static void chol_uplook_block(CholContext *ctx, int32_t B) {
+    int32_t m = ctx->m;
+    int32_t tstart = ctx->tail_start;
+    double *T = ctx->Tdense;
+    Py_ssize_t tlen = ctx->tail_len;
+    double *xblock = ctx->xblock;
+    const Py_ssize_t *rpat_ptr = ctx->rpat_ptr;
+    const int32_t *rpat_asc = ctx->rpat_asc;
+    const Py_ssize_t *Cp = ctx->Cp;
+    const int32_t *Ci = ctx->Ci;
+    const double *Cx = ctx->Cx;
+
+    int32_t members[CHOL_BLOCK_MAX];
+    Py_ssize_t cs[CHOL_BLOCK_MAX], ce[CHOL_BLOCK_MAX];
+    double dacc[CHOL_BLOCK_MAX];
+    double lkj[CHOL_BLOCK_MAX];
+    int32_t rlist[CHOL_BLOCK_MAX];
+
+    /* --- prefix-row blocks: rows [0, tstart) --- */
+    for (int32_t bstart = 0; bstart < tstart; bstart += B) {
+        int32_t bcount = bstart + B <= tstart ? B : tstart - bstart;
+        for (int r = 0; r < bcount; r++) {
+            int32_t k = bstart + r;
+            members[r] = k;
+            for (Py_ssize_t p = Cp[k]; p < Cp[k + 1]; p++) {
+                int32_t i = Ci[p];
+                if (i <= k) {
+                    xblock[(Py_ssize_t)i * CHOL_BLOCK_MAX + r] = Cx[p];
+                }
+            }
+            dacc[r] = xblock[(Py_ssize_t)k * CHOL_BLOCK_MAX + r];
+            xblock[(Py_ssize_t)k * CHOL_BLOCK_MAX + r] = 0.0;
+            cs[r] = rpat_ptr[k];
+            ce[r] = rpat_ptr[k + 1];
+        }
+        int fin = 0; /* next member slot to finalize */
+        for (;;) {
+            /* min front column across active members */
+            int32_t jmin = INT32_MAX;
+            for (int r = 0; r < bcount; r++) {
+                if (cs[r] < ce[r] && rpat_asc[cs[r]] < jmin) {
+                    jmin = rpat_asc[cs[r]];
+                }
+            }
+            if (jmin == INT32_MAX) {
+                break;
+            }
+            /* finalize members whose own index is <= jmin (exhausted) */
+            while (fin < bcount && members[fin] <= jmin) {
+                double d = dacc[fin];
+                if (d < 1e-12) {
+                    d = 1e-12;
+                }
+                ctx->Lx[ctx->Lp[members[fin]]] = sqrt(d);
+                fin++;
+            }
+            /* gather members holding column jmin (ascending slot order) */
+            int rc = 0;
+            for (int r = 0; r < CHOL_BLOCK_MAX; r++) {
+                lkj[r] = 0.0;
+            }
+            double ljj = ctx->Lx[ctx->Lp[jmin]];
+            for (int r = 0; r < bcount; r++) {
+                if (cs[r] < ce[r] && rpat_asc[cs[r]] == jmin) {
+                    double val = xblock[(Py_ssize_t)jmin * CHOL_BLOCK_MAX + r];
+                    double l = val / ljj;
+                    lkj[r] = l;
+                    xblock[(Py_ssize_t)jmin * CHOL_BLOCK_MAX + r] = 0.0;
+                    dacc[r] -= l * l;
+                    rlist[rc++] = r;
+                    cs[r]++;
+                }
+            }
+            chol_block_column(ctx, jmin, rlist, rc, lkj);
+        }
+        while (fin < bcount) {
+            double d = dacc[fin];
+            if (d < 1e-12) {
+                d = 1e-12;
+            }
+            ctx->Lx[ctx->Lp[members[fin]]] = sqrt(d);
+            fin++;
+        }
+    }
+
+    /* --- tail-row blocks: rows [tstart, m) --- */
+    for (int32_t bstart = tstart; bstart < m; bstart += B) {
+        int32_t bcount = bstart + B <= m ? B : m - bstart;
+        for (int r = 0; r < bcount; r++) {
+            int32_t k = bstart + r;
+            members[r] = k;
+            for (Py_ssize_t p = Cp[k]; p < Cp[k + 1]; p++) {
+                int32_t i = Ci[p];
+                if (i <= k) {
+                    xblock[(Py_ssize_t)i * CHOL_BLOCK_MAX + r] = Cx[p];
+                }
+            }
+            dacc[r] = xblock[(Py_ssize_t)k * CHOL_BLOCK_MAX + r];
+            xblock[(Py_ssize_t)k * CHOL_BLOCK_MAX + r] = 0.0;
+            cs[r] = rpat_ptr[k];
+            ce[r] = rpat_ptr[k + 1];
+        }
+        for (;;) {
+            int32_t jmin = INT32_MAX;
+            for (int r = 0; r < bcount; r++) {
+                /* tail rows only scatter prefix columns (< tstart); their
+                 * ascending pattern has any j >= tstart at the tail, so a
+                 * front >= tstart means that member is done for this pass */
+                if (cs[r] < ce[r] && rpat_asc[cs[r]] < tstart
+                    && rpat_asc[cs[r]] < jmin) {
+                    jmin = rpat_asc[cs[r]];
+                }
+            }
+            if (jmin == INT32_MAX) {
+                break;
+            }
+            int rc = 0;
+            for (int r = 0; r < CHOL_BLOCK_MAX; r++) {
+                lkj[r] = 0.0;
+            }
+            double ljj = ctx->Lx[ctx->Lp[jmin]];
+            for (int r = 0; r < bcount; r++) {
+                if (cs[r] < ce[r] && rpat_asc[cs[r]] == jmin) {
+                    double val = xblock[(Py_ssize_t)jmin * CHOL_BLOCK_MAX + r];
+                    double l = val / ljj;
+                    lkj[r] = l;
+                    xblock[(Py_ssize_t)jmin * CHOL_BLOCK_MAX + r] = 0.0;
+                    dacc[r] -= l * l;
+                    rlist[rc++] = r;
+                    cs[r]++;
+                }
+            }
+            chol_block_column(ctx, jmin, rlist, rc, lkj);
+        }
+        /* dump leftover Schur-corrected tail entries into Tdense */
+        for (int r = 0; r < bcount; r++) {
+            int32_t k = members[r];
+            double *trow = T + (Py_ssize_t)(k - tstart) * tlen;
+            for (int32_t i = tstart; i < k; i++) {
+                trow[i - tstart] = xblock[(Py_ssize_t)i * CHOL_BLOCK_MAX + r];
+                xblock[(Py_ssize_t)i * CHOL_BLOCK_MAX + r] = 0.0;
+            }
+            trow[k - tstart] = dacc[r];
+        }
+    }
+}
+
+/* Read the block knob once. LINPROGX_UPLOOK_BLOCK: unset = auto (block
+ * kernel at width CHOL_BLOCK_MAX when the symbolic census gate predicts a
+ * win); 0/1 = force row-at-a-time; 2..MAX = force the block kernel at that
+ * width (bypasses the gate, for probing). *forced reports whether an
+ * explicit width was requested. */
+static int32_t chol_block_size(int *forced) {
+    static int32_t cached_b = -1;
+    static int cached_forced = 0;
+    if (cached_b < 0) {
+        const char *e = getenv("LINPROGX_UPLOOK_BLOCK");
+        int32_t b = e != NULL ? atoi(e) : CHOL_BLOCK_MAX;
+        if (b < 2) {
+            b = 0;
+        } else if (b > CHOL_BLOCK_MAX) {
+            b = CHOL_BLOCK_MAX;
+        }
+        cached_forced = e != NULL && b >= 2;
+        cached_b = b;
+    }
+    *forced = cached_forced;
+    return cached_b;
+}
+
 /* Numeric refactorization with diagonal D and regularization delta, using
  * the provided CSC value array (so callers can factor a rescaled operator
  * over the same pattern). Tiny or negative pivots are boosted (dynamic
@@ -4812,6 +5249,12 @@ static void chol_refactor(
         const char *e = getenv("LINPROGX_UPLOOK_EREACH");
         force_ereach = e != NULL ? atoi(e) : 0;
     }
+    int block_forced = 0;
+    int32_t block_b = force_ereach ? 0 : chol_block_size(&block_forced);
+    if (block_b >= 2 && (block_forced || ctx->block_gate)
+        && chol_ensure_block(ctx) == 0) {
+      chol_uplook_block(ctx, block_b);
+    } else {
     if (force_ereach) {
         memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
     }
@@ -4878,6 +5321,7 @@ static void chol_refactor(
             trow[k - tstart] = d;
         }
     }
+    } /* end row-at-a-time else */
     if (g_refac_profile) {
         double now = linprogx_monotonic_seconds();
         g_refac_uplook += now - tp0;
@@ -7416,15 +7860,15 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 lag_attempts, lag_accepts, lag_redos);
         fprintf(stderr, "ipm timers: refactor=%.2fs newton_solves=%.2fs\n",
                 t_refactor, t_newton);
-        if (g_refac_profile) {
-            fprintf(stderr, "refac phases: assemble=%.3f uplook=%.3f "
-                    "dpotrf=%.3f copyback=%.3f solve_tail=%.3f\n",
-                    g_refac_assemble, g_refac_uplook, g_refac_dpotrf,
-                    g_refac_copyback, g_solve_tail);
-        }
         fprintf(stderr, "ipm exit: status=%s best_gap=%.3e best_pres=%.3e "
                 "best_raw=%.3e best_dres=%.3e best_mu=%.3e\n",
                 status, best_gap, best_pres, best_raw_pres, best_dres, best_mu);
+    }
+    if (g_refac_profile) {
+        fprintf(stderr, "refac phases: assemble=%.3f uplook=%.3f "
+                "dpotrf=%.3f copyback=%.3f solve_tail=%.3f\n",
+                g_refac_assemble, g_refac_uplook, g_refac_dpotrf,
+                g_refac_copyback, g_solve_tail);
     }
     {
         int finite = 1;
