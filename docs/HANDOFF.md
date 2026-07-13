@@ -1207,3 +1207,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   bug-hunt — 80bau3b under MCC-1 would be ~53 iters (9 FASTER than
   today) if the endgame failed closed; repro
   LINPROGX_IPM_TRACE=1 LINPROGX_IPM_MCC=1 LINPROGX_IPM_MCC_RATIO=0.0001.
+
+- ENDGAME DETONATION DIAGNOSED (2026-07-12, exp-panel trace merged):
+  the mu explosion is an UNBOUNDED DUAL STEP AT BREAKDOWN MU, not the
+  exit chain — at mu~4e-9 the affine direction degrades (it=52
+  aff=0.000/0.531), the step ratio test blocks only NEGATIVE dz
+  components, and full ad=1.0 steps on garbage directions inflate
+  zl/zu (mu 3.96e-9 -> 2.29e-4). Exit-window timing decides who
+  detonates: the corrector face reaches breakdown mu without the exit
+  gates firing in the eligibility window; the OFF path exits first.
+  Dual cleanups mutate only y/aty (cannot move mu); primal polish
+  unverified but unlikely. SCOPED FIX (fresh-context unit): mu
+  safeguard on the step — when mu < ~1e-7 (certificate window), reject
+  any tentative step whose post-step mu exceeds ~10x pre-step mu
+  (recompute is one cheap pass); shrink ap/ad or force an exit attempt
+  instead. Deterministic, global. Acceptance: 80bau3b MCC-1 ~53 iters
+  certified; then re-run the MCC matrix and re-derive the gate below
+  3.0 (woodw 36->29, stocfor3 45->35, cre_a 36->28 become reachable).
+  Check pilot87/osa tails for the same mu-jump signature.
