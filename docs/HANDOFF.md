@@ -1316,3 +1316,17 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   Remaining pds paths: fixed-step Halpern program, or DS
   pricing-locality program. Side notes: qap12 is CGLS-dominated
   (1.41/1.70s); PDHG debug=1 costs 10x.
+
+- KNIFE-EDGE CERTIFICATION (2026-07-13, exp-panel, merged; paired
+  7-run protocol, the honest scoreboard): degen3 WIN 0.80 (7/7);
+  osa_14 TIE 1.00 (4/7); LOSSES stocfor3 1.07->1.03 after this unit
+  (2/7 wins, mins 576 vs 580), 80bau3b 1.13->1.07 (mins dead-tied
+  178.0/178.1), cre_a 1.23->1.22. SHIPPED: mu-gated round-2 IR
+  (bit-exact no-op while mu>1e-5, sha256-verified on x AND y across
+  8 instances; ~1% wall) + BUGFIX: supernodal kwarg 'p'-parse coerced
+  -1(auto) to forced-on (now 'i'). MEASURED DEAD for this band:
+  wrapper overhead (~5%), tail-boundary move (+6 iters), forced
+  supernodal on cre_a (-14ms but +5 iters and per-problem). The band's
+  remaining sized levers are PROGRAM-scale: uplook-prefix BLAS-ing
+  (cre_a 22ms ceiling; cre_b 1.95s uplook is the same lever at 100x
+  the payoff) and centering/iteration-count work.
