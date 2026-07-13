@@ -1277,3 +1277,24 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   cre_a 1.3x (no dominant slice). Note single-shot suite variance vs
   the paired protocol: flips are certified ONLY by paired 5-run
   interleaved; the suite is the coverage/aggregate record.
+
+- LU STEP 2 — TRUE FORREST-TOMLIN (2026-07-13, exp-leaving, dark
+  LINPROGX_DS_FT=1, NOT yet ported to perf — port when the program
+  ships): the existing "FT etas" were PFI; true FT built (~600 lines:
+  L fixed, U kept triangular via time-stamped deletions + spikes +
+  row-eta file; spike-diagonal stability reject -> refactor, RARE
+  everywhere — the closing negative did not materialize). PROVEN:
+  cre_d 210->102s (-51%), woodw -19%, chain growth eliminated
+  (btran 205->60us/pivot on cre_d), refac cadence 51->277 on greenbea.
+  BLOCKERS: (1) prototype solves fall back to dense staging (O(m)
+  scans) losing Gilbert-Peierls hyper-sparsity -> stocfor3 +44%,
+  80bau3b +35%; (2) greenbea +21.5% iteration drift (FP path luck at
+  EXPAND ties; objective unchanged) breaches the 10% gate. New cadence
+  census under FT: diag_ratio-limited (31/40), fill guard stops
+  binding; cre_d pinned on the n_updates>=500 hard cap. STEP 3:
+  (a) hyper-sparse FT solves (virtualize U' adjacency inside the
+  Gilbert-Peierls reach), (b) greenbea drift study (unlucky ties vs
+  systematic), (c) update-cap knob (FT flat solves make higher caps
+  safe). greenbea trajectory: 2.89 -> ~2.5 (step 1) -> ~2.2 projected
+  drift-neutral FT -> ~1.9 with (a); <=1.5 needs the btran/scatter
+  slices too.
