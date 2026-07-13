@@ -1242,3 +1242,23 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   sits in [2.0,3.0)). The hostile band was economics, not correctness.
   THE CORRECTOR/ITERATION-COUNT AXIS IS FULLY MAPPED AND CLOSED:
   safeguard for robustness, 3.0 for economics, matrix on record.
+
+- LU PROGRAM STEP 1 (2026-07-13, exp-leaving 0feb107+4046675+test,
+  ported to perf): CADENCE ECONOMICS MEASURED. Fill guard 4x is
+  CORRECTLY TUNED (6x: +18% iters, 8x/12x also net-lose — eta solve
+  growth beats refac amortization; curve on record). THE WIN: the
+  diag-ratio stability guard (1e6) fired on harmless pivot-magnitude
+  spread = 47% of greenbea's refactorizations; default now 1e8 —
+  greenbea -12.6% paired wall (~2.5s projected clean from 2.89),
+  certified/deterministic, 80bau3b -2.3% iters, others path-identical.
+  Cycle fixture routing consequence: DS-early now SOLVES cycle
+  directly (resid 3.6e-12, 913 pivots) where it previously failed into
+  the IPM rescue — test updated to assert the accuracy contract.
+  NEGATIVES PINNED: fused pivot-search walks (-11%, L1-hot re-reads);
+  cadence stretching beyond diag=1e8 (fill curve all-negative).
+  STEP 2 TARGETS (both point at the same machinery): Forrest-Tomlin
+  updates (U factored, no eta chains -> flat solves + rarer refacs;
+  the remaining 90us/pivot btran/ftran fattens ~600 nnz/update) and a
+  Suhl-style pivot-search rule (85% of factorize is candidate-volume
+  at the 4ns/entry memory floor). greenbea trajectory: 3.80 (session
+  start) -> 2.89 (rate unit) -> ~2.5 (this unit); <=1.5 needs step 2.
