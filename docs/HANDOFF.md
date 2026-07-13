@@ -1374,3 +1374,16 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   grid (tol x FT x dtau) on public greenbea + cycle — if FT wins at
   the matched config, FT ships as a ROUTE setting rather than a kwarg
   default.
+
+- FT PROGRAM SHIPPED (2026-07-13, exp-leaving 8a1fedf ported to perf):
+  route-config grid killed the tol hypothesis (tol irrelevant; harmful
+  at expand=0+FT) and found the real lever stack: expand=1 (routes
+  already had it on perf) + FT default ON + dtau default 5e-11 + wmax
+  3e5. VERIFIED ON CANONICAL: greenbea public 2.361s certified
+  (10,665 iters, resid 6.1e-8; was 3.10 pre-ship, 3.80 at session
+  start), cycle 844 pivots / 3.6e-12 (better than the 913 baseline),
+  direct battery woodw -21% / stocfor3 -30% / cre_d -11% (129s), 249
+  green, deterministic. The LU program (steps 1-4) is COMPLETE: PFI
+  chains eliminated as the DS bottleneck. greenbea remainder vs HiGHS
+  0.26: ~9x — next levers are the Suhl-style pivot-search rule
+  (factorize kernel volume) and anything that cuts the 10.6k count.
