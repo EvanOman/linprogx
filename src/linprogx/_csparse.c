@@ -2786,6 +2786,14 @@ typedef struct {
     int32_t *estack;   /* ereach scratch */
     int32_t *epattern; /* ereach result */
     int32_t *emark;
+    /* Cached per-row elimination patterns: the sparsity pattern is fixed
+     * across every refactor of the same problem, so the etree walk
+     * (chol_ereach) is run once at symbolic time and its exact
+     * topological output recorded here. Row k's pattern occupies
+     * rpat[rpat_ptr[k] .. rpat_ptr[k+1]) in the same order chol_ereach
+     * produced it, so replaying it is bit-exact. */
+    Py_ssize_t *rpat_ptr;
+    int32_t *rpat;
     double *work;      /* dense accumulator for the factorization */
     double *work2;     /* dense buffer for triangular solves */
     /* Dense-column splitting (Sherman-Morrison-Woodbury): columns whose
@@ -2886,6 +2894,8 @@ static void chol_free(CholContext *ctx) {
     free(ctx->estack);
     free(ctx->epattern);
     free(ctx->emark);
+    free(ctx->rpat_ptr);
+    free(ctx->rpat);
     free(ctx->work);
     free(ctx->work2);
     free(ctx->dense_cols);
@@ -3790,14 +3800,46 @@ static CholContext *chol_setup(
         ctx->Li[ctx->Lp[k]] = k;
         ctx->cursor[k] = 1;
     }
+    /* Record every row's elimination pattern while it is enumerated: the
+     * pattern is fixed for the life of the context, so each refactor can
+     * replay rpat instead of re-walking the elimination tree. Total size
+     * is exactly the below-diagonal count of L. */
+    ctx->rpat_ptr = calloc((size_t)m + 1, sizeof(Py_ssize_t));
+    ctx->rpat = calloc((size_t)(ctx->Lp[m] - m) + 1, sizeof(int32_t));
+    if (ctx->rpat_ptr == NULL || ctx->rpat == NULL) {
+        goto fail;
+    }
     for (int32_t k = 0; k < m; k++) {
         int32_t top = chol_ereach(ctx, k);
+        Py_ssize_t at = ctx->rpat_ptr[k];
         for (int32_t s = top; s < m; s++) {
             int32_t j = ctx->epattern[s];
             ctx->Li[ctx->Lp[j] + ctx->cursor[j]++] = k;
+            ctx->rpat[at++] = j;
         }
+        ctx->rpat_ptr[k + 1] = at;
     }
     memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
+    if (getenv("LINPROGX_CHOL_DEBUG") != NULL) {
+        /* per-refactor uplook anatomy: pattern entries = one division +
+         * one short scatter loop each; pairs = scatter flops / 2 */
+        Py_ssize_t prefix_entries = 0;
+        double prefix_pairs = 0.0;
+        for (int32_t k = 0; k < m; k++) {
+            for (Py_ssize_t s = ctx->rpat_ptr[k]; s < ctx->rpat_ptr[k + 1]; s++) {
+                int32_t j = ctx->rpat[s];
+                if (j < ctx->tail_start || ctx->tail_start == 0) {
+                    prefix_entries++;
+                    prefix_pairs += (double)(ctx->Lp[j + 1] - ctx->Lp[j]);
+                }
+            }
+        }
+        fprintf(stderr,
+                "chol_setup rpat: total_entries=%zd prefix_entries=%zd "
+                "mean_col_len=%.2f\n",
+                (Py_ssize_t)ctx->rpat_ptr[m], prefix_entries,
+                prefix_entries > 0 ? prefix_pairs / (double)prefix_entries : 0.0);
+    }
     SETUP_MARK("li-fill");
 
     /* --- fundamental supernode partition. Column j joins the supernode
@@ -4748,8 +4790,11 @@ static void chol_refactor(
      * tail keep their sparse prefix processing but accumulate their
      * tail-block entries into the row-major Tdense buffer, which is
      * then factored with the blocked dense kernel and copied back into
-     * the same CSC storage (the solves never know the difference). */
-    memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
+     * the same CSC storage (the solves never know the difference).
+     * The elimination pattern of every row was recorded at symbolic
+     * time (rpat/rpat_ptr, exact chol_ereach output order), so the
+     * per-row etree walk is skipped entirely — same entries in the
+     * same order, bit-exact by construction. */
     for (int32_t k = 0; k < m; k++) {
         ctx->cursor[k] = 1;
     }
@@ -4757,6 +4802,19 @@ static void chol_refactor(
     double *T = ctx->Tdense;
     Py_ssize_t tlen = ctx->tail_len;
     double *x = ctx->work; /* maintained all-zero between rows */
+    const Py_ssize_t *rpat_ptr = ctx->rpat_ptr;
+    const int32_t *rpat = ctx->rpat;
+    /* A/B probe: LINPROGX_UPLOOK_EREACH=1 re-walks the elimination tree
+     * per row (the pre-cache behavior) instead of replaying rpat. Both
+     * paths visit identical entries in identical order — bit-exact. */
+    static int force_ereach = -1;
+    if (force_ereach < 0) {
+        const char *e = getenv("LINPROGX_UPLOOK_EREACH");
+        force_ereach = e != NULL ? atoi(e) : 0;
+    }
+    if (force_ereach) {
+        memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
+    }
     for (int32_t k = 0; k < m; k++) {
         for (Py_ssize_t p = ctx->Cp[k]; p < ctx->Cp[k + 1]; p++) {
             int32_t i = ctx->Ci[p];
@@ -4766,14 +4824,22 @@ static void chol_refactor(
         }
         double d = x[k];
         x[k] = 0.0;
-        int32_t top = chol_ereach(ctx, k);
+        Py_ssize_t rp_begin = rpat_ptr[k];
+        Py_ssize_t rp_end = rpat_ptr[k + 1];
+        if (force_ereach) {
+            int32_t top = chol_ereach(ctx, k);
+            rp_begin = 0;
+            rp_end = (Py_ssize_t)(m - top);
+            rpat = ctx->epattern + top;
+        }
         if (k < tstart) {
-            for (int32_t s = top; s < m; s++) {
-                int32_t j = ctx->epattern[s];
-                double lkj = x[j] / ctx->Lx[ctx->Lp[j]];
+            for (Py_ssize_t s = rp_begin; s < rp_end; s++) {
+                int32_t j = rpat[s];
+                Py_ssize_t base = ctx->Lp[j];
+                double lkj = x[j] / ctx->Lx[base];
                 x[j] = 0.0;
-                Py_ssize_t end = ctx->Lp[j] + ctx->cursor[j];
-                for (Py_ssize_t p = ctx->Lp[j] + 1; p < end; p++) {
+                Py_ssize_t end = base + ctx->cursor[j];
+                for (Py_ssize_t p = base + 1; p < end; p++) {
                     x[ctx->Li[p]] -= ctx->Lx[p] * lkj;
                 }
                 d -= lkj * lkj;
@@ -4788,15 +4854,16 @@ static void chol_refactor(
             /* tail row: process only prefix columns; the leftover x
              * values at tail positions are exactly the Schur-corrected
              * tail entries of this row */
-            for (int32_t s = top; s < m; s++) {
-                int32_t j = ctx->epattern[s];
+            for (Py_ssize_t s = rp_begin; s < rp_end; s++) {
+                int32_t j = rpat[s];
                 if (j >= tstart) {
                     continue;
                 }
-                double lkj = x[j] / ctx->Lx[ctx->Lp[j]];
+                Py_ssize_t base = ctx->Lp[j];
+                double lkj = x[j] / ctx->Lx[base];
                 x[j] = 0.0;
-                Py_ssize_t end = ctx->Lp[j] + ctx->cursor[j];
-                for (Py_ssize_t p = ctx->Lp[j] + 1; p < end; p++) {
+                Py_ssize_t end = base + ctx->cursor[j];
+                for (Py_ssize_t p = base + 1; p < end; p++) {
                     x[ctx->Li[p]] -= ctx->Lx[p] * lkj;
                 }
                 d -= lkj * lkj;
