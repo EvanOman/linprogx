@@ -1189,3 +1189,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   factorize kernel) or a count cut — count family documented exhausted.
   ALSO FIXED: explicit algorithm="dual_simplex" path was running
   expand=0 defaults (auto routes were correct).
+
+- CORRECTOR-STABILITY SCIENCE (2026-07-12, exp-panel; +31 lines
+  LINPROGX_IPM_TRACE debug instrumentation, inert off): the "80bau3b
+  shatters under correctors" premise was WRONG — the corrector path is
+  FASTER through every mu milestone (mu<1e-8 at it=50 vs OFF's 54)
+  with healthy accepts throughout. The +43 iterations are an ENDGAME
+  DETONATION: converged at it=52 (mu=3.96e-9), then at it=53 mu jumps
+  60,000x to 2.286e-4 with the iterate frozen 4 iterations (steps
+  exactly 0.0, centrality spread blown to 4e-6/4e3), then ~50
+  re-convergence iterations. mccr=0 at the jump rules out the
+  corrector itself; candidates are the exit chain (in-loop primal
+  polish slack-weighted correction, min-norm dual cleanup 16-iter rate
+  limit, NaN-direction best-iterate restore). CORRECTOR GATING BELOW
+  RATIO 3.0 IS CLOSED (no accept-time signal exists — nothing wrong
+  happens at accept time). THE MAPPED UNIT: endgame robustness
+  bug-hunt — 80bau3b under MCC-1 would be ~53 iters (9 FASTER than
+  today) if the endgame failed closed; repro
+  LINPROGX_IPM_TRACE=1 LINPROGX_IPM_MCC=1 LINPROGX_IPM_MCC_RATIO=0.0001.
