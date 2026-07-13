@@ -1330,3 +1330,20 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   remaining sized levers are PROGRAM-scale: uplook-prefix BLAS-ing
   (cre_a 22ms ceiling; cre_b 1.95s uplook is the same lever at 100x
   the payoff) and centering/iteration-count work.
+
+- LU STEP 3 (2026-07-13, exp-leaving, still dark): hyper-sparse FT
+  solves LANDED (stocfor3 -9% / woodw -17% / cre_d -14% / 80bau3b
+  neutral — dense-staging losses erased); greenbea drift ROOT-CAUSED
+  (row-eta |w| up to 1.1e8 on M-boxed columns -> classic growth
+  rejection wmax>1e6, refactor instead; cures doses 1e-11/2e-11/5e-11;
+  5e-12 still fragile) but at the DEFAULT dose drift is +25.2%/+10%
+  wall = flip blocked. KEY COMPOSITION: FT + dtau=5e-11 is greenbea's
+  BEST EVER (optimal 10,391 iters / 2.29s; drift vs FT-off-at-dose
+  +2.6%; FT-off also improves at 5e-11: 10,125). Cap knob dead (500
+  optimal; EXPAND tau cap binds ~950 updates). FT_CHECK/FT_DENSE_U
+  diagnostics dark; ftran_pattern rhs-aliasing contract documented
+  (a 'divergence' was the checker reading clobbered rhs). NEXT UNIT
+  (the flip package): gate FT=1 + dtau=5e-11 combined default through
+  the FULL battery (cre_d's 103,781 anchor was AT 1e-11 — the dose
+  change moves every DS trajectory and needs its own certification),
+  plus wmax cap sweep (1e5/3e5/1e6) for the 5e-12-class fragility.
