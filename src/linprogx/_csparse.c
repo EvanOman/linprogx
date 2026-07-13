@@ -8529,6 +8529,22 @@ static void lu_context_free(LUContext *ctx) {
 #define LU_DENSE_TAIL_DIM 64
 #define LU_DENSE_TAIL_DENSITY 0.30
 
+/* Suhl-Suhl-style bounded Markowitz pivot search (global constants, no
+ * per-problem tuning). The exhaustive rule scans EVERY column in the first
+ * few nonempty count-tiers; on greenbea that is ~85% of factorize (candidate
+ * VOLUME, ~440k column visits / 1.3M linked-list entries per refactor). The
+ * bounded rule walks columns in nondecreasing column-count order (so the
+ * sparsest columns -- lowest Markowitz cost -- are examined first) and stops
+ * once it has examined LU_SUHL_MAX_COLS threshold-viable columns, taking the
+ * best pivot found. Column count dominates the Markowitz merit (r-1)(c-1) for
+ * sparse bases, so a small budget captures near-optimal fill. Two exact/near
+ * early exits keep quality: merit==0 (a singleton row or column, unbeatable)
+ * exits immediately, and any merit <= LU_SUHL_ACCEPT (a tiny fill footprint)
+ * is accepted without spending the rest of the budget. Toggle off with
+ * LINPROGX_LU_SUHL=0 to restore the exhaustive tier scan. */
+#define LU_SUHL_MAX_COLS 8
+#define LU_SUHL_ACCEPT 4
+
 static LUContext *lu_factorize(int32_t m,
                                const int32_t *csc_indptr,
                                const int32_t *csc_indices,
@@ -8538,6 +8554,11 @@ static LUContext *lu_factorize(int32_t m,
     LUContext *ctx = NULL;
     LUActive active;
     int lu_prof = getenv("LINPROGX_LU_PROFILE") != NULL;
+    int lu_suhl = 1;
+    {
+        const char *sv = getenv("LINPROGX_LU_SUHL");
+        if (sv != NULL && sv[0] == '0') lu_suhl = 0;
+    }
     double tp_mark = lu_prof ? linprogx_monotonic_seconds() : 0.0;
     double tp_init = 0.0, tp_pivot = 0.0, tp_elim = 0.0, tp_step = 0.0;
     int64_t lu_prof_cols = 0, lu_prof_entries = 0, lu_prof_steps = 0;
@@ -8800,6 +8821,7 @@ static LUContext *lu_factorize(int32_t m,
         }
         int32_t tiers_seen = 0;
         int32_t empty_run = 0;
+        int32_t cols_examined = 0;  /* Suhl candidate budget counter */
         for (int32_t cnt = active.bkt_min;
              cnt <= m && tiers_seen < 4 && (tiers_seen == 0 || empty_run < 256);
              cnt++) {
@@ -8847,6 +8869,15 @@ static LUContext *lu_factorize(int32_t m,
                     }
                 }
                 idx = active.pool[idx].next_in_col;
+            }
+            /* Suhl bounded search: this column contributed a viable
+             * candidate (col_max > 0). Accept a tiny-footprint pivot at once,
+             * else stop after the candidate budget is spent and take the best
+             * found. Columns are visited in nondecreasing count order, so the
+             * budget is spent on the sparsest (lowest-merit) columns. */
+            if (lu_suhl) {
+                if (best_score <= LU_SUHL_ACCEPT) goto pivot_found;
+                if (++cols_examined >= LU_SUHL_MAX_COLS) goto pivot_found;
             }
             }
         }
@@ -9227,11 +9258,12 @@ assemble:
     if (lu_prof) {
         fprintf(stderr,
                 "lu profile: m=%d init=%.4f pivot=%.4f elim=%.4f assemble=%.4f "
-                "steps=%lld cols_scanned=%lld entries_walked=%lld\n",
+                "steps=%lld cols_scanned=%lld entries_walked=%lld nnzlu=%lld\n",
                 m, tp_init, tp_pivot, tp_elim,
                 linprogx_monotonic_seconds() - tp_mark - tp_pivot - tp_elim,
                 (long long)lu_prof_steps, (long long)lu_prof_cols,
-                (long long)lu_prof_entries);
+                (long long)lu_prof_entries,
+                (long long)(ctx->nnz_l + ctx->nnz_u));
     }
     return ctx;
 
