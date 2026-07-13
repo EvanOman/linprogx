@@ -1347,3 +1347,15 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   the FULL battery (cre_d's 103,781 anchor was AT 1e-11 — the dose
   change moves every DS trajectory and needs its own certification),
   plus wmax cap sweep (1e5/3e5/1e6) for the 5e-12-class fragility.
+
+- UPLOOK UNIT 1 — PATTERN CACHE (2026-07-13, exp-panel, merged,
+  bit-exact): elimination patterns (chol_ereach output) were re-walked
+  EVERY refactor; now recorded at symbolic time (rpat_ptr/rpat, zero
+  extra walks) and replayed, emark memset dropped. 15-25% of uplook
+  was walk overhead. Paired: cre_b uplook -14% (refactor -8..-12%,
+  ~300-450ms), cre_a -7.7%, 80bau3b -8.2%, degen3 -6.8%, pilot87
+  -7.1%. NEGATIVES PINNED: software prefetch (x cache-resident),
+  rpat_lp precompute (3x pattern bytes). Remaining uplook is scatter
+  flops at ~2ns/pair: NEXT is the block-row up-looking kernel (2-4
+  rows share Li/Lx streams with per-row accumulators — bit-exactness
+  preservable). Knife-edge re-certification needs QUIET load first.
