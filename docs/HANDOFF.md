@@ -1359,3 +1359,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   flops at ~2ns/pair: NEXT is the block-row up-looking kernel (2-4
   rows share Li/Lx streams with per-row accumulators — bit-exactness
   preservable). Knife-edge re-certification needs QUIET load first.
+
+- LU STEP 4 — FLIP VERDICT: NO-FLIP AS KWARG DEFAULT (2026-07-13,
+  exp-leaving; wmax 3e5 committed as the one adopted change — the only
+  cap certifying at all three doses, fires only on greenbea's poison
+  etas). Battery at (FT=1, dtau=5e-11, wmax=3e5), all certified:
+  DIRECT-route paired wins greenbea -13.1% (10,665 it / 2.327s),
+  stocfor3 -11.2%, cre_d -10.2% (146.9s), woodw -7.9%; but 80bau3b
+  +9.1% (DS-direct only — publicly IPM-routed, NOT scoreboard
+  relevant) and PUBLIC-auto greenbea +7.7% REGRESSION (12,780 it /
+  3.336s, resid loosened 7.1e-7). ROOT CONFIG MISMATCH FOUND: the
+  sparse.py DS routes pass NO tol (C default ~1e-8) while every
+  certified FT number is at tol=1e-11. FOLLOW-UP RUNNING: route-config
+  grid (tol x FT x dtau) on public greenbea + cycle — if FT wins at
+  the matched config, FT ships as a ROUTE setting rather than a kwarg
+  default.
