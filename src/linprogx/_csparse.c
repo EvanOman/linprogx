@@ -6025,7 +6025,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "debug",
                              "threads", "blas", "supernodal", "feas_tol", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "OOOO|ndpnppd", kwlist,
+            args, kwds, "OOOO|ndpnpid", kwlist,
             &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter, &tol, &debug, &threads,
             &use_blas, &use_supernodal, &feas_tol)) {
         return NULL;
@@ -6459,6 +6459,23 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     double mu_initial = INFINITY;
     const char *status = "iteration_limit";
 
+    /* mu-gated iterative refinement: the second refinement round exists for
+     * ill-conditioned LATE-stage systems; while mu is above the gate the
+     * round-1 residual is already at rounding noise and the round-2
+     * correction lands below one ulp of dy, so `dy += corr` is a bit-exact
+     * no-op (measured: identical x/y hashes across the whole suite even
+     * with the round dropped at every iteration). 1e-5 keeps both rounds
+     * for every certificate-eligible iterate (the exit machinery opens at
+     * mu <= 1e-6) with a 10x margin — fail-closed in the endgame, no cost
+     * where the round does nothing. One global constant; env override for
+     * probing only (0 = unconditional two rounds). */
+    double refine_mu_gate = 1e-5;
+    {
+        const char *e = getenv("LINPROGX_IPM_REFINE_MU");
+        if (e != NULL) {
+            refine_mu_gate = atof(e);
+        }
+    }
     Py_BEGIN_ALLOW_THREADS
     IpmNewton nw = {chol, &op, D, sl, su, zl, zu, bound_kind, rhs_x, tmp_x, rhs_m, aty,
                     res_m, corr_m, 2};
@@ -6492,6 +6509,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             }
         }
         mu = mu_sum / (double)n_comp;
+        nw.refine_rounds = (refine_mu_gate > 0.0 && mu > refine_mu_gate) ? 1 : 2;
         pres = l2_norm(rp, m) / b_norm;
         raw_pres = ipm_raw_primal_residual(rp, row_scale, m);
         dres = l2_norm(rd, n) / c_norm;
