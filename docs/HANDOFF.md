@@ -1262,3 +1262,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   Suhl-style pivot-search rule (85% of factorize is candidate-volume
   at the 4ns/entry memory floor). greenbea trajectory: 3.80 (session
   start) -> 2.89 (rate unit) -> ~2.5 (this unit); <=1.5 needs step 2.
+
+- OFFICIAL SUITE RE-BASELINE (2026-07-13, quiet, build 03dc77c —
+  thirteen ships in): aggregate 63.4s vs HiGHS 168s+qap15-timeout;
+  coverage 24/24 vs 23/24. Single-shot head-to-head ~12W/3-knife-edge
+  (degen3 1.05x, stocfor3 1.14x, osa_14 1.30x-with-paired-win-history)
+  /9L. HARD LOSSES by ratio: greenbea 10x (2.64 vs 0.26; FT program
+  queued), cre_d 5.6x / cre_b 3.3x (IPM side closed; DS count program
+  is the only path), pds_10 2.3x / pds_20 1.4x (PDHG route — UNTOUCHED
+  ALL SESSION, no unit has ever profiled it), woodw 2x (flop-bound,
+  rate+ordering+correctors all closed — needs a different idea),
+  maros_r7 1.6x (serial floor reached; parallel refuted; iteration
+  count optimal — parked), 80bau3b ~1.5x here / ~1.1x paired-quiet,
+  cre_a 1.3x (no dominant slice). Note single-shot suite variance vs
+  the paired protocol: flips are certified ONLY by paired 5-run
+  interleaved; the suite is the coverage/aggregate record.
