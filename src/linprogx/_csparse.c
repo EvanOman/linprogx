@@ -7752,7 +7752,85 @@ typedef struct {
     int64_t  btran_dense_count;
     int64_t  btran_sparse_count;
     int64_t  btran_sparse_nnz_total;
+
+    /* ---- True Forrest-Tomlin update state (LINPROGX_DS_FT=1) ----
+     *
+     * Replaces the PFI eta chain with the classic FT update: L stays
+     * fixed from the last refactorization; U is maintained TRIANGULAR
+     * under a logical column/row order as
+     *     U' = (static U minus deleted rows/columns) + appended spikes,
+     * plus a row-eta file R (one row transform per update) that absorbs
+     * the eliminated old row.
+     *
+     * Update at basis position p (z-slot t = inv_perm_col[p], entering
+     * column a): v = R_K ... R_1 L^{-1} P a (the pre-U FTRAN
+     * intermediate); assemble the LIVE row t of U' beyond its diagonal
+     * (u_row), solve w^T U'_22 = u_row^T (scatter form over the logical
+     * tail), diagonal d = v[t] - w.v; reject (forcing a refactorization)
+     * if |d| is tiny; else store row eta w (target slot t), spike column
+     * v (slot t, diagonal d in u_diag[t]), stamp row t deleted, and
+     * cycle t to the logical end.
+     *
+     * Solves:
+     *   FTRAN: z = L^{-1} P b; z[t_k] -= w_k . z (creation order);
+     *          back-substitute U' in logical order; out-permute.
+     *   BTRAN: in-permute; forward-substitute U'^T in logical order
+     *          (row-scatter form); z[j] -= w_k[j] z[t_k] (reverse
+     *          order); L^T; out-permute.
+     *
+     * Liveness (time-stamped deletions): an entry at row i in a column
+     * created at update c (static c = -1, spike c = k) is DEAD iff
+     * ft_del_stamp[i] >= 0 && ft_del_stamp[i] >= c; static entries of a
+     * replaced column die via ft_col_spike[j] >= 0; a superseded spike
+     * is dead when ft_col_spike[slot] no longer names it. All fields
+     * stay NULL until the first FT update (lazy init); the PFI
+     * machinery above is untouched and remains the default. */
+    int      ft_active;        /* env LINPROGX_DS_FT cached at factorize */
+    int32_t  ft_n_upd;         /* number of FT updates applied */
+    int32_t *ft_order;         /* logical position -> z-index, size m */
+    int32_t *ft_pos;           /* z-index -> logical position, size m */
+    int32_t *ft_col_spike;     /* z-col -> spike id or -1, size m */
+    int32_t *ft_del_stamp;     /* z-row -> deleting update idx or -1 */
+    /* spike directory + packed entries (with per-row chains) */
+    int32_t *ft_spk_slot;      /* spike id -> z-slot t */
+    int32_t *ft_spk_created;   /* spike id -> update idx at creation */
+    int32_t *ft_spk_start;     /* spike id -> packed start (size n+1) */
+    int32_t *ft_spk_idx;       /* packed row indices */
+    double  *ft_spk_val;       /* packed values */
+    int32_t *ft_spk_col;       /* packed entry -> owning spike id */
+    int32_t *ft_spk_nextrow;   /* packed entry -> next entry in same row */
+    int32_t *ft_rowhead;       /* z-row -> first packed spike entry or -1 */
+    /* row-eta file */
+    int32_t *ft_eta_slot;      /* eta k -> target z-slot t_k */
+    int32_t *ft_eta_start;     /* eta k -> packed start (size n+1) */
+    int32_t *ft_eta_idx;       /* packed z-indices (w support) */
+    double  *ft_eta_val;       /* packed w values */
+    int32_t  ft_upd_cap;       /* capacity of per-update arrays */
+    int32_t  ft_spk_nnz, ft_spk_cap;
+    int32_t  ft_eta_nnz, ft_eta_cap;
+    /* dense workspaces (size m) */
+    double  *ft_v;             /* spike intermediate v */
+    double  *ft_acc;           /* w-solve accumulator */
+    int32_t *ft_pat;           /* scratch pattern list */
+    int32_t *ft_pat2;          /* second scratch pattern (update v-solve) */
+    double  *ft_rhs;           /* dense staging for the dense entry points */
+    /* stats for reporting */
+    int64_t  ft_rejects;       /* updates rejected on |d| (forced refac) */
 } LUContext;
+
+/* Cached LINPROGX_DS_FT env flag (0/1). Forrest-Tomlin is the shipped
+ * default (on): with the EXPAND anti-degeneracy route (dtau 5e-11) it
+ * takes the fewest refactorizations and the least wall on the certified
+ * DS battery (greenbea/woodw/stocfor3/cre_d) and on the public auto
+ * route. Set LINPROGX_DS_FT=0 to force the legacy product-form update. */
+static int lu_ft_enabled(void) {
+    static int cached = -1;
+    if (cached < 0) {
+        const char *env = getenv("LINPROGX_DS_FT");
+        cached = (env != NULL) ? (atoi(env) == 1 ? 1 : 0) : 1;
+    }
+    return cached;
+}
 
 /* Allocate a pool entry; returns index or -1 on failure. */
 static int32_t lu_pool_alloc(LUActive *a) {
@@ -7971,6 +8049,15 @@ static void lu_context_free(LUContext *ctx) {
     free(ctx->ut_indptr);
     free(ctx->ut_indices);
     free(ctx->ut_values);
+    free(ctx->ft_order); free(ctx->ft_pos);
+    free(ctx->ft_col_spike); free(ctx->ft_del_stamp);
+    free(ctx->ft_spk_slot); free(ctx->ft_spk_created); free(ctx->ft_spk_start);
+    free(ctx->ft_spk_idx); free(ctx->ft_spk_val);
+    free(ctx->ft_spk_col); free(ctx->ft_spk_nextrow); free(ctx->ft_rowhead);
+    free(ctx->ft_eta_slot); free(ctx->ft_eta_start);
+    free(ctx->ft_eta_idx); free(ctx->ft_eta_val);
+    free(ctx->ft_v); free(ctx->ft_acc); free(ctx->ft_pat); free(ctx->ft_pat2);
+    free(ctx->ft_rhs);
     free(ctx);
 }
 
@@ -8624,6 +8711,23 @@ assemble:
     ctx->max_abs_diag = 0.0;
     ctx->min_abs_diag = 1e300;
 
+    /* True FT update state: env-gated, all storage lazy (first update) */
+    ctx->ft_active = lu_ft_enabled();
+    ctx->ft_n_upd = 0;
+    ctx->ft_order = NULL; ctx->ft_pos = NULL;
+    ctx->ft_col_spike = NULL; ctx->ft_del_stamp = NULL;
+    ctx->ft_spk_slot = NULL; ctx->ft_spk_created = NULL; ctx->ft_spk_start = NULL;
+    ctx->ft_spk_idx = NULL; ctx->ft_spk_val = NULL;
+    ctx->ft_spk_col = NULL; ctx->ft_spk_nextrow = NULL; ctx->ft_rowhead = NULL;
+    ctx->ft_eta_slot = NULL; ctx->ft_eta_start = NULL;
+    ctx->ft_eta_idx = NULL; ctx->ft_eta_val = NULL;
+    ctx->ft_upd_cap = 0;
+    ctx->ft_spk_nnz = 0; ctx->ft_spk_cap = 0;
+    ctx->ft_eta_nnz = 0; ctx->ft_eta_cap = 0;
+    ctx->ft_v = NULL; ctx->ft_acc = NULL; ctx->ft_pat = NULL;
+    ctx->ft_pat2 = NULL; ctx->ft_rhs = NULL;
+    ctx->ft_rejects = 0;
+
     /* Build cached U diagonal for fast access in FTRAN/BTRAN */
     ctx->u_diag = calloc((size_t)m, sizeof(double));
     if (ctx->u_diag == NULL) goto oom;
@@ -8937,6 +9041,681 @@ static void gp_usolve(const LUContext *ctx, double *x,
  *   5. Apply eta chain
  *   6. Clear workspace at touched positions
  */
+/* ==================================================================== */
+/* True Forrest-Tomlin update machinery (see LUContext ft_* fields).    */
+/* ==================================================================== */
+
+/* Lazy allocation of all FT state on the first update. Returns 0/-1. */
+static int lu_ft_lazy_init(LUContext *ctx) {
+    if (ctx->ft_order != NULL) return 0;
+    int32_t m = ctx->m;
+    ctx->ft_order = malloc((size_t)m * sizeof(int32_t));
+    ctx->ft_pos = malloc((size_t)m * sizeof(int32_t));
+    ctx->ft_col_spike = malloc((size_t)m * sizeof(int32_t));
+    ctx->ft_del_stamp = malloc((size_t)m * sizeof(int32_t));
+    ctx->ft_rowhead = malloc((size_t)m * sizeof(int32_t));
+    ctx->ft_v = calloc((size_t)m, sizeof(double));
+    ctx->ft_acc = calloc((size_t)m, sizeof(double));
+    ctx->ft_pat = malloc((size_t)m * sizeof(int32_t));
+    ctx->ft_pat2 = malloc((size_t)m * sizeof(int32_t));
+    ctx->ft_rhs = calloc((size_t)m, sizeof(double));
+    if (ctx->ft_order == NULL || ctx->ft_pos == NULL ||
+        ctx->ft_col_spike == NULL || ctx->ft_del_stamp == NULL ||
+        ctx->ft_rowhead == NULL || ctx->ft_v == NULL ||
+        ctx->ft_acc == NULL || ctx->ft_pat == NULL || ctx->ft_pat2 == NULL ||
+        ctx->ft_rhs == NULL) {
+        return -1;
+    }
+    for (int32_t i = 0; i < m; i++) {
+        ctx->ft_order[i] = i;
+        ctx->ft_pos[i] = i;
+        ctx->ft_col_spike[i] = -1;
+        ctx->ft_del_stamp[i] = -1;
+        ctx->ft_rowhead[i] = -1;
+    }
+    return 0;
+}
+
+/* Liveness of an entry at row i belonging to a column created at update
+ * `created` (static = -1, spike = its creation index). */
+static inline int lu_ft_row_live(const LUContext *ctx, int32_t i, int32_t created) {
+    int32_t st = ctx->ft_del_stamp[i];
+    return (st < 0 || st < created);
+}
+
+/*
+ * lu_ft_update: true Forrest-Tomlin basis update.
+ *
+ * leaving_pos: basis position being replaced.
+ * ent_*: the ENTERING column in original row coordinates (sparse).
+ *
+ * Returns 0 on success, -1 on rejection (caller must refactorize).
+ */
+static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
+                        int32_t ent_nnz, const int32_t *ent_idx,
+                        const double *ent_val) {
+    int32_t m = ctx->m;
+    if (lu_ft_lazy_init(ctx) != 0) return -1;
+
+    /* ---- v = R_K ... R_1 L^{-1} P a (hyper-sparse: static-L GP solve,
+     * then gathered row etas). ft_v is all-zero on entry (invariant:
+     * every exit clears it at v_pat positions). ---- */
+    double *v = ctx->ft_v;
+    int32_t *v_pat = ctx->ft_pat2;
+    int32_t n_v = 0;
+    for (int32_t k = 0; k < ent_nnz; k++) {
+        int32_t prow = ctx->inv_perm_row[ent_idx[k]];
+        v[prow] = ent_val[k];
+        v_pat[n_v++] = prow;
+    }
+    {
+        int32_t *xi = ctx->gp_xi;
+        int32_t top_l = gp_reach(ctx, n_v, v_pat,
+                                 ctx->l_indptr, ctx->l_indices, m, xi);
+        gp_lsolve(ctx, v, xi, top_l);
+        /* rebuild v's pattern from the L-reach (superset of nonzeros;
+         * zero-valued reach members are harmless and keep clears exact) */
+        n_v = 0;
+        for (int32_t px = top_l; px < m; px++) {
+            v_pat[n_v++] = xi[px];
+        }
+    }
+    {
+        int32_t *marked = ctx->gp_marked;
+        int32_t mark = ctx->gp_mark;
+        if (mark >= INT32_MAX - 1) {
+            memset(marked, 0, (size_t)m * sizeof(int32_t));
+            mark = 1;
+        }
+        ctx->gp_mark = mark + 1;
+        for (int32_t q = 0; q < n_v; q++) marked[v_pat[q]] = mark;
+        for (int32_t k = 0; k < ctx->ft_n_upd; k++) {
+            int32_t s = ctx->ft_eta_slot[k];
+            double dot = 0.0;
+            for (int32_t p = ctx->ft_eta_start[k]; p < ctx->ft_eta_start[k + 1]; p++) {
+                dot += ctx->ft_eta_val[p] * v[ctx->ft_eta_idx[p]];
+            }
+            if (dot != 0.0) {
+                v[s] -= dot;
+                if (marked[s] != mark) {
+                    marked[s] = mark;
+                    v_pat[n_v++] = s;
+                }
+            }
+        }
+    }
+#define LU_FT_CLEAR_V() do { \
+        for (int32_t q_ = 0; q_ < n_v; q_++) v[v_pat[q_]] = 0.0; \
+    } while (0)
+
+    int32_t t = ctx->inv_perm_col[leaving_pos];
+    int32_t upd = ctx->ft_n_upd;
+
+    /* ---- Assemble the live row t of U' beyond its diagonal ---- */
+    double *acc = ctx->ft_acc;
+    int32_t *pat = ctx->ft_pat;
+    int32_t n_pat = 0;
+    if (ctx->ft_del_stamp[t] < 0) {
+        /* static row t entries: (t, j) with j != t, col j not replaced */
+        for (int32_t p = ctx->ut_indptr[t]; p < ctx->ut_indptr[t + 1]; p++) {
+            int32_t j = ctx->ut_indices[p];
+            if (j == t) continue;
+            if (ctx->ft_col_spike[j] >= 0) continue;
+            if (acc[j] == 0.0) pat[n_pat++] = j;
+            acc[j] += ctx->ut_values[p];
+        }
+    }
+    /* spike entries at row t (live spikes created after any deletion of t) */
+    for (int32_t e = ctx->ft_rowhead[t]; e >= 0; e = ctx->ft_spk_nextrow[e]) {
+        int32_t sid = ctx->ft_spk_col[e];
+        int32_t slot = ctx->ft_spk_slot[sid];
+        if (ctx->ft_col_spike[slot] != sid) continue; /* superseded spike */
+        if (!lu_ft_row_live(ctx, t, ctx->ft_spk_created[sid])) continue;
+        if (acc[slot] == 0.0 && ctx->ft_spk_val[e] != 0.0) pat[n_pat++] = slot;
+        acc[slot] += ctx->ft_spk_val[e];
+    }
+
+    /* ---- w-solve: w^T U'_22 = u_row^T (scatter form, logical order) ---- */
+    /* w entries are collected in ascending logical order into pat/acc;
+     * we rewrite pat[] in place with the final support. */
+    int32_t n_w = 0;
+    int32_t *w_idx = pat;          /* reuse: final support, ascending pos */
+    double w_val_stack[512];
+    double *w_val = w_val_stack;
+    int w_val_heap = 0;
+    if (n_pat > 0) {
+        /* count of potential support is unbounded (fill); allocate heap
+         * buffer if the stack one could overflow */
+        if (m > 512) {
+            w_val = malloc((size_t)m * sizeof(double));
+            if (w_val == NULL) {
+                for (int32_t q = 0; q < n_pat; q++) acc[pat[q]] = 0.0;
+                LU_FT_CLEAR_V();
+                return -1;
+            }
+            w_val_heap = 1;
+        }
+        int32_t pt = ctx->ft_pos[t];
+        for (int32_t k = pt + 1; k < m; k++) {
+            int32_t j = ctx->ft_order[k];
+            double aj = acc[j];
+            if (aj == 0.0) continue;
+            acc[j] = 0.0;
+            double wj = aj / ctx->u_diag[j];
+            w_idx[n_w] = j;
+            w_val[n_w] = wj;
+            n_w++;
+            /* scatter live row j of U' into acc (fill lands at logical
+             * positions > pos[j], which the positional sweep will visit) */
+            if (ctx->ft_del_stamp[j] < 0) {
+                for (int32_t p = ctx->ut_indptr[j]; p < ctx->ut_indptr[j + 1]; p++) {
+                    int32_t l = ctx->ut_indices[p];
+                    if (l == j) continue;
+                    if (ctx->ft_col_spike[l] >= 0) continue;
+                    acc[l] -= wj * ctx->ut_values[p];
+                }
+            }
+            for (int32_t e = ctx->ft_rowhead[j]; e >= 0; e = ctx->ft_spk_nextrow[e]) {
+                int32_t sid = ctx->ft_spk_col[e];
+                int32_t slot = ctx->ft_spk_slot[sid];
+                if (ctx->ft_col_spike[slot] != sid) continue;
+                if (!lu_ft_row_live(ctx, j, ctx->ft_spk_created[sid])) continue;
+                acc[slot] -= wj * ctx->ft_spk_val[e];
+            }
+        }
+        /* acc positions consumed as visited; any residue (numerically
+         * cancelled fill never visited) is zero by construction of the
+         * sweep, but clear defensively at w support tail positions is
+         * unnecessary: every nonzero acc position lies at logical pos in
+         * (pt, m) and was visited and zeroed. */
+    }
+
+    /* ---- diagonal d = v[t] - w . v ---- */
+    double d = v[t];
+    for (int32_t k = 0; k < n_w; k++) {
+        d -= w_val[k] * v[w_idx[k]];
+    }
+
+    /* ---- stability tests ---- */
+    /* (1) Small new diagonal: the spike pivot is unreliable.
+     * (2) Row-eta growth: |w| ~ 1e8 was measured on greenbea (M-boxed
+     *     1e9-scale columns); each such eta amplifies solve error by
+     *     |w|*eps ~ 1e-8, which trips the 1e-7 exit gates downstream
+     *     (measured: dual_infeasible / numerical_error exits at 3 of 4
+     *     EXPAND doses). Rejecting the a-few-per-solve offenders costs
+     *     one refactorization each and removes the poison — the classic
+     *     FT growth-rejection treatment. */
+    double max_diag = ctx->max_abs_diag;
+    if (max_diag < 1.0) max_diag = 1.0;
+    double wmax = 0.0;
+    for (int32_t k = 0; k < n_w; k++) {
+        double aw = fabs(w_val[k]);
+        if (aw > wmax) wmax = aw;
+    }
+    if (getenv("LINPROGX_DS_FT_CHECK") != NULL) {
+        fprintf(stderr, "[ft_upd] upd=%d n_w=%d wmax=%.3e d=%.3e vt=%.3e\n",
+                upd, n_w, wmax, d, v[t]);
+    }
+    /* Growth-rejection cap default = 3e5 (2026-07-13, greenbea sweep).
+     * The cap must be tight enough to reject the |w|~1e8 row-etas that trip
+     * the downstream 1e-7 exit gates, yet loose enough not to force needless
+     * refactorizations. A deterministic sweep over EXPAND dose x cap on
+     * greenbea (fragile-dose failures bit-identical on rerun) showed 3e5 is
+     * the only cap that certifies OPTIMAL across every dose:
+     *
+     *   EXPAND dose |  wmax 1e5  |  wmax 3e5        |  wmax 1e6
+     *   ------------+------------+------------------+-----------------
+     *   5e-12       |  optimal   |  optimal         |  FAIL(dual_inf)
+     *   1e-11       |  FAIL      |  optimal         |  optimal
+     *   5e-11 (ship)|  optimal   |  optimal (63 rf) |  optimal (72 rf)
+     *
+     * 1e5 and 1e6 each fail at one dose; 3e5 is robust at all three and, at
+     * the ship dose 5e-11, also takes the fewest refactorizations (63 vs 72).
+     * Hence 3e5 is the global cap. Overridable via LINPROGX_DS_FT_WMAX. */
+    static double ft_wmax_cap = 0.0;
+    if (ft_wmax_cap == 0.0) {
+        const char *env = getenv("LINPROGX_DS_FT_WMAX");
+        ft_wmax_cap = (env != NULL && atof(env) > 0.0) ? atof(env) : 3e5;
+    }
+    if (fabs(d) < 1e-11 * max_diag || !isfinite(d) || wmax > ft_wmax_cap) {
+        ctx->ft_rejects++;
+        if (w_val_heap) free(w_val);
+        LU_FT_CLEAR_V();
+        return -1;
+    }
+
+    /* ---- commit: grow per-update arrays ---- */
+    if (upd >= ctx->ft_upd_cap) {
+        int32_t nc = ctx->ft_upd_cap == 0 ? 32 : ctx->ft_upd_cap * 2;
+        int32_t *a1 = realloc(ctx->ft_spk_slot, (size_t)nc * sizeof(int32_t));
+        int32_t *a2 = realloc(ctx->ft_spk_created, (size_t)nc * sizeof(int32_t));
+        int32_t *a3 = realloc(ctx->ft_spk_start, ((size_t)nc + 1) * sizeof(int32_t));
+        int32_t *a4 = realloc(ctx->ft_eta_slot, (size_t)nc * sizeof(int32_t));
+        int32_t *a5 = realloc(ctx->ft_eta_start, ((size_t)nc + 1) * sizeof(int32_t));
+        if (a1) ctx->ft_spk_slot = a1;
+        if (a2) ctx->ft_spk_created = a2;
+        if (a3) ctx->ft_spk_start = a3;
+        if (a4) ctx->ft_eta_slot = a4;
+        if (a5) ctx->ft_eta_start = a5;
+        if (!a1 || !a2 || !a3 || !a4 || !a5) {
+            if (w_val_heap) free(w_val);
+            LU_FT_CLEAR_V();
+            return -1;
+        }
+        if (upd == 0) { ctx->ft_spk_start[0] = 0; ctx->ft_eta_start[0] = 0; }
+        ctx->ft_upd_cap = nc;
+    }
+
+    /* row eta storage */
+    if (ctx->ft_eta_nnz + n_w > ctx->ft_eta_cap) {
+        int32_t nc = ctx->ft_eta_cap == 0 ? 256 : ctx->ft_eta_cap;
+        while (nc < ctx->ft_eta_nnz + n_w) nc *= 2;
+        int32_t *ni = realloc(ctx->ft_eta_idx, (size_t)nc * sizeof(int32_t));
+        double *nv = realloc(ctx->ft_eta_val, (size_t)nc * sizeof(double));
+        if (ni) ctx->ft_eta_idx = ni;
+        if (nv) ctx->ft_eta_val = nv;
+        if (!ni || !nv) {
+            if (w_val_heap) free(w_val);
+            LU_FT_CLEAR_V();
+            return -1;
+        }
+        ctx->ft_eta_cap = nc;
+    }
+    for (int32_t k = 0; k < n_w; k++) {
+        ctx->ft_eta_idx[ctx->ft_eta_nnz] = w_idx[k];
+        ctx->ft_eta_val[ctx->ft_eta_nnz] = w_val[k];
+        ctx->ft_eta_nnz++;
+    }
+    ctx->ft_eta_slot[upd] = t;
+    ctx->ft_eta_start[upd + 1] = ctx->ft_eta_nnz;
+    if (w_val_heap) free(w_val);
+
+    /* spike storage: entries (i, v[i]) for i != t, v[i] != 0 */
+    int32_t spk_count = 0;
+    for (int32_t q = 0; q < n_v; q++) {
+        int32_t i = v_pat[q];
+        if (i != t && v[i] != 0.0) spk_count++;
+    }
+    if (ctx->ft_spk_nnz + spk_count > ctx->ft_spk_cap) {
+        int32_t nc = ctx->ft_spk_cap == 0 ? 256 : ctx->ft_spk_cap;
+        while (nc < ctx->ft_spk_nnz + spk_count) nc *= 2;
+        int32_t *ni = realloc(ctx->ft_spk_idx, (size_t)nc * sizeof(int32_t));
+        double *nv = realloc(ctx->ft_spk_val, (size_t)nc * sizeof(double));
+        int32_t *nc2 = realloc(ctx->ft_spk_col, (size_t)nc * sizeof(int32_t));
+        int32_t *nn = realloc(ctx->ft_spk_nextrow, (size_t)nc * sizeof(int32_t));
+        if (ni) ctx->ft_spk_idx = ni;
+        if (nv) ctx->ft_spk_val = nv;
+        if (nc2) ctx->ft_spk_col = nc2;
+        if (nn) ctx->ft_spk_nextrow = nn;
+        if (!ni || !nv || !nc2 || !nn) {
+            LU_FT_CLEAR_V();
+            return -1;
+        }
+        ctx->ft_spk_cap = nc;
+    }
+    int32_t sid = upd; /* spike id == update index */
+    for (int32_t q = 0; q < n_v; q++) {
+        int32_t i = v_pat[q];
+        if (i == t || v[i] == 0.0) continue;
+        int32_t e = ctx->ft_spk_nnz++;
+        ctx->ft_spk_idx[e] = i;
+        ctx->ft_spk_val[e] = v[i];
+        ctx->ft_spk_col[e] = sid;
+        ctx->ft_spk_nextrow[e] = ctx->ft_rowhead[i];
+        ctx->ft_rowhead[i] = e;
+    }
+    ctx->ft_spk_slot[sid] = t;
+    ctx->ft_spk_created[sid] = upd;
+    ctx->ft_spk_start[sid + 1] = ctx->ft_spk_nnz;
+
+    /* bookkeeping: replace column t, delete row t, cycle t to the end */
+    ctx->ft_col_spike[t] = sid;
+    ctx->ft_del_stamp[t] = upd;
+    ctx->u_diag[t] = d;
+    {
+        int32_t pt = ctx->ft_pos[t];
+        for (int32_t k = pt; k < m - 1; k++) {
+            int32_t z = ctx->ft_order[k + 1];
+            ctx->ft_order[k] = z;
+            ctx->ft_pos[z] = k;
+        }
+        ctx->ft_order[m - 1] = t;
+        ctx->ft_pos[t] = m - 1;
+    }
+
+    /* shared cadence accounting (fill + diag guards, refac policy) */
+    ctx->ft_n_upd = upd + 1;
+    ctx->n_updates = ctx->ft_n_upd;
+    ctx->eta_sp_total_nnz += spk_count + n_w;
+    double ad = fabs(d);
+    if (ad > ctx->max_abs_diag) ctx->max_abs_diag = ad;
+    if (ad < ctx->min_abs_diag) ctx->min_abs_diag = ad;
+    LU_FT_CLEAR_V();
+    return 0;
+#undef LU_FT_CLEAR_V
+}
+
+/* Dense FTRAN with FT state: x = B'^{-1} b. */
+static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
+    int32_t m = ctx->m;
+    double *z = ctx->ws_z;
+
+    for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_row[k]];
+    for (int32_t j = 0; j < m; j++) {
+        double zj = z[j];
+        if (zj == 0.0) continue;
+        for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
+            z[ctx->l_indices[p]] -= ctx->l_values[p] * zj;
+        }
+    }
+    for (int32_t k = 0; k < ctx->ft_n_upd; k++) {
+        double dot = 0.0;
+        for (int32_t p = ctx->ft_eta_start[k]; p < ctx->ft_eta_start[k + 1]; p++) {
+            dot += ctx->ft_eta_val[p] * z[ctx->ft_eta_idx[p]];
+        }
+        z[ctx->ft_eta_slot[k]] -= dot;
+    }
+    /* U' back-substitution in logical order */
+    for (int32_t k = m - 1; k >= 0; k--) {
+        int32_t j = ctx->ft_order[k];
+        double zj = z[j];
+        if (zj == 0.0) continue;
+        zj /= ctx->u_diag[j];
+        z[j] = zj;
+        int32_t sid = ctx->ft_col_spike[j];
+        if (sid >= 0) {
+            int32_t created = ctx->ft_spk_created[sid];
+            for (int32_t p = ctx->ft_spk_start[sid]; p < ctx->ft_spk_start[sid + 1]; p++) {
+                int32_t i = ctx->ft_spk_idx[p];
+                if (!lu_ft_row_live(ctx, i, created)) continue;
+                z[i] -= ctx->ft_spk_val[p] * zj;
+            }
+        } else {
+            for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+                int32_t i = ctx->u_indices[p];
+                if (i == j) continue;
+                if (ctx->ft_del_stamp[i] >= 0) continue; /* static: dead */
+                z[i] -= ctx->u_values[p] * zj;
+            }
+        }
+    }
+    for (int32_t k = 0; k < m; k++) x[ctx->perm_col[k]] = z[k];
+}
+
+/* Dense BTRAN with FT state: x = B'^{-T} b. */
+static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
+    int32_t m = ctx->m;
+    double *z = ctx->ws_z;
+
+    for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_col[k]];
+    /* U'^T forward solve in logical order (row-scatter form) */
+    for (int32_t k = 0; k < m; k++) {
+        int32_t j = ctx->ft_order[k];
+        double zj = z[j];
+        if (zj == 0.0) { continue; }
+        zj /= ctx->u_diag[j];
+        z[j] = zj;
+        /* scatter live ROW j of U' */
+        if (ctx->ft_del_stamp[j] < 0) {
+            for (int32_t p = ctx->ut_indptr[j]; p < ctx->ut_indptr[j + 1]; p++) {
+                int32_t l = ctx->ut_indices[p];
+                if (l == j) continue;
+                if (ctx->ft_col_spike[l] >= 0) continue; /* static col dead */
+                z[l] -= ctx->ut_values[p] * zj;
+            }
+        }
+        for (int32_t e = ctx->ft_rowhead[j]; e >= 0; e = ctx->ft_spk_nextrow[e]) {
+            int32_t sid = ctx->ft_spk_col[e];
+            int32_t slot = ctx->ft_spk_slot[sid];
+            if (ctx->ft_col_spike[slot] != sid) continue;
+            if (!lu_ft_row_live(ctx, j, ctx->ft_spk_created[sid])) continue;
+            z[slot] -= ctx->ft_spk_val[e] * zj;
+        }
+    }
+    /* transposed row etas, reverse order */
+    for (int32_t k = ctx->ft_n_upd - 1; k >= 0; k--) {
+        double zs = z[ctx->ft_eta_slot[k]];
+        if (zs == 0.0) continue;
+        for (int32_t p = ctx->ft_eta_start[k]; p < ctx->ft_eta_start[k + 1]; p++) {
+            z[ctx->ft_eta_idx[p]] -= ctx->ft_eta_val[p] * zs;
+        }
+    }
+    /* L^T back solve */
+    for (int32_t j = m - 1; j >= 0; j--) {
+        double s = z[j];
+        for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
+            s -= ctx->l_values[p] * z[ctx->l_indices[p]];
+        }
+        z[j] = s;
+    }
+    for (int32_t i = 0; i < m; i++) x[i] = z[ctx->inv_perm_row[i]];
+}
+
+/*
+ * gp_reach_ft_col: Gilbert-Peierls reach over the VIRTUAL column
+ * adjacency of U' (spike columns from the packed FT store, static
+ * columns liveness-filtered). DFS post-order gives reverse topological
+ * order for the actual live edge set, which is what the solve loops
+ * need (index order is irrelevant, only the dependency order matters).
+ * Same conventions as gp_reach: resume pointers in xi[0..m-1], output
+ * in xi[top..m-1], gp_marked/gp_mark for visited state.
+ */
+static int32_t gp_reach_ft_col(LUContext *ctx, int32_t n_rhs_nz,
+                               const int32_t *rhs_pattern, int32_t *xi) {
+    int32_t m = ctx->m;
+    int32_t *stack = ctx->gp_stack;
+    int32_t *marked = ctx->gp_marked;
+    int32_t mark = ctx->gp_mark;
+    if (mark >= INT32_MAX - 1) {
+        memset(marked, 0, (size_t)m * sizeof(int32_t));
+        mark = 1;
+    }
+    ctx->gp_mark = mark + 1;
+
+    int32_t top = m;
+    for (int32_t k = 0; k < n_rhs_nz; k++) {
+        int32_t root = rhs_pattern[k];
+        if (marked[root] == mark) continue;
+        int32_t stack_top = 0;
+        stack[0] = root;
+        {
+            int32_t sid = ctx->ft_col_spike[root];
+            xi[root] = (sid >= 0) ? ctx->ft_spk_start[sid] : ctx->u_indptr[root];
+        }
+        while (stack_top >= 0) {
+            int32_t node = stack[stack_top];
+            int32_t sid = ctx->ft_col_spike[node];
+            if (marked[node] != mark) {
+                marked[node] = mark;
+                xi[node] = (sid >= 0) ? ctx->ft_spk_start[sid]
+                                      : ctx->u_indptr[node];
+            }
+            int found_child = 0;
+            if (sid >= 0) {
+                int32_t p_end = ctx->ft_spk_start[sid + 1];
+                int32_t created = ctx->ft_spk_created[sid];
+                for (int32_t p = xi[node]; p < p_end; p++) {
+                    int32_t child = ctx->ft_spk_idx[p];
+                    if (!lu_ft_row_live(ctx, child, created)) continue;
+                    if (marked[child] != mark) {
+                        xi[node] = p + 1;
+                        stack[++stack_top] = child;
+                        found_child = 1;
+                        break;
+                    }
+                }
+            } else {
+                int32_t p_end = ctx->u_indptr[node + 1];
+                for (int32_t p = xi[node]; p < p_end; p++) {
+                    int32_t child = ctx->u_indices[p];
+                    if (child == node) continue;
+                    if (ctx->ft_del_stamp[child] >= 0) continue;
+                    if (marked[child] != mark) {
+                        xi[node] = p + 1;
+                        stack[++stack_top] = child;
+                        found_child = 1;
+                        break;
+                    }
+                }
+            }
+            if (!found_child) {
+                stack_top--;
+                xi[--top + m] = node;
+            }
+        }
+    }
+    for (int32_t i = top; i < m; i++) xi[i] = xi[i + m];
+    return top;
+}
+
+/* Sparse U'-solve over the reach (column scatter form). */
+static void gp_usolve_ft(const LUContext *ctx, double *x,
+                         const int32_t *xi, int32_t top) {
+    int32_t m = ctx->m;
+    for (int32_t px = top; px < m; px++) {
+        int32_t j = xi[px];
+        double xj = x[j];
+        if (xj == 0.0) continue;
+        double diag = ctx->u_diag[j];
+        if (diag != 0.0) xj /= diag;
+        x[j] = xj;
+        int32_t sid = ctx->ft_col_spike[j];
+        if (sid >= 0) {
+            int32_t created = ctx->ft_spk_created[sid];
+            for (int32_t p = ctx->ft_spk_start[sid]; p < ctx->ft_spk_start[sid + 1]; p++) {
+                int32_t i = ctx->ft_spk_idx[p];
+                if (!lu_ft_row_live(ctx, i, created)) continue;
+                x[i] -= ctx->ft_spk_val[p] * xj;
+            }
+        } else {
+            for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+                int32_t i = ctx->u_indices[p];
+                if (i == j) continue;
+                if (ctx->ft_del_stamp[i] >= 0) continue;
+                x[i] -= ctx->u_values[p] * xj;
+            }
+        }
+    }
+}
+
+/*
+ * gp_reach_ft_row: reach over the VIRTUAL row adjacency of U' (static
+ * U^T rows filtered by replaced columns, plus the packed spike row
+ * chains). Resume-state encoding in xi[node]:
+ *   >= 0   next static position p in ut arrays
+ *   <= -2  chain entry e encoded as -2 - e
+ *   == -1  node exhausted (chain end)
+ */
+static int32_t gp_reach_ft_row(LUContext *ctx, int32_t n_rhs_nz,
+                               const int32_t *rhs_pattern, int32_t *xi) {
+    int32_t m = ctx->m;
+    int32_t *stack = ctx->gp_stack;
+    int32_t *marked = ctx->gp_marked;
+    int32_t mark = ctx->gp_mark;
+    if (mark >= INT32_MAX - 1) {
+        memset(marked, 0, (size_t)m * sizeof(int32_t));
+        mark = 1;
+    }
+    ctx->gp_mark = mark + 1;
+
+    int32_t top = m;
+    for (int32_t k = 0; k < n_rhs_nz; k++) {
+        int32_t root = rhs_pattern[k];
+        if (marked[root] == mark) continue;
+        int32_t stack_top = 0;
+        stack[0] = root;
+        xi[root] = (ctx->ft_del_stamp[root] < 0)
+            ? ctx->ut_indptr[root]
+            : (-2 - ctx->ft_rowhead[root]);
+        while (stack_top >= 0) {
+            int32_t node = stack[stack_top];
+            if (marked[node] != mark) {
+                marked[node] = mark;
+                xi[node] = (ctx->ft_del_stamp[node] < 0)
+                    ? ctx->ut_indptr[node]
+                    : (-2 - ctx->ft_rowhead[node]);
+            }
+            int found_child = 0;
+            int32_t state = xi[node];
+            while (!found_child && state != -1) {
+                if (state >= 0) {
+                    int32_t p_end = ctx->ut_indptr[node + 1];
+                    int32_t p = state;
+                    for (; p < p_end; p++) {
+                        int32_t child = ctx->ut_indices[p];
+                        if (child == node) continue;
+                        if (ctx->ft_col_spike[child] >= 0) continue;
+                        if (marked[child] != mark) break;
+                    }
+                    if (p < p_end) {
+                        xi[node] = p + 1;
+                        stack[++stack_top] = ctx->ut_indices[p];
+                        found_child = 1;
+                    } else {
+                        state = -2 - ctx->ft_rowhead[node];
+                        xi[node] = state;
+                    }
+                } else {
+                    int32_t e = -2 - state;
+                    while (e >= 0) {
+                        int32_t sid = ctx->ft_spk_col[e];
+                        int32_t slot = ctx->ft_spk_slot[sid];
+                        if (ctx->ft_col_spike[slot] == sid &&
+                            lu_ft_row_live(ctx, node, ctx->ft_spk_created[sid]) &&
+                            marked[slot] != mark) {
+                            break;
+                        }
+                        e = ctx->ft_spk_nextrow[e];
+                    }
+                    if (e >= 0) {
+                        xi[node] = -2 - ctx->ft_spk_nextrow[e];
+                        stack[++stack_top] = ctx->ft_spk_slot[ctx->ft_spk_col[e]];
+                        found_child = 1;
+                    } else {
+                        state = -1;
+                        xi[node] = -1;
+                    }
+                }
+            }
+            if (!found_child) {
+                stack_top--;
+                xi[--top + m] = node;
+            }
+        }
+    }
+    for (int32_t i = top; i < m; i++) xi[i] = xi[i + m];
+    return top;
+}
+
+/* Sparse U'^T forward solve over the reach (row scatter form). */
+static void gp_utsolve_ft(const LUContext *ctx, double *x,
+                          const int32_t *xi, int32_t top) {
+    int32_t m = ctx->m;
+    for (int32_t px = top; px < m; px++) {
+        int32_t j = xi[px];
+        double xj = x[j];
+        if (xj == 0.0) continue;
+        double diag = ctx->u_diag[j];
+        if (diag != 0.0) xj /= diag;
+        x[j] = xj;
+        if (ctx->ft_del_stamp[j] < 0) {
+            for (int32_t p = ctx->ut_indptr[j]; p < ctx->ut_indptr[j + 1]; p++) {
+                int32_t l = ctx->ut_indices[p];
+                if (l == j) continue;
+                if (ctx->ft_col_spike[l] >= 0) continue;
+                x[l] -= ctx->ut_values[p] * xj;
+            }
+        }
+        for (int32_t e = ctx->ft_rowhead[j]; e >= 0; e = ctx->ft_spk_nextrow[e]) {
+            int32_t sid = ctx->ft_spk_col[e];
+            int32_t slot = ctx->ft_spk_slot[sid];
+            if (ctx->ft_col_spike[slot] != sid) continue;
+            if (!lu_ft_row_live(ctx, j, ctx->ft_spk_created[sid])) continue;
+            x[slot] -= ctx->ft_spk_val[e] * xj;
+        }
+    }
+}
+
 /*
  * lu_ftran_sparse: hyper-sparse FTRAN using Gilbert-Peierls.
  *
@@ -8950,6 +9729,168 @@ static int32_t lu_ftran_sparse(LUContext *ctx,
                                const double *rhs_values,
                                double *x, int32_t *x_pattern) {
     int32_t m = ctx->m;
+    if (ctx->ft_active && ctx->ft_n_upd > 0) {
+        /* NOTE: rhs_indices may alias x_pattern (the DS passes
+         * ftran_pattern for both; the contract is that the rhs is fully
+         * consumed before the output pattern is written). Any diagnostic
+         * that needs the rhs after the solve must snapshot it first. */
+        int32_t ftck_n = 0;
+        int32_t ftck_idx[64];
+        double ftck_val[64];
+        if (getenv("LINPROGX_DS_FT_CHECK") != NULL && n_rhs_nz <= 64) {
+            ftck_n = n_rhs_nz;
+            for (int32_t k = 0; k < n_rhs_nz; k++) {
+                ftck_idx[k] = rhs_indices[k];
+                ftck_val[k] = rhs_values[k];
+            }
+        }
+        /* Adaptive route: when the measured average solution density is
+         * high (dense-ish instances like woodw, m~1k, sol ~30% of m),
+         * the branchy virtual-adjacency DFS costs more than one dense
+         * sweep; use the dense staging path there. Hyper-sparse
+         * instances (stocfor3, 80bau3b, cre_d) take the GP path. */
+        int64_t s_cnt = ctx->ftran_sparse_count + ctx->btran_sparse_count;
+        int64_t s_nnz = ctx->ftran_sparse_nnz_total + ctx->btran_sparse_nnz_total;
+        if (s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
+            double *rhs = ctx->ft_rhs;
+            for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = rhs_values[k];
+            lu_ft_ftran(ctx, rhs, x);
+            for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = 0.0;
+            int32_t nnz = 0;
+            for (int32_t i = 0; i < m; i++) {
+                if (x[i] != 0.0) x_pattern[nnz++] = i;
+            }
+            ctx->ftran_sparse_count++;
+            ctx->ftran_sparse_nnz_total += nnz;
+            return nnz;
+        }
+        /* Hyper-sparse FT FTRAN: static-L GP solve, gathered row etas,
+         * then GP reach + solve over the virtual U' adjacency. */
+        double *z = ctx->ws_z;
+        int32_t *xi = ctx->gp_xi;
+        memset(z, 0, (size_t)m * sizeof(double));
+        int32_t *perm_pattern = ctx->gp_pinv;
+        int32_t n_perm_nz = 0;
+        for (int32_t k = 0; k < n_rhs_nz; k++) {
+            int32_t prow = ctx->inv_perm_row[rhs_indices[k]];
+            z[prow] = rhs_values[k];
+            perm_pattern[n_perm_nz++] = prow;
+        }
+        int32_t top_l = gp_reach(ctx, n_perm_nz, perm_pattern,
+                                 ctx->l_indptr, ctx->l_indices, m, xi);
+        gp_lsolve(ctx, z, xi, top_l);
+        /* collect L-solve nonzeros, then apply the FT row etas in
+         * creation order (each is a gather into one slot; the slot is a
+         * potential new pattern member, deduped via gp_marked) */
+        int32_t n_u_rhs = 0;
+        for (int32_t px = top_l; px < m; px++) {
+            int32_t j = xi[px];
+            if (z[j] != 0.0) perm_pattern[n_u_rhs++] = j;
+        }
+        {
+            int32_t *marked = ctx->gp_marked;
+            int32_t mark = ctx->gp_mark;
+            if (mark >= INT32_MAX - 1) {
+                memset(marked, 0, (size_t)m * sizeof(int32_t));
+                mark = 1;
+            }
+            ctx->gp_mark = mark + 1;
+            for (int32_t q = 0; q < n_u_rhs; q++) marked[perm_pattern[q]] = mark;
+            for (int32_t k = 0; k < ctx->ft_n_upd; k++) {
+                double dot = 0.0;
+                for (int32_t p = ctx->ft_eta_start[k]; p < ctx->ft_eta_start[k + 1]; p++) {
+                    dot += ctx->ft_eta_val[p] * z[ctx->ft_eta_idx[p]];
+                }
+                if (dot != 0.0) {
+                    int32_t s = ctx->ft_eta_slot[k];
+                    z[s] -= dot;
+                    if (marked[s] != mark) {
+                        marked[s] = mark;
+                        perm_pattern[n_u_rhs++] = s;
+                    }
+                }
+            }
+        }
+        int32_t nnz = 0;
+        if (getenv("LINPROGX_DS_FT_DENSE_U") != NULL) {
+            /* bisect probe: sparse front end + dense logical U sweep */
+            for (int32_t k = m - 1; k >= 0; k--) {
+                int32_t j = ctx->ft_order[k];
+                double zj = z[j];
+                if (zj == 0.0) continue;
+                zj /= ctx->u_diag[j];
+                z[j] = zj;
+                int32_t sid = ctx->ft_col_spike[j];
+                if (sid >= 0) {
+                    int32_t created = ctx->ft_spk_created[sid];
+                    for (int32_t p = ctx->ft_spk_start[sid]; p < ctx->ft_spk_start[sid + 1]; p++) {
+                        int32_t i = ctx->ft_spk_idx[p];
+                        if (!lu_ft_row_live(ctx, i, created)) continue;
+                        z[i] -= ctx->ft_spk_val[p] * zj;
+                    }
+                } else {
+                    for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+                        int32_t i = ctx->u_indices[p];
+                        if (i == j) continue;
+                        if (ctx->ft_del_stamp[i] >= 0) continue;
+                        z[i] -= ctx->u_values[p] * zj;
+                    }
+                }
+            }
+            for (int32_t k2 = 0; k2 < m; k2++) {
+                if (z[k2] != 0.0) {
+                    int32_t out_idx = ctx->perm_col[k2];
+                    x[out_idx] = z[k2];
+                    x_pattern[nnz++] = out_idx;
+                }
+                z[k2] = 0.0;
+            }
+        } else {
+        int32_t top_u = gp_reach_ft_col(ctx, n_u_rhs, perm_pattern, xi);
+        gp_usolve_ft(ctx, z, xi, top_u);
+        for (int32_t px = top_u; px < m; px++) {
+            int32_t k2 = xi[px];
+            if (z[k2] != 0.0) {
+                int32_t out_idx = ctx->perm_col[k2];
+                x[out_idx] = z[k2];
+                x_pattern[nnz++] = out_idx;
+            }
+            z[k2] = 0.0;
+        }
+        }
+        if (ftck_n > 0) {
+            /* cross-check the sparse result against the dense FT path
+             * (uses the snapshotted rhs; rhs_indices now aliases the
+             * already-written x_pattern) */
+            double *rhs = ctx->ft_rhs;
+            double *ref = malloc((size_t)m * sizeof(double));
+            if (ref != NULL) {
+                for (int32_t k = 0; k < ftck_n; k++) rhs[ftck_idx[k]] = ftck_val[k];
+                lu_ft_ftran(ctx, rhs, ref);
+                for (int32_t k = 0; k < ftck_n; k++) rhs[ftck_idx[k]] = 0.0;
+                double md = 0.0;
+                int32_t miss = 0, wrong = 0, mi = -1;
+                for (int32_t i = 0; i < m; i++) {
+                    double dd = fabs(ref[i] - x[i]);
+                    if (dd > md) { md = dd; mi = i; }
+                    if (dd > 1e-9) {
+                        if (x[i] == 0.0 && ref[i] != 0.0) miss++;
+                        else wrong++;
+                    }
+                }
+                if (md > 1e-9) {
+                    fprintf(stderr, "[ft_check] FTRAN maxdiff %.3e at %d "
+                                    "(z-slot %d) miss=%d wrong=%d n_upd=%d\n",
+                            md, mi, mi >= 0 ? ctx->inv_perm_col[mi] : -1,
+                            miss, wrong, ctx->ft_n_upd);
+                }
+                free(ref);
+            }
+        }
+        ctx->ftran_sparse_count++;
+        ctx->ftran_sparse_nnz_total += nnz;
+        return nnz;
+    }
     double *z = ctx->ws_z;
     int32_t *xi = ctx->gp_xi;
 
@@ -9072,6 +10013,108 @@ static int32_t lu_btran_sparse(LUContext *ctx,
                                int32_t rhs_pos,
                                double *x, int32_t *x_pattern) {
     int32_t m = ctx->m;
+    if (ctx->ft_active && ctx->ft_n_upd > 0) {
+        /* Adaptive route: see lu_ftran_sparse. */
+        int64_t s_cnt = ctx->ftran_sparse_count + ctx->btran_sparse_count;
+        int64_t s_nnz = ctx->ftran_sparse_nnz_total + ctx->btran_sparse_nnz_total;
+        if (s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
+            double *rhs = ctx->ft_rhs;
+            rhs[rhs_pos] = 1.0;
+            lu_ft_btran(ctx, rhs, x);
+            rhs[rhs_pos] = 0.0;
+            int32_t nnz = 0;
+            for (int32_t i = 0; i < m; i++) {
+                if (x[i] != 0.0) x_pattern[nnz++] = i;
+            }
+            ctx->btran_sparse_count++;
+            ctx->btran_sparse_nnz_total += nnz;
+            return nnz;
+        }
+        /* Hyper-sparse FT BTRAN: U'^T GP solve over the virtual row
+         * adjacency, transposed row etas in reverse (scatter), then the
+         * unchanged static L^T GP solve. */
+        double *z = ctx->ws_z;
+        int32_t *xi = ctx->gp_xi;
+        memset(z, 0, (size_t)m * sizeof(double));
+        int32_t *perm_pattern = ctx->gp_pinv;
+        int32_t j0 = ctx->inv_perm_col[rhs_pos];
+        z[j0] = 1.0;
+        perm_pattern[0] = j0;
+        int32_t top_ut = gp_reach_ft_row(ctx, 1, perm_pattern, xi);
+        gp_utsolve_ft(ctx, z, xi, top_ut);
+        int32_t n_lt_rhs = 0;
+        for (int32_t px = top_ut; px < m; px++) {
+            int32_t j = xi[px];
+            if (z[j] != 0.0) perm_pattern[n_lt_rhs++] = j;
+        }
+        /* transposed row etas, reverse creation order (scatter form) */
+        {
+            int32_t *marked = ctx->gp_marked;
+            int32_t mark = ctx->gp_mark;
+            if (mark >= INT32_MAX - 1) {
+                memset(marked, 0, (size_t)m * sizeof(int32_t));
+                mark = 1;
+            }
+            ctx->gp_mark = mark + 1;
+            for (int32_t q = 0; q < n_lt_rhs; q++) marked[perm_pattern[q]] = mark;
+            for (int32_t k = ctx->ft_n_upd - 1; k >= 0; k--) {
+                double zs = z[ctx->ft_eta_slot[k]];
+                if (zs == 0.0) continue;
+                for (int32_t p = ctx->ft_eta_start[k]; p < ctx->ft_eta_start[k + 1]; p++) {
+                    int32_t j = ctx->ft_eta_idx[p];
+                    z[j] -= ctx->ft_eta_val[p] * zs;
+                    if (marked[j] != mark) {
+                        marked[j] = mark;
+                        perm_pattern[n_lt_rhs++] = j;
+                    }
+                }
+            }
+        }
+        int32_t top_lt = gp_reach(ctx, n_lt_rhs, perm_pattern,
+                                  ctx->lt_indptr, ctx->lt_indices, m, xi);
+        for (int32_t px = top_lt; px < m; px++) {
+            int32_t j = xi[px];
+            if (z[j] == 0.0) continue;
+            for (int32_t p = ctx->lt_indptr[j]; p < ctx->lt_indptr[j + 1]; p++) {
+                int32_t i = ctx->lt_indices[p];
+                if (i < j) {
+                    z[i] -= ctx->lt_values[p] * z[j];
+                }
+            }
+        }
+        int32_t nnz = 0;
+        for (int32_t px = top_lt; px < m; px++) {
+            int32_t k2 = xi[px];
+            if (z[k2] != 0.0) {
+                int32_t out_idx = ctx->perm_row[k2];
+                x[out_idx] = z[k2];
+                x_pattern[nnz++] = out_idx;
+            }
+            z[k2] = 0.0;
+        }
+        if (getenv("LINPROGX_DS_FT_CHECK") != NULL) {
+            double *rhs = ctx->ft_rhs;
+            double *ref = malloc((size_t)m * sizeof(double));
+            if (ref != NULL) {
+                rhs[rhs_pos] = 1.0;
+                lu_ft_btran(ctx, rhs, ref);
+                rhs[rhs_pos] = 0.0;
+                double md = 0.0;
+                for (int32_t i = 0; i < m; i++) {
+                    double dd = fabs(ref[i] - x[i]);
+                    if (dd > md) md = dd;
+                }
+                if (md > 1e-9) {
+                    fprintf(stderr, "[ft_check] BTRAN sparse-vs-dense maxdiff %.3e"
+                                    " (n_upd=%d)\n", md, ctx->ft_n_upd);
+                }
+                free(ref);
+            }
+        }
+        ctx->btran_sparse_count++;
+        ctx->btran_sparse_nnz_total += nnz;
+        return nnz;
+    }
     double *z = ctx->ws_z;
     double *v_eta = ctx->ws_v;
     int32_t *xi = ctx->gp_xi;
@@ -9223,6 +10266,10 @@ static int32_t lu_btran_sparse(LUContext *ctx,
  * Dense rhs for milestone 1.
  */
 static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
+    if (ctx->ft_active && ctx->ft_n_upd > 0) {
+        lu_ft_ftran((LUContext *)ctx, b, x);
+        return;
+    }
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
     double *w = ctx->ws_w;
@@ -9306,6 +10353,10 @@ static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
  *    So x[i] = y[inv_perm_row[i]].
  */
 static void lu_btran(const LUContext *ctx, const double *b, double *x) {
+    if (ctx->ft_active && ctx->ft_n_upd > 0) {
+        lu_ft_btran((LUContext *)ctx, b, x);
+        return;
+    }
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
     double *w = ctx->ws_w;
@@ -9764,8 +10815,13 @@ static int lu_should_refactor(const LUContext *ctx) {
          * path-identical woodw/stocfor3/cre_d (guard never fires). */
         refac_diag_ratio = (env != NULL && atof(env) > 0.0) ? atof(env) : 1e8;
     }
+    static int32_t ft_max_updates = 0;
+    if (ft_max_updates == 0) {
+        const char *env = getenv("LINPROGX_DS_FT_MAX_UPDATES");
+        ft_max_updates = (env != NULL && atoi(env) > 0) ? atoi(env) : 500;
+    }
 
-    if (ctx->n_updates >= 500) return 1;
+    if (ctx->n_updates >= (ctx->ft_active ? ft_max_updates : 500)) return 1;
 
     if (ctx->n_updates > 0 && ctx->min_abs_diag > 0.0) {
         double ratio = ctx->max_abs_diag / ctx->min_abs_diag;
@@ -10157,6 +11213,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *flip_delta_xB = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     int32_t *flip_cand = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
 
+    /* LINPROGX_DS_FT=1: entering-column staging for the true FT update */
+    int ds_ft_on = lu_ft_enabled();
+    int32_t *ft_ent_idx = ds_ft_on
+        ? malloc((size_t)(m > 0 ? m : 1) * sizeof(int32_t)) : NULL;
+    double *ft_ent_val = ds_ft_on
+        ? malloc((size_t)(m > 0 ? m : 1) * sizeof(double)) : NULL;
+    int64_t ds_ft_updates = 0, ds_ft_rejects = 0;
+
     /* Artificial bound tracking: 1 if column j has a big-M artificial bound */
     int8_t *has_art_bound = calloc((size_t)(n > 0 ? n : 1), sizeof(int8_t));
     /* True bounds: original lo/hi before artificial bound shift */
@@ -10183,7 +11247,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         has_art_bound == NULL || lo_true == NULL || hi_true == NULL ||
         ds_row_scale == NULL || ds_col_scale == NULL || scaled_csc_data == NULL ||
         scaled_csr_data == NULL || c_orig == NULL ||
-        (bfrt == 1 && bfrt_cands == NULL)) {
+        (bfrt == 1 && bfrt_cands == NULL) ||
+        (ds_ft_on && (ft_ent_idx == NULL || ft_ent_val == NULL))) {
         PyErr_NoMemory();
         goto done;
     }
@@ -10796,7 +11861,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      */
     const double expand_tau0 = 5e-10;
     const double expand_tau_max = 1e-8;
-    double expand_dtau = 1e-11;
+    /* Default dose 5e-11 = the shipped production dose: paired with the
+     * Forrest-Tomlin update (default on) it takes the fewest
+     * refactorizations and the least wall on the certified DS battery
+     * (greenbea/woodw/stocfor3/cre_d) and drives the public auto route's
+     * DS wins. Overridable via LINPROGX_DS_EXPAND_DTAU. The tau_max
+     * refactorization cap below bounds accumulated expansion for ANY
+     * dose, so soundness does not depend on this value. */
+    double expand_dtau = 5e-11;
     {
         /* Experiment knob (same idiom as LINPROGX_DS_BIGM_FACTOR): probe
          * the EXPAND step-floor dose delta without changing the kwarg
@@ -10829,6 +11901,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
          * Also refactorize immediately when lu_update produces a violent
          * eta (diagonal element < 1e-6 or > 1e6). */
         int32_t refac_interval = 500;
+        if (ds_ft_on) {
+            /* LINPROGX_DS_FT_MAX_UPDATES stretches the FT cadence: with
+             * flat FT solves the 500-update cap is the binding refac
+             * trigger (cre_d); raise the interval cap in lockstep. The
+             * EXPAND tau hard cap still forces refactorization at
+             * ~(tau_max - tau0)/dtau pivots and is deliberately not
+             * touched. */
+            const char *env = getenv("LINPROGX_DS_FT_MAX_UPDATES");
+            if (env != NULL && atoi(env) > 0) refac_interval = atoi(env);
+        }
         int32_t iters_since_refac = 0;
         int x_B_needs_recompute = 1;
         int x_B_fresh = 0; /* set when x_B comes from a full solve, cleared
@@ -11941,10 +13023,34 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 /* Use the alpha_col already computed in step 4e to avoid a
                  * redundant FTRAN inside the standard lu_update.  This saves
                  * one full FTRAN per iteration (the most expensive operation).
-                 * Use the sparse variant when FTRAN pattern is available. */
-                int rc = lu_update_with_ftran_sparse(
-                    lu, leaving_basis_pos, alpha_col,
-                    ftran_nnz, ftran_pattern);
+                 * Use the sparse variant when FTRAN pattern is available.
+                 * LINPROGX_DS_FT=1 routes to the true Forrest-Tomlin update
+                 * instead (takes the raw entering column; the PFI eta chain
+                 * is never grown in that mode). */
+                int rc;
+                if (ds_ft_on) {
+                    int32_t ent_nnz = 0;
+                    if (entering_col < n) {
+                        for (Py_ssize_t p = self->csc_indptr[entering_col];
+                             p < self->csc_indptr[entering_col + 1]; p++) {
+                            ft_ent_idx[ent_nnz] = (int32_t)self->csc_rows[p];
+                            ft_ent_val[ent_nnz] = a_data[p];
+                            ent_nnz++;
+                        }
+                    } else {
+                        ft_ent_idx[0] = entering_col - n;
+                        ft_ent_val[0] = 1.0;
+                        ent_nnz = 1;
+                    }
+                    rc = lu_ft_update(lu, leaving_basis_pos, ent_nnz,
+                                      ft_ent_idx, ft_ent_val);
+                    if (rc == 0) ds_ft_updates++;
+                    else ds_ft_rejects++;
+                } else {
+                    rc = lu_update_with_ftran_sparse(
+                        lu, leaving_basis_pos, alpha_col,
+                        ftran_nnz, ftran_pattern);
+                }
 
                 int refac_reason = -1;
                 if (rc != 0) {
@@ -12469,6 +13575,17 @@ build_result:
             } else {
                 PyErr_Clear();
             }
+            PyObject *ds_ft = Py_BuildValue(
+                "{s:L,s:L,s:i}",
+                "ft_updates", (long long)ds_ft_updates,
+                "ft_rejects", (long long)ds_ft_rejects,
+                "ft_on", ds_ft_on);
+            if (ds_ft != NULL) {
+                PyDict_SetItemString(result, "ft_stats", ds_ft);
+                Py_DECREF(ds_ft);
+            } else {
+                PyErr_Clear();
+            }
         }
     }
 
@@ -12484,6 +13601,7 @@ done:
     free(alpha_scratch); free(alpha_touched); free(alpha_pattern);
     free(cand_j); free(cand_alpha);
     free(flip_delta_xB); free(flip_cand); free(infeas_stamp); free(bfrt_cands);
+    free(ft_ent_idx); free(ft_ent_val);
     free(has_art_bound); free(lo_true); free(hi_true);
     free(ds_row_scale); free(ds_col_scale); free(scaled_csc_data); free(scaled_csr_data); free(c_orig);
     return result;
