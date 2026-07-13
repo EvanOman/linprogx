@@ -122,7 +122,11 @@ class SparseSolver:
     #: back to PDHG if the ordering or the factor turns out too expensive
     #: (minimum-degree work budget and a factor-flops cap).
     AUTO_IPM_MAX_ROWS = 50_000
-    DEFAULT_PDHG_THREADS = 4
+    #: 0 = auto: the C side sizes the worker pool to the physical-core
+    #: estimate (logical cores / 2, capped at the pool maximum). The PDHG
+    #: kernels are bit-identical at any thread count, so the choice only
+    #: affects wall clock, never the trajectory.
+    DEFAULT_PDHG_THREADS = 0
 
     def __init__(
         self,
