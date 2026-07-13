@@ -1402,3 +1402,17 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   units (pattern cache + block kernel) have now cut cre_b's uplook
   ~1.95 -> ~1.13s; next lever there per profile is the dense-tail
   dpotrf (t=1707) or iteration count (correctors already optimal).
+
+- SUHL PIVOT SEARCH SHIPPED (2026-07-13, exp-leaving, ported):
+  bounded Markowitz search (budget 8 threshold-viable columns, accept
+  merit<=4 immediately, exact merit==0 exit preserved; default on,
+  LINPROGX_LU_SUHL=0 reverts). greenbea pivot search 0.322->0.013s
+  (-96%, 44x fewer visits); paired walls greenbea +35.4% (compounded
+  by favorable -14% iteration shift), woodw +20.3%, stocfor3 +12.6%,
+  cre_d +7.9%, 80bau3b +8.1%; zero refac storms; all certified.
+  VERIFIED ON CANONICAL: greenbea public 1.650s best (9,150 iters,
+  resid 1.3e-7) — session arc 3.80 -> 1.65s, now ~6.3x vs HiGHS 0.26.
+  MONITORED EXCEPTION: cre_d same-basis fill +40% (proxy breach;
+  outcomes healthy). QUEUED IDEA if it ever bites: fill-feedback
+  fallback (redo factorize exhaustively when fill exceeds ~1.5x
+  prediction).
