@@ -6889,6 +6889,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
          * the full refactor a saved iteration avoids. Global constants;
          * skipped once both steps are already long. mcc_budget is the
          * deterministic structure-based budget computed before the loop. */
+        Py_ssize_t mcc_before = mcc_accepted;
         for (int mcc = 0; mcc < mcc_budget; mcc++) {
             if (ap >= 0.9 && ad >= 0.9) {
                 break;
@@ -6997,6 +6998,36 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             ap = ap_c;
             ad = ad_c;
             mcc_accepted++;
+        }
+
+        /* Trajectory trace (LINPROGX_IPM_TRACE=1): one line per iteration
+         * for corrector-pathology diagnosis; debug-only, no path effect. */
+        static int trace_mode = -1;
+        if (trace_mode < 0) {
+            const char *e = getenv("LINPROGX_IPM_TRACE");
+            trace_mode = e != NULL ? atoi(e) : 0;
+        }
+        if (trace_mode) {
+            double cmin = 1e300;
+            double cmax = 0.0;
+            for (Py_ssize_t j = 0; j < n; j++) {
+                unsigned char kind = bound_kind[j];
+                if (kind & 1) {
+                    double v = sl[j] * zl[j] / (mu > 0.0 ? mu : 1.0);
+                    if (v < cmin) cmin = v;
+                    if (v > cmax) cmax = v;
+                }
+                if (kind & 2) {
+                    double v = su[j] * zu[j] / (mu > 0.0 ? mu : 1.0);
+                    if (v < cmin) cmin = v;
+                    if (v > cmax) cmax = v;
+                }
+            }
+            fprintf(stderr,
+                    "TRACE it=%zd mu=%.3e aff=%.3f/%.3f fin=%.3f/%.3f "
+                    "mccr=%zd cen=%.2e/%.2e\n",
+                    (Py_ssize_t)iter, mu, ap_aff, ad_aff, ap, ad,
+                    mcc_accepted - mcc_before, cmin, cmax);
         }
 
         ap *= 0.995;
