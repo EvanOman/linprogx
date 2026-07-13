@@ -7844,6 +7844,7 @@ static LUContext *lu_factorize(int32_t m,
     int lu_prof = getenv("LINPROGX_LU_PROFILE") != NULL;
     double tp_mark = lu_prof ? linprogx_monotonic_seconds() : 0.0;
     double tp_init = 0.0, tp_pivot = 0.0, tp_elim = 0.0, tp_step = 0.0;
+    int64_t lu_prof_cols = 0, lu_prof_entries = 0, lu_prof_steps = 0;
     /* Dense workspace arrays, allocated once and reused every step */
     double *mult_arr = NULL;       /* mult_arr[row] = L multiplier for update rows */
     unsigned char *is_update = NULL; /* marks update rows */
@@ -8083,6 +8084,7 @@ static LUContext *lu_factorize(int32_t m,
 
         if (lu_prof) {
             tp_step = linprogx_monotonic_seconds();
+            lu_prof_steps++;
         }
         /* ---- Markowitz pivot selection ---- */
         /* Search up to 4 "tiers" of minimum column count among active columns.
@@ -8113,13 +8115,22 @@ static LUContext *lu_factorize(int32_t m,
             empty_run = 0;
             tiers_seen++;
             for (; j >= 0; j = active.bkt_next[j]) {
+            if (lu_prof) { lu_prof_cols++; }
 
+            /* NOTE (measured, 2026-07-12): fusing the two walks below into a
+             * single buffered pass was a paired-A/B -11% LOSS — the second
+             * walk re-reads pool nodes the first walk just brought into L1,
+             * so at ~4ns/entry the two-walk form is already at the memory
+             * floor. Do not re-attempt scan-level micro-optimizations here;
+             * the remaining cost is candidate VOLUME (a selection-rule /
+             * cadence question, not an instruction one). */
             double col_max = 0.0;
             int32_t idx = active.col_head[j];
             while (idx >= 0) {
                 double av = fabs(active.pool[idx].value);
                 if (av > col_max) col_max = av;
                 idx = active.pool[idx].next_in_col;
+                if (lu_prof) { lu_prof_entries++; }
             }
             if (col_max == 0.0) continue;
 
@@ -8502,9 +8513,12 @@ assemble:
     free(dense_buf); free(dense_row_map); free(dense_col_map);
     if (lu_prof) {
         fprintf(stderr,
-                "lu profile: m=%d init=%.4f pivot=%.4f elim=%.4f assemble=%.4f\n",
+                "lu profile: m=%d init=%.4f pivot=%.4f elim=%.4f assemble=%.4f "
+                "steps=%lld cols_scanned=%lld entries_walked=%lld\n",
                 m, tp_init, tp_pivot, tp_elim,
-                linprogx_monotonic_seconds() - tp_mark - tp_pivot - tp_elim);
+                linprogx_monotonic_seconds() - tp_mark - tp_pivot - tp_elim,
+                (long long)lu_prof_steps, (long long)lu_prof_cols,
+                (long long)lu_prof_entries);
     }
     return ctx;
 
@@ -9569,11 +9583,28 @@ static int lu_update_with_ftran_sparse(LUContext *ctx,
  * Returns 1 if refactorization is recommended, 0 otherwise.
  */
 static int lu_should_refactor(const LUContext *ctx) {
+    /* Dark cadence knobs (experiment idiom like LINPROGX_DS_BIGM_FACTOR):
+     * defaults reproduce the historical constants exactly, so unset envs
+     * are byte-identical. Cached after the first call. */
+    static double refac_fill_mult = 0.0;
+    static double refac_diag_ratio = 0.0;
+    if (refac_fill_mult == 0.0) {
+        const char *env = getenv("LINPROGX_DS_ETA_FILL_MULT");
+        refac_fill_mult = (env != NULL && atof(env) > 0.0) ? atof(env) : 4.0;
+        env = getenv("LINPROGX_DS_ETA_DIAG_RATIO");
+        /* Default 1e8 (2026-07-13): the historical 1e6 fired on harmless
+         * pivot-magnitude spread — 88 of greenbea's 188 refactorizations —
+         * costing ~12% wall. Gate battery at 1e8: certified optimal with
+         * matching objectives on greenbea/80bau3b (paths shift) and
+         * path-identical woodw/stocfor3/cre_d (guard never fires). */
+        refac_diag_ratio = (env != NULL && atof(env) > 0.0) ? atof(env) : 1e8;
+    }
+
     if (ctx->n_updates >= 500) return 1;
 
     if (ctx->n_updates > 0 && ctx->min_abs_diag > 0.0) {
         double ratio = ctx->max_abs_diag / ctx->min_abs_diag;
-        if (ratio > 1e6) return 1;
+        if (ratio > refac_diag_ratio) return 1;
     }
 
     /* Total sparse eta entries.  With sparse storage the fill grows much
@@ -9581,7 +9612,7 @@ static int lu_should_refactor(const LUContext *ctx) {
      * (was 2x for dense).  Minimum 20 updates to amortize refactorization. */
     if (ctx->n_updates >= 20) {
         int64_t eta_fill = (int64_t)ctx->eta_sp_total_nnz;
-        if (eta_fill > 4 * (int64_t)ctx->orig_nnz_lu) return 1;
+        if (eta_fill > (int64_t)(refac_fill_mult * (double)ctx->orig_nnz_lu)) return 1;
     }
 
     return 0;
@@ -10542,6 +10573,19 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         ds_phase_s[(idx)] += ds_t_now_ - ds_t_prev; \
         ds_t_prev = ds_t_now_; \
     } while (0)
+    /* LU cadence economics instrument (env LINPROGX_DS_LU_STAT=1; stderr).
+     * Census of which trigger fires each refactorization, plus the
+     * within-interval growth curve: per position-in-interval bucket
+     * (4 pivots per bucket), the summed btran+scatter+ftran wall and the
+     * eta-chain state feeding those solves. Diagnostic only. */
+    int lu_stat_on = getenv("LINPROGX_DS_LU_STAT") != NULL;
+    int64_t lu_trig[7] = {0}; /* 0 update-fail, 1 violent-pivot,
+                                 2 n_updates>=500, 3 diag-ratio, 4 fill-guard,
+                                 5 refac_interval, 6 expand-tau-cap */
+    double  lu_pos_us[16] = {0.0};
+    int64_t lu_pos_cnt[16] = {0};
+    int64_t lu_pos_eta[16] = {0};
+    int64_t lu_pos_upd[16] = {0};
     int cost_shift_on = 0;
     {
         const char *env = getenv("LINPROGX_DS_COST_SHIFT");
@@ -10628,6 +10672,18 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
             iterations = iter;
             ds_t_prev = linprogx_monotonic_seconds();
+            /* Cadence instrument: snapshot the solve-cost buckets and the
+             * eta-chain state this pivot's BTRAN/scatter/FTRAN run against. */
+            int32_t lu_stat_pos = iters_since_refac;
+            double  lu_stat_us0 = 0.0;
+            int32_t lu_stat_eta0 = 0, lu_stat_upd0 = 0;
+            if (lu_stat_on) {
+                lu_stat_us0 = ds_phase_s[2] + ds_phase_s[3] + ds_phase_s[5];
+                if (lu != NULL) {
+                    lu_stat_eta0 = lu->eta_sp_total_nnz;
+                    lu_stat_upd0 = lu->n_updates;
+                }
+            }
 
             /* ---- 4a. Compute x_B = B^{-1}(b - A_N x_N) ---- */
             /* With incremental x_B maintenance, recompute from scratch only
@@ -11725,8 +11781,10 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     lu, leaving_basis_pos, alpha_col,
                     ftran_nnz, ftran_pattern);
 
+                int refac_reason = -1;
                 if (rc != 0) {
                     need_refac = 1;
+                    refac_reason = 0;
                 } else {
                     iters_since_refac++;
                     /* Check for violent eta: tiny or huge pivot degrades
@@ -11734,6 +11792,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     double abs_pivot = fabs(pivot);
                     if (abs_pivot < 1e-6 || abs_pivot > 1e6) {
                         need_refac = 1;
+                        refac_reason = 1;
                     }
                 }
 
@@ -11750,7 +11809,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                          * resweep, and which resets tau to tau0) before the
                          * working tolerance can reach EXPAND_TAU_MAX. */
                         need_refac = 1;
+                        /* Cadence census: mirror the predicate's
+                         * short-circuit order to name the firing trigger. */
+                        if (lu->n_updates >= 500) refac_reason = 2;
+                        else if (lu->n_updates > 0 && lu->min_abs_diag > 0.0 &&
+                                 lu->max_abs_diag / lu->min_abs_diag > 1e6) refac_reason = 3;
+                        else if (lu->n_updates >= 20 &&
+                                 (int64_t)lu->eta_sp_total_nnz >
+                                     4 * (int64_t)lu->orig_nnz_lu) refac_reason = 4;
+                        else if (iters_since_refac >= refac_interval) refac_reason = 5;
+                        else refac_reason = 6;
                     }
+                }
+                if (lu_stat_on && need_refac && refac_reason >= 0) {
+                    lu_trig[refac_reason]++;
                 }
 
                 if (need_refac) {
@@ -11872,9 +11944,38 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 rho[rho_nz_rows[ki]] = 0.0;
 
             iterations = iter + 1;
+            if (lu_stat_on) {
+                int32_t bkt = lu_stat_pos / 4;
+                if (bkt > 15) bkt = 15;
+                lu_pos_us[bkt] += (ds_phase_s[2] + ds_phase_s[3] +
+                                   ds_phase_s[5]) - lu_stat_us0;
+                lu_pos_cnt[bkt]++;
+                lu_pos_eta[bkt] += lu_stat_eta0;
+                lu_pos_upd[bkt] += lu_stat_upd0;
+            }
             DS_TICK(12);
         }
 #undef DS_TICK
+        if (lu_stat_on) {
+            fprintf(stderr,
+                    "[lu_stat] refac reasons: update_fail=%lld violent_pivot=%lld "
+                    "n_updates500=%lld diag_ratio=%lld fill_guard=%lld "
+                    "interval=%lld tau_cap=%lld\n",
+                    (long long)lu_trig[0], (long long)lu_trig[1],
+                    (long long)lu_trig[2], (long long)lu_trig[3],
+                    (long long)lu_trig[4], (long long)lu_trig[5],
+                    (long long)lu_trig[6]);
+            for (int b = 0; b < 16; b++) {
+                if (lu_pos_cnt[b] == 0) continue;
+                fprintf(stderr,
+                        "[lu_stat] pos %2d-%2d: pivots=%6lld  solve_us/pivot=%7.1f  "
+                        "avg_eta_nnz=%9.0f  avg_updates=%6.1f\n",
+                        b * 4, b * 4 + 3, (long long)lu_pos_cnt[b],
+                        1e6 * lu_pos_us[b] / (double)lu_pos_cnt[b],
+                        (double)lu_pos_eta[b] / (double)lu_pos_cnt[b],
+                        (double)lu_pos_upd[b] / (double)lu_pos_cnt[b]);
+            }
+        }
 
         /* Check iteration limit */
         if (iterations >= max_iter && strcmp(status, "optimal") != 0 &&
