@@ -6245,6 +6245,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
      * the gaining population enabled. */
     int mcc_budget = 0;
     Py_ssize_t mcc_accepted = 0; /* accepted corrector rounds (debug stat) */
+    Py_ssize_t lag_attempts = 0; /* inexact-Newton guard statistics */
+    Py_ssize_t lag_accepts = 0;
+    Py_ssize_t lag_redos = 0;
     {
         double refactor_units;
         if (refactor_supernodal) {
@@ -6707,31 +6710,38 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             H[j] = h;
             D[j] = 1.0 / h;
         }
-        /* Lagged-factor probe (LINPROGX_IPM_LAG=1, default off): skip every
-         * other refactor in the mid-phase and take quasi-Newton steps on
-         * the stale factor. Deterministic (iteration/mu based). */
+        /* Hardened inexact Newton (LINPROGX_IPM_LAG=1, default off): skip
+         * alternate refactors in the mid-phase mu window and take steps on
+         * the stale factor with fresh Cx, GUARDED by a true-residual
+         * acceptance test with refactor-and-redo below. Provably inert
+         * when the flag is off (skip_refactor stays 0). Exact endgame:
+         * mu <= 1e-4 always refactors, so certification runs on exact
+         * steps only. All arithmetic deterministic; no wall inputs.
+         * CLOSED AS A PERFORMANCE LEVER (measured 2026-07-12): with the
+         * guard at eta=0.1 the acceptance rate on cre_b/cre_d is 0/15 and
+         * 0/13 -- six stale-preconditioned refinement rounds never reach
+         * eta*mu accuracy in the window, so every skip becomes a
+         * refactor-and-redo and the machinery only adds overhead.
+         * Certification is preserved (that part of the design works), but
+         * a Krylov upgrade cannot pay either: at ~5ms/solve vs ~59ms/
+         * refactor an inexact step must converge in <= 4-5 rounds, far
+         * below the measured preconditioner quality. Stays dark. */
         static int lag_mode = -1;
+        static double lag_eta = 0.1;
         if (lag_mode < 0) {
             const char *e = getenv("LINPROGX_IPM_LAG");
             lag_mode = e != NULL ? atoi(e) : 0;
+            e = getenv("LINPROGX_IPM_LAG_ETA");
+            if (e != NULL && atof(e) > 0.0) {
+                lag_eta = atof(e);
+            }
         }
         int skip_refactor = lag_mode > 0 && iter > 0 && (iter & 1) != 0 &&
                             mu < 1e-2 && mu > 1e-4 && chol->n_dense == 0;
         double t_phase = linprogx_monotonic_seconds();
         if (skip_refactor) {
-            /* inexact Newton on a stale factor: refresh Cx (and the diag
-             * regularization) so chol_matvec sees the CURRENT normal
-             * equations -- iterative refinement then converges toward the
-             * true Newton step with the stale L as preconditioner.
-             * MEASURED NEGATIVE (2026-07-09, cre_b/cre_d): both the naive
-             * lagged-Jacobian form (stale Cx) and this corrected
-             * inexact-Newton form (fresh Cx, 6 IR rounds), at skip windows
-             * mu in (1e-7,1e-2) and (1e-4,1e-2), reach iteration ~60 near
-             * the baseline path but FAIL CERTIFICATION at exit (cre_d
-             * naive: +59% iterations). The cre endgame does not tolerate
-             * mid-phase step inexactness; a shippable version needs
-             * per-step residual guards with refactor-and-redo, which is
-             * beyond a probe. Kept dark behind LINPROGX_IPM_LAG=1. */
+            /* stale L as preconditioner, but chol_matvec must see the
+             * CURRENT normal equations for refinement and the guard */
             chol_assemble_normal(chol, self, csc_vals, D, delta_it);
             nw.refine_rounds = 6;
         } else {
@@ -6746,6 +6756,35 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         }
         t_phase = linprogx_monotonic_seconds();
         ipm_newton_solve(&nw, rp, rd, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
+        if (skip_refactor) {
+            /* Per-step guard: accept the inexact affine step only if the
+             * true normal-equations residual meets the IPM's own ladder,
+             * ||rhs - C dy|| <= eta * mu * max(||rhs||, 1). On violation,
+             * refactor and REDO this same step exactly -- a bad stale
+             * step never advances the iterate. rhs_m still holds the
+             * affine rhs; res_m/corr_m are free after the solve. */
+            lag_attempts++;
+            chol_matvec(chol, dy_a, res_m);
+            double rn = 0.0;
+            double bn = 0.0;
+            for (Py_ssize_t i = 0; i < m; i++) {
+                double d = rhs_m[i] - res_m[i];
+                rn += d * d;
+                bn += rhs_m[i] * rhs_m[i];
+            }
+            double tol_g = lag_eta * mu;
+            double thresh = tol_g * tol_g * (bn > 1.0 ? bn : 1.0);
+            if (rn > thresh) {
+                lag_redos++;
+                chol_refactor_mode(chol, self, csc_vals, D, delta_it,
+                                   refactor_supernodal);
+                nw.refine_rounds = (delta_it <= 1e-9) ? 2 : 1;
+                skip_refactor = 0; /* the rest of this iteration is exact */
+                ipm_newton_solve(&nw, rp, rd, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
+            } else {
+                lag_accepts++;
+            }
+        }
         t_newton += linprogx_monotonic_seconds() - t_phase;
 
         double ap_aff = 1.0;
@@ -7113,6 +7152,8 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     if (debug) {
         fprintf(stderr, "ipm mcc: budget=%d accepted_rounds=%zd\n",
                 mcc_budget, mcc_accepted);
+        fprintf(stderr, "ipm lag: attempts=%zd accepts=%zd redos=%zd\n",
+                lag_attempts, lag_accepts, lag_redos);
         fprintf(stderr, "ipm timers: refactor=%.2fs newton_solves=%.2fs\n",
                 t_refactor, t_newton);
         if (g_refac_profile) {
