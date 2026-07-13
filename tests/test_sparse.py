@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from linprogx import (
@@ -315,7 +317,7 @@ def test_auto_skips_pdhg_when_ipm_candidate_is_feasible_but_uncertified() -> Non
     assert matrix.dual_simplex_calls == 1
 
 
-def test_pdhg_public_route_defaults_to_four_threads() -> None:
+def test_pdhg_public_route_defaults_to_auto_threads() -> None:
     matrix = _PdhgThreadMatrix()
 
     result = SparseSolver(algorithm="pdhg", eps=1e-6, presolve=False).solve(
@@ -329,7 +331,9 @@ def test_pdhg_public_route_defaults_to_four_threads() -> None:
     )
 
     assert result.solution.status == Status.OPTIMAL
-    assert matrix.threads == 4
+    # 0 = auto: the C side sizes the worker pool to the physical-core
+    # estimate (logical cores / 2, capped at the pool maximum).
+    assert matrix.threads == 0
 
 
 def test_sparse_problem_validation() -> None:
@@ -624,7 +628,13 @@ def test_pdhg_thread_pool_grows_and_reports_capacity(
 
     captured = capfd.readouterr()
     assert "threads=4" in captured.err
-    assert "pool_threads=4" in captured.err
+    # The pool is process-global and only ever grows: another solve in the
+    # same process (e.g. an auto-threaded run on a many-core machine) may
+    # already have grown it past this request, so assert capacity covers
+    # the request rather than matching it exactly.
+    match = re.search(r"pool_threads=(\d+)", captured.err)
+    assert match is not None
+    assert int(match.group(1)) >= 4
 
 
 def test_pdhg_cleanup_stops_early_when_certificate_is_close() -> None:

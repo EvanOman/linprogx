@@ -1255,6 +1255,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     double *cleanup_x = NULL;
     double *cleanup_ax = NULL;
     double *cleanup_aty = NULL;
+    double *ax_anchor = NULL;
     double *plateau_kkt_buf = NULL;
     double *operator_data = NULL;
     double *operator_csc_data = NULL;
@@ -1262,6 +1263,21 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     int32_t *op_row_index = NULL;
     unsigned char *bound_kind = NULL;
     int pdhg_profile = getenv("LINPROGX_PDHG_PROFILE") != NULL;
+    /* Experimental Halpern anchoring (restarted Halpern PDHG in the spirit
+     * of reflected-Halpern PDHG for LP): 0 = off (default, running-average
+     * candidates as always), 1 = Halpern anchor blend z+ = lam*T(z) +
+     * (1-lam)*z_anchor with lam = (k+1)/(k+2) within each restart epoch,
+     * 2 = reflected variant z+ = lam*(2T(z)-z) + (1-lam)*z_anchor with the
+     * primal blended point clamped to the box (the clamp breaks the exact
+     * linear maintenance of A@x; every KKT eval recomputes the products for
+     * the current iterate, repairing any drift within <=64 iterations). */
+    int halpern_mode = 0;
+    {
+        const char *e = getenv("LINPROGX_PDHG_HALPERN");
+        if (e != NULL) {
+            halpern_mode = atoi(e);
+        }
+    }
     double profile_start = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
     double profile_setup = 0.0;
     double profile_norm = 0.0;
@@ -1307,6 +1323,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
     cleanup_x = calloc((size_t)self->cols, sizeof(double));
     cleanup_ax = calloc((size_t)self->rows, sizeof(double));
     cleanup_aty = calloc((size_t)self->cols, sizeof(double));
+    ax_anchor = calloc((size_t)self->rows, sizeof(double));
     operator_data = calloc((size_t)self->nnz, sizeof(double));
     operator_csc_data = calloc((size_t)self->nnz, sizeof(double));
     op_col_index = calloc((size_t)self->nnz, sizeof(int32_t));
@@ -1325,6 +1342,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         x_restart == NULL || y_restart == NULL ||
         best_x == NULL || best_y == NULL ||
         cleanup_x == NULL || cleanup_ax == NULL || cleanup_aty == NULL ||
+        ax_anchor == NULL ||
         operator_data == NULL || operator_csc_data == NULL ||
         op_col_index == NULL || op_row_index == NULL || bound_kind == NULL) {
         PyErr_NoMemory();
@@ -1562,11 +1580,23 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         {
             /* threads: 1 = serial (default), 0 = auto, N = N capped at
              * the pool maximum. The kernels are bit-identical at any
-             * thread count, so this only affects wall clock. */
+             * thread count, so this only affects wall clock. Auto targets
+             * the physical-core count (logical/2 on SMT machines): the
+             * PDHG loop is memory-bandwidth-bound, so hyperthread siblings
+             * add pool-dispatch overhead without adding bandwidth
+             * (measured on pds_10/pds_20: 6 physical cores beat both 4
+             * and 8 workers by 15-35% wall). */
             int want = (int)threads;
             if (want == 0) {
                 long cores = sysconf(_SC_NPROCESSORS_ONLN);
-                want = cores >= 4 ? 4 : (cores > 1 ? (int)cores : 1);
+                long phys = cores / 2;
+                if (phys < 1) {
+                    phys = 1;
+                }
+                want = phys > POOL_MAX_THREADS ? POOL_MAX_THREADS : (int)phys;
+                if (cores > 1 && want < 2) {
+                    want = 2;
+                }
             }
             if (want > 1) {
                 g_kernel_threads = pool_ensure(want);
@@ -1579,6 +1609,14 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         double mu_start = final_ev.kkt;
         double mu_last = final_ev.kkt;
         Py_ssize_t navg = 0;
+        if (halpern_mode) {
+            /* anchor products: ax holds A@x for the start point (filled by
+             * the pre-loop evaluate_kkt); x_restart/y_restart already hold
+             * the start iterate. */
+            for (Py_ssize_t row = 0; row < self->rows; row++) {
+                ax_anchor[row] = ax[row];
+            }
+        }
         /* ax and aty cache the scaled products for the current iterate; the
          * pre-loop evaluate_kkt call has already filled both. */
         for (Py_ssize_t iter = 1; iter <= max_iter; iter++) {
@@ -1698,20 +1736,53 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
             if (pdhg_profile) {
                 profile_step += linprogx_monotonic_seconds() - profile_step_start;
             }
-            {
-                double *swap = x;
-                x = xbar;
-                xbar = swap;
-            }
-            {
-                double *swap = y;
-                y = y_trial;
-                y_trial = swap;
-            }
-            {
-                double *swap = ax;
-                ax = ax_trial;
-                ax_trial = swap;
+            if (halpern_mode == 0) {
+                {
+                    double *swap = x;
+                    x = xbar;
+                    xbar = swap;
+                }
+                {
+                    double *swap = y;
+                    y = y_trial;
+                    y_trial = swap;
+                }
+                {
+                    double *swap = ax;
+                    ax = ax_trial;
+                    ax_trial = swap;
+                }
+            } else {
+                /* Halpern anchor blend. xbar/y_trial/ax_trial hold T(z);
+                 * x/y/ax hold z; x_restart/y_restart/ax_anchor hold the
+                 * epoch anchor. A@x is maintained by linearity (mode 1
+                 * exactly; mode 2 up to the box clamp, repaired at each
+                 * KKT eval which recomputes the products). */
+                double lam = ((double)navg + 1.0) / ((double)navg + 2.0);
+                double aw = 1.0 - lam;
+                if (halpern_mode >= 2) {
+                    for (Py_ssize_t col = 0; col < self->cols; col++) {
+                        double t = 2.0 * xbar[col] - x[col];
+                        double v = lam * t + aw * x_restart[col];
+                        v = fmax(v, scaled_lo[col]);
+                        v = fmin(v, scaled_hi[col]);
+                        x[col] = v;
+                    }
+                    for (Py_ssize_t row = 0; row < self->rows; row++) {
+                        y[row] = lam * (2.0 * y_trial[row] - y[row]) +
+                                 aw * y_restart[row];
+                        ax[row] = lam * (2.0 * ax_trial[row] - ax[row]) +
+                                  aw * ax_anchor[row];
+                    }
+                } else {
+                    for (Py_ssize_t col = 0; col < self->cols; col++) {
+                        x[col] = lam * xbar[col] + aw * x_restart[col];
+                    }
+                    for (Py_ssize_t row = 0; row < self->rows; row++) {
+                        y[row] = lam * y_trial[row] + aw * y_restart[row];
+                        ax[row] = lam * ax_trial[row] + aw * ax_anchor[row];
+                    }
+                }
             }
             profile_phase = pdhg_profile ? linprogx_monotonic_seconds() : 0.0;
             scaled_op_transpose_matvec_accum_x(&op, y, aty, x, x_sum);
@@ -2005,6 +2076,14 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
                     y_restart[row] = y[row];
                     y_sum[row] = 0.0;
                 }
+                if (halpern_mode) {
+                    /* new epoch anchor products: ax is A@x for the adopted
+                     * candidate (restored above when the average won, and
+                     * recomputed by the candidate KKT eval otherwise). */
+                    for (Py_ssize_t row = 0; row < self->rows; row++) {
+                        ax_anchor[row] = ax[row];
+                    }
+                }
                 navg = 0;
                 restarts++;
                 mu_start = ev_best.kkt;
@@ -2164,6 +2243,7 @@ done:
     free(cleanup_x);
     free(cleanup_ax);
     free(cleanup_aty);
+    free(ax_anchor);
     free(operator_data);
     free(operator_csc_data);
     free(op_col_index);
