@@ -9838,6 +9838,19 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     /* accumulated anti-degeneracy cost shifts (removed before optimal exit) */
     double *c_shift = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(double));
     int32_t *alpha_touched = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
+    /* Support of the pivot row (columns with nonzero scattered alpha),
+     * in scatter insertion order. Used only for order-independent work:
+     * workspace clears and the 4g reduced-cost update (which reuses the
+     * 4d scatter instead of redoing it). */
+    int32_t *alpha_pattern = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
+    /* Ratio-test candidate cache: pass 1's ascending scan records every
+     * admissible (j, alpha_j) pair; the order-sensitive flip-collect and
+     * sweep-2 then walk this compact list (measured ~10% of n_total on
+     * greenbea) in the same ascending order instead of rescanning all
+     * columns — byte-identical because admissibility inputs (bound_status,
+     * r_ext, alpha_scratch) do not change between the passes. */
+    int32_t *cand_j = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
+    double *cand_alpha = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(double));
 
     /* leaving_rule==3: per-basis-row 'became infeasible at pivot t' stamp
      * (-1 == currently feasible). Sized m. */
@@ -9873,7 +9886,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         devex_w == NULL || basis == NULL ||
         b_indptr == NULL || b_indices == NULL || b_values == NULL ||
         rho_nz_rows == NULL || ftran_pattern == NULL || btran_pattern == NULL ||
-        alpha_scratch == NULL || alpha_touched == NULL ||
+        alpha_scratch == NULL || alpha_touched == NULL || alpha_pattern == NULL ||
+        cand_j == NULL || cand_alpha == NULL ||
         flip_delta_xB == NULL ||
         has_art_bound == NULL || lo_true == NULL || hi_true == NULL ||
         ds_row_scale == NULL || ds_col_scale == NULL || scaled_csc_data == NULL ||
@@ -10423,6 +10437,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     int64_t degen_prog_vals[DUAL_PROG_CAP];
     int32_t dual_prog_n = 0;
     int64_t degen_prog_prev = 0;
+    /* Per-pivot phase wall profiler (rate unit): 13 buckets, <1% overhead
+     * (two clock reads per phase transition vs ~300us pivots). Summed
+     * seconds; returned as phase_us (microseconds) in the result dict. */
+    double ds_phase_s[13] = {0.0};
+    double ds_t_prev = 0.0;
+#define DS_TICK(idx) do { \
+        double ds_t_now_ = linprogx_monotonic_seconds(); \
+        ds_phase_s[(idx)] += ds_t_now_ - ds_t_prev; \
+        ds_t_prev = ds_t_now_; \
+    } while (0)
     int cost_shift_on = 0;
     {
         const char *env = getenv("LINPROGX_DS_COST_SHIFT");
@@ -10508,6 +10532,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             * may only be declared from fresh state */
         for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
             iterations = iter;
+            ds_t_prev = linprogx_monotonic_seconds();
 
             /* ---- 4a. Compute x_B = B^{-1}(b - A_N x_N) ---- */
             /* With incremental x_B maintenance, recompute from scratch only
@@ -10546,6 +10571,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 degen_prog_prev = stat_degenerate;
                 dual_prog_n++;
             }
+
+            DS_TICK(0);
 
             /* ---- 4b. Find leaving variable ----
              * leaving_rule selects the scan/scoring strategy:
@@ -10733,6 +10760,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                     x_B_needs_recompute = 1;
                     iterations = iter + 1;
+                    DS_TICK(1);
                     continue;
                 }
             }
@@ -10789,12 +10817,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 devex_w[leaving_basis_pos] = g_exact;
             }
 
+            DS_TICK(2);
+
             /* ---- 4d. Sparse pivot row computation via CSR scatter ---- */
             /* Instead of iterating over all n columns and computing rho^T a_j,
              * we iterate over rho's nonzero rows and scatter into alpha_scratch
              * using A's CSR representation. This is O(nnz_in_rho_rows) instead
              * of O(n * avg_col_nnz). */
-            int32_t n_alpha_touched = 0;
+            int32_t alpha_nnz = 0;
             {
                 /* Clear touched columns */
                 /* alpha_scratch[j] and alpha_touched[j] were zeroed at alloc,
@@ -10808,6 +10838,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         int32_t col = (int32_t)self->indices[p];
                         if (alpha_scratch[col] == 0.0 && alpha_touched[col] == 0) {
                             alpha_touched[col] = 1;
+                            alpha_pattern[alpha_nnz++] = col;
                         }
                         alpha_scratch[col] += rho_val * scaled_csr_data[p];
                     }
@@ -10819,8 +10850,19 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     int32_t art_j = n + row;
                     alpha_scratch[art_j] = rho[row];
                     alpha_touched[art_j] = 1;
+                    alpha_pattern[alpha_nnz++] = art_j;
                 }
+                /* NOTE: alpha_pattern is UNSORTED (insertion order). It is
+                 * only used for order-independent work: zeroing the scratch
+                 * workspace and the per-column independent reduced-cost
+                 * update in 4g. Order-sensitive scans (ratio-test sweeps,
+                 * Bland) keep the historical 0..n_total index order; a
+                 * per-pivot qsort to make the pattern usable there was
+                 * measured at +200us/pivot on greenbea (support is a large
+                 * fraction of n_total) — a net loss. */
             }
+
+            DS_TICK(3);
 
             /* ---- 4d'. Harris two-pass ratio test with bound flips ---- */
             int32_t entering_col = -1;
@@ -10865,7 +10907,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 int n_admissible = 0;
                 int any_flippable = 0;
 
-                /* Count admissible to know if we need flips */
+                /* Count admissible to know if we need flips. The ascending
+                 * scan also caches every admissible (j, alpha_j) pair so the
+                 * order-sensitive sweeps below can walk the compact
+                 * candidate list in identical order instead of rescanning
+                 * all of n_total. */
                 for (int32_t j = 0; j < n_total; j++) {
                     if (basis_pos[j] >= 0) continue;
                     if (bound_status[j] == DS_BOUND_FIXED) continue;
@@ -10914,16 +10960,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             }
                         }
                     }
+                    cand_j[n_admissible] = j;
+                    cand_alpha[n_admissible] = alpha_j;
                     n_admissible++;
                 }
 
                 if (n_admissible == 0) {
                     /* Clean up alpha_scratch */
-                    for (int32_t j = 0; j < n_total; j++) {
-                        if (alpha_touched[j]) {
-                            alpha_scratch[j] = 0.0;
-                            alpha_touched[j] = 0;
-                        }
+                    for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
+                        alpha_scratch[alpha_pattern[ki_]] = 0.0;
+                        alpha_touched[alpha_pattern[ki_]] = 0;
                     }
                     if (!x_B_fresh) {
                         /* The driving violation may be incremental-update
@@ -10932,6 +10978,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                          * declared from a freshly solved x_B: recompute and
                          * re-select instead. */
                         x_B_needs_recompute = 1;
+                        DS_TICK(4);
                         continue;
                     }
                     {
@@ -11090,13 +11137,15 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                  * after the entering choice, before any pivot bookkeeping
                  * reads x_B. The entering pivot's dual step (theta_d at or
                  * above every flipped ratio) is what legitimizes the
-                 * flipped columns' reduced-cost sign changes. */
-                for (int32_t j = 0; j < n_total; j++) {
-                    if (basis_pos[j] >= 0) continue;
-                    if (bound_status[j] == DS_BOUND_FIXED) continue;
-
-                    double alpha_j = alpha_scratch[j];
-                    if (fabs(alpha_j) < 1e-9) continue;
+                 * flipped columns' reduced-cost sign changes.
+                 * Walks the pass-1 candidate cache (ascending j, exactly the
+                 * columns the historical full scan admitted; bound_status /
+                 * r_ext / alpha are unchanged since pass 1). The FREE-status
+                 * cache entries fail the LO/HI admissibility below, matching
+                 * the historical filter. */
+                for (int32_t ci_ = 0; ci_ < n_admissible; ci_++) {
+                    int32_t j = cand_j[ci_];
+                    double alpha_j = cand_alpha[ci_];
 
                     int admissible = 0;
                     if (bound_status[j] == DS_BOUND_LO && leaving_sigma * alpha_j < 0.0) {
@@ -11132,14 +11181,15 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     remaining_infeas -= absorption;
                 }
 
-                /* Sweep 2: pick best pivot (largest |alpha|) within Harris band */
+                /* Sweep 2: pick best pivot (largest |alpha|) within Harris
+                 * band. Walks the pass-1 candidate cache (ascending j; see
+                 * the flip sweep note — flips are deferred, so bound_status
+                 * is unchanged since pass 1 and the cache is exactly the
+                 * admissible set). */
                 double best_alpha = 0.0;
-                for (int32_t j = 0; j < n_total; j++) {
-                    if (basis_pos[j] >= 0) continue;
-                    if (bound_status[j] == DS_BOUND_FIXED) continue;
-
-                    double alpha_j = alpha_scratch[j];
-                    if (fabs(alpha_j) < 1e-9) continue;
+                for (int32_t ci_ = 0; ci_ < n_admissible; ci_++) {
+                    int32_t j = cand_j[ci_];
+                    double alpha_j = cand_alpha[ci_];
 
                     /* Re-check admissibility (bound_status may have changed from flips) */
                     int admissible = 0;
@@ -11171,11 +11221,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                      * so r_ext is now inconsistent with bound_status.
                      * Recompute reduced costs from scratch to restore consistency,
                      * then continue to the next iteration. */
-                    for (int32_t j = 0; j < n_total; j++) {
-                        if (alpha_touched[j]) {
-                            alpha_scratch[j] = 0.0;
-                            alpha_touched[j] = 0;
-                        }
+                    for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
+                        alpha_scratch[alpha_pattern[ki_]] = 0.0;
+                        alpha_touched[alpha_pattern[ki_]] = 0;
                     }
                     stat_flips += n_flips;
                     if (n_flips > 0) {
@@ -11207,6 +11255,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     for (int32_t ki = 0; ki < rho_nnz; ki++)
                         rho[rho_nz_rows[ki]] = 0.0;
                     iterations = iter + 1;
+                    DS_TICK(4);
                     continue;
                 }
 
@@ -11329,16 +11378,15 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
 
                 if (entering_col < 0) {
-                    for (int32_t j = 0; j < n_total; j++) {
-                        if (alpha_touched[j]) {
-                            alpha_scratch[j] = 0.0;
-                            alpha_touched[j] = 0;
-                        }
+                    for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
+                        alpha_scratch[alpha_pattern[ki_]] = 0.0;
+                        alpha_touched[alpha_pattern[ki_]] = 0;
                     }
                     if (!x_B_fresh) {
                         /* see the guard above: only fresh-state emptiness
                          * is a genuine infeasibility certificate */
                         x_B_needs_recompute = 1;
+                        DS_TICK(4);
                         continue;
                     }
                     {
@@ -11359,13 +11407,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
             }
 
-            /* Clean up alpha_scratch for next iteration */
-            for (int32_t j = 0; j < n_total; j++) {
-                if (alpha_touched[j]) {
-                    alpha_scratch[j] = 0.0;
-                    alpha_touched[j] = 0;
-                }
-            }
+            /* alpha_scratch stays live through 4g (the reduced-cost update
+             * reuses this pivot row instead of re-scattering it); the
+             * unified pattern clear now lives at the end of 4g and on the
+             * small-pivot continue path below. */
+
+            DS_TICK(4);
 
             /* ---- 4e. FTRAN entering column: alpha_col = B^{-1} a_entering ---- */
             /* alpha_col must be zero on entry (cleared at pattern positions
@@ -11413,6 +11460,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 (void)sparse_ftran;
             }
 
+            DS_TICK(5);
+
             /* ---- 4f. Primal step ---- */
             double bound_leaving;
             if (leaving_sigma == 1) {
@@ -11430,6 +11479,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     alpha_col[ftran_pattern[ki]] = 0.0;
                 for (int32_t ki = 0; ki < rho_nnz; ki++)
                     rho[rho_nz_rows[ki]] = 0.0;
+                for (int32_t ki = 0; ki < alpha_nnz; ki++) {
+                    alpha_scratch[alpha_pattern[ki]] = 0.0;
+                    alpha_touched[alpha_pattern[ki]] = 0;
+                }
+                DS_TICK(6);
                 continue;
             }
             double dx_entering = (x_B[leaving_basis_pos] - bound_leaving) / pivot;
@@ -11444,30 +11498,19 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             double entering_old_x = x_ext[entering_col];
             double entering_new_x = entering_old_x + dx_entering;
 
-            /* ---- 4g. Update reduced costs ---- */
-            /* Use sparse pricing: only update nonbasic columns that overlap rho's support.
-             * But we already computed alpha_j for all relevant columns via the CSR scatter.
-             * However, alpha_scratch was cleared. We need the full update, so recompute
-             * using the CSR scatter again for the reduced cost update. */
-            {
-                /* Recompute alpha_j for all nonbasic columns via CSR scatter
-                 * (using pre-scaled CSR data) */
-                for (int32_t ri = 0; ri < rho_nnz; ri++) {
-                    int32_t row = rho_nz_rows[ri];
-                    double rho_val = rho[row];
-                    for (Py_ssize_t p = self->indptr[row]; p < self->indptr[row + 1]; p++) {
-                        int32_t col = (int32_t)self->indices[p];
-                        alpha_scratch[col] += rho_val * scaled_csr_data[p];
-                    }
-                }
-                /* Artificials */
-                for (int32_t ri = 0; ri < rho_nnz; ri++) {
-                    int32_t row = rho_nz_rows[ri];
-                    alpha_scratch[n + row] = rho[row];
-                }
+            DS_TICK(6);
 
+            /* ---- 4g. Update reduced costs ---- */
+            /* Use sparse pricing: only update nonbasic columns that overlap
+             * rho's support. The 4d CSR scatter (alpha_scratch over the
+             * sorted alpha_pattern support) is still live — reuse it
+             * directly instead of re-scattering; the per-column += below is
+             * order-independent, so iterating the support is byte-identical
+             * to the historical full 0..n_total scan. */
+            {
                 double sigma_d = (double)leaving_sigma;
-                for (int32_t j = 0; j < n_total; j++) {
+                for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
+                    int32_t j = alpha_pattern[ki_];
                     if (basis_pos[j] >= 0) continue;
                     if (bound_status[j] == DS_BOUND_FIXED) continue;
                     if (j == entering_col) continue;
@@ -11477,19 +11520,19 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                 }
 
-                /* Clean up alpha_scratch */
-                for (int32_t ri = 0; ri < rho_nnz; ri++) {
-                    int32_t row = rho_nz_rows[ri];
-                    for (Py_ssize_t p = self->indptr[row]; p < self->indptr[row + 1]; p++) {
-                        alpha_scratch[(int32_t)self->indices[p]] = 0.0;
-                    }
-                    alpha_scratch[n + row] = 0.0;
+                /* Unified pattern clear (was split between the pre-4e
+                 * clear and 4g's CSR-walk cleanup). */
+                for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
+                    alpha_scratch[alpha_pattern[ki_]] = 0.0;
+                    alpha_touched[alpha_pattern[ki_]] = 0;
                 }
             }
 
             /* Leaving variable gets a reduced cost */
             double r_leaving = theta_d * (double)leaving_sigma;
             r_ext[entering_col] = 0.0;
+
+            DS_TICK(7);
 
             /* ---- 4h. Basis bookkeeping ---- */
             int32_t leaving_col = basis[leaving_basis_pos];
@@ -11525,6 +11568,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             if (fabs(entering_old_x) > 1e6 * (1.0 + fabs(entering_new_x))) {
                 x_B_needs_recompute = 1;
             }
+
+            DS_TICK(8);
 
             /* ---- 4i. Pricing weight update ---- */
             if (pricing == 1) {
@@ -11571,6 +11616,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 devex_w[leaving_basis_pos] = inv_pivot_sq;
             }
 
+            DS_TICK(9);
+
             /* ---- 4j. LU update ---- */
             {
                 int need_refac = 0;
@@ -11594,6 +11641,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         need_refac = 1;
                     }
                 }
+
+                DS_TICK(10);
 
                 /* ---- 4k. Adaptive refactorization ---- */
                 if (!need_refac) {
@@ -11695,6 +11744,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
             }
 
+            DS_TICK(11);
+
             /* ---- 4l. Anti-cycling ---- */
             /* EXPAND: grow the working tolerance once per completed pivot
              * (tau_k = tau0 + k*delta between refactorizations; the reset
@@ -11726,7 +11777,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 rho[rho_nz_rows[ki]] = 0.0;
 
             iterations = iter + 1;
+            DS_TICK(12);
         }
+#undef DS_TICK
 
         /* Check iteration limit */
         if (iterations >= max_iter && strcmp(status, "optimal") != 0 &&
@@ -12031,6 +12084,31 @@ build_result:
             "refac_factorize_time", refac_factorize_time,
             "dual_progress", dual_prog_list,
             "degen_progress", degen_prog_list);
+        if (result != NULL) {
+            /* Per-pivot phase wall profile (microseconds per bucket,
+             * summed over the whole solve). */
+            PyObject *ds_ph = Py_BuildValue(
+                "{s:d,s:d,s:d,s:d,s:d,s:d,s:d,s:d,s:d,s:d,s:d,s:d,s:d}",
+                "xb_recompute", ds_phase_s[0] * 1e6,
+                "leaving_scan", ds_phase_s[1] * 1e6,
+                "btran_rho", ds_phase_s[2] * 1e6,
+                "pivot_row", ds_phase_s[3] * 1e6,
+                "ratio_test", ds_phase_s[4] * 1e6,
+                "ftran_col", ds_phase_s[5] * 1e6,
+                "primal_step", ds_phase_s[6] * 1e6,
+                "rcost_update", ds_phase_s[7] * 1e6,
+                "bookkeeping", ds_phase_s[8] * 1e6,
+                "pricing_update", ds_phase_s[9] * 1e6,
+                "lu_update", ds_phase_s[10] * 1e6,
+                "refactor", ds_phase_s[11] * 1e6,
+                "tail", ds_phase_s[12] * 1e6);
+            if (ds_ph != NULL) {
+                PyDict_SetItemString(result, "phase_us", ds_ph);
+                Py_DECREF(ds_ph);
+            } else {
+                PyErr_Clear();
+            }
+        }
     }
 
 done:
@@ -12042,7 +12120,8 @@ done:
     free(devex_w); free(dse_beta); free(enter_count); free(c_shift); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
-    free(alpha_scratch); free(alpha_touched);
+    free(alpha_scratch); free(alpha_touched); free(alpha_pattern);
+    free(cand_j); free(cand_alpha);
     free(flip_delta_xB); free(flip_cand); free(infeas_stamp); free(bfrt_cands);
     free(has_art_bound); free(lo_true); free(hi_true);
     free(ds_row_scale); free(ds_col_scale); free(scaled_csc_data); free(scaled_csr_data); free(c_orig);
