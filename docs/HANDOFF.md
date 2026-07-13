@@ -1168,3 +1168,24 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   arithmetic, inexact Newton refuted by preconditioner quality); its
   3-5x gap belongs to the DS count program (crash reachable-set +
   pricing locality).
+
+- DS RATE UNIT (2026-07-12, exp-leaving 4e9b8bc, ported to perf as
+  c33f12f via 3-way patch — wholesale branch merge REJECTED: the fork
+  base predates the EXPAND port, two-sided merge duplicated regions;
+  patch-extraction is the pattern for exp-leaving -> perf transfers):
+  byte-identical rate levers, +24-54% across the DS family. (1) scatter
+  reuse: rcost update reads live alpha_scratch from the ratio-test
+  scatter; (2) alpha_pattern support list: one unified workspace clear
+  replaces 2-3 O(n) flag scans/pivot; (3) ratio-test candidate cache:
+  flip-collect + sweep-2 argmax walk the ~10% admissible list in
+  identical ascending order. Rejected: support qsort (+200us/pivot).
+  Phase profiler (13 DS_TICK buckets, phase_us in result, <1%) ported.
+  greenbea 382->292 us/pivot: paired 3.803->2.886s (-24%); woodw +30%,
+  stocfor3 +42%, 80bau3b +54%, cre_d +41% (127.4s), pds_10 ~+30%.
+  All byte-identical incl. x. greenbea remainder is 77% sparse-LU
+  (refactor 33% + btran 17% + pivot-row 15% + ftran 12%): reaching
+  <=1.5s needs an LU-engineering program (Forrest-Tomlin-style updates
+  to stretch the ~51-pivot refac cadence without eta blowup, faster
+  factorize kernel) or a count cut — count family documented exhausted.
+  ALSO FIXED: explicit algorithm="dual_simplex" path was running
+  expand=0 defaults (auto routes were correct).
