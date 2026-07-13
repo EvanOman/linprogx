@@ -1387,3 +1387,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   chains eliminated as the DS bottleneck. greenbea remainder vs HiGHS
   0.26: ~9x — next levers are the Suhl-style pivot-search rule
   (factorize kernel volume) and anything that cuts the 10.6k count.
+
+- BLOCK-ROW UPLOOK SHIPPED (2026-07-13, exp-panel, merged 2f4a1df):
+  block kernel (<=4 consecutive rows, per-row accumulators, shared
+  Li/Lx stream) behind a SAVEABLE-FRACTION gate — symbolic census of
+  scatter pairs amortizable at b=4, engage when >=0.5 (clean gap:
+  cre_a 31.7 / woodw 36.6 / 80bau3b 44.6 / pilot87 45.5 OFF;
+  stocfor3 56.4 / cre_b 57.8 / degen3 65.8 / osa_14 70.1 / maros_r7
+  74.4 ON). Gated-ON outcome-exact (obj reldiff <=2.8e-12, iterations
+  identical; ascending vs topological order), gated-OFF byte-identical.
+  Paired: cre_b wall -12.8% (~4.96s from 5.69; uplook 1.72->1.13),
+  osa_14 -4.1% (certified-TIE may flip — re-certify at quiet load),
+  cre_a regression eliminated. 249 green. The uplook program's two
+  units (pattern cache + block kernel) have now cut cre_b's uplook
+  ~1.95 -> ~1.13s; next lever there per profile is the dense-tail
+  dpotrf (t=1707) or iteration count (correctors already optimal).
