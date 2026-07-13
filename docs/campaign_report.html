@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>linprogx Performance Campaign — Longitudinal Report</title>
+<style>
+  :root {
+    --plane:        #f9f9f7;
+    --surface:      #fcfcfb;
+    --text-1:       #0b0b0b;
+    --text-2:       #52514e;
+    --muted:        #898781;
+    --grid:         #e1e0d9;
+    --axis:         #c3c2b7;
+    --border:       rgba(11,11,11,0.10);
+    --lx:           #2a78d6;   /* linprogx — categorical blue */
+    --highs:        #e34948;   /* HiGHS reference — categorical red */
+    --good:         #006300;
+    --good-badge:   #0ca30c;
+    --loss:         #b06a1e;
+    --card:         #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --plane:      #0d0d0d;
+      --surface:    #1a1a19;
+      --text-1:     #ffffff;
+      --text-2:     #c3c2b7;
+      --muted:      #898781;
+      --grid:       #2c2c2a;
+      --axis:       #383835;
+      --border:     rgba(255,255,255,0.10);
+      --lx:         #3987e5;
+      --highs:      #e66767;
+      --good:       #0ca30c;
+      --good-badge: #0ca30c;
+      --loss:       #d9a05a;
+      --card:       #211f1d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --plane:#0d0d0d; --surface:#1a1a19; --text-1:#fff; --text-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+    --lx:#3987e5; --highs:#e66767; --good:#0ca30c; --good-badge:#0ca30c; --loss:#d9a05a; --card:#211f1d;
+  }
+  :root[data-theme="light"] {
+    --plane:#f9f9f7; --surface:#fcfcfb; --text-1:#0b0b0b; --text-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --lx:#2a78d6; --highs:#e34948; --good:#006300; --good-badge:#0ca30c; --loss:#b06a1e; --card:#fff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--plane); color: var(--text-1);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 20px 80px; }
+  header h1 { font-size: 1.9rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  header .sub { color: var(--text-2); font-size: 1.02rem; max-width: 62ch; margin: 0 0 4px; }
+  header .meta { color: var(--muted); font-size: 0.82rem; margin-top: 8px; }
+  h2 { font-size: 1.25rem; margin: 44px 0 4px; letter-spacing: -0.01em; }
+  h2 + .note { color: var(--text-2); font-size: 0.9rem; margin: 0 0 18px; max-width: 74ch; }
+  a { color: var(--lx); }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; margin: 22px 0 8px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .tile .v { font-size: 1.7rem; font-weight: 650; letter-spacing: -0.02em; }
+  .tile .v.win { color: var(--good); }
+  .tile .k { color: var(--text-2); font-size: 0.82rem; margin-top: 2px; }
+
+  .callouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap: 14px; margin: 14px 0 8px; }
+  .callout { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--lx); border-radius: 10px; padding: 14px 16px; }
+  .callout h3 { margin: 0 0 6px; font-size: 0.98rem; }
+  .callout .commit { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; color: var(--muted); }
+  .callout p { margin: 6px 0 0; font-size: 0.87rem; color: var(--text-2); }
+  .callout .big { color: var(--good); font-weight: 640; }
+
+  .chartcard { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px 8px; margin-bottom: 18px; overflow-x: auto; }
+  .chartcard .ct { font-size: 0.98rem; font-weight: 600; margin: 0 0 2px; }
+  .chartcard .cs { font-size: 0.82rem; color: var(--text-2); margin: 0 0 6px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-2); margin: 2px 0 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 22px; height: 0; border-top-width: 2px; border-top-style: solid; display: inline-block; }
+
+  .panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px,1fr)); gap: 12px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 6px; }
+  .panel .ph { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .panel .pn { font-weight: 600; font-size: 0.9rem; }
+  .panel .badge { font-size: 0.72rem; font-weight: 650; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+  .badge.win { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+  .badge.loss { color: var(--loss); background: color-mix(in srgb, var(--loss) 14%, transparent); }
+  .panel .pmeta { font-size: 0.72rem; color: var(--muted); margin-top: 1px; }
+
+  svg text { font-family: system-ui, sans-serif; }
+  .tick { fill: var(--muted); font-size: 10px; }
+  .axtitle { fill: var(--text-2); font-size: 11px; }
+
+  .tooltip {
+    position: fixed; pointer-events: none; z-index: 20; opacity: 0;
+    background: var(--surface); color: var(--text-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 0.78rem; max-width: 300px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18); transition: opacity 0.08s;
+  }
+  .tooltip b { color: var(--text-1); }
+  .tooltip .mono { font-family: ui-monospace, monospace; color: var(--muted); font-size: 0.72rem; }
+
+  .foot { margin-top: 40px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; font-size: 0.84rem; color: var(--text-2); }
+  .foot h3 { margin: 0 0 6px; color: var(--text-1); font-size: 0.95rem; }
+  .foot code { font-family: ui-monospace, monospace; font-size: 0.8rem; background: color-mix(in srgb, var(--muted) 16%, transparent); padding: 1px 5px; border-radius: 4px; }
+
+  .themebtn { position: fixed; top: 12px; right: 12px; z-index: 30; background: var(--surface); color: var(--text-2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 0.78rem; cursor: pointer; font-family: inherit; }
+  table.dat { border-collapse: collapse; width: 100%; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  table.dat th, table.dat td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--grid); }
+  table.dat th:first-child, table.dat td:first-child { text-align: left; }
+  details.tbl { margin-top: 10px; }
+  details.tbl summary { cursor: pointer; font-size: 0.82rem; color: var(--text-2); }
+</style>
+</head>
+<body>
+<button class="themebtn" id="themebtn">◐ theme</button>
+<div class="wrap">
+  <header>
+    <h1>linprogx Performance Campaign</h1>
+    <p class="sub">A longitudinal record of the <code style="font-family:ui-monospace,monospace">perf-supernodal-simplex</code>
+      ship campaign — per-commit benchmark performance against HiGHS and Clarabel across the 24-fixture LPnetlib suite.
+      The goal: an independently built LP solver that <b>exceeds both HiGHS and Clarabel</b> on coverage and runtime.</p>
+    <p class="meta" id="genmeta"></p>
+  </header>
+
+  <div class="tiles">
+    <div class="tile"><div class="v win">24 / 24</div><div class="k">Coverage — HiGHS misses qap15, Clarabel misses ken_18</div></div>
+    <div class="tile"><div class="v win">14–10</div><div class="k">Head-to-head vs HiGHS (certified paired protocol)</div></div>
+    <div class="tile"><div class="v">0.71×</div><div class="k">Best suite geomean ratio vs HiGHS (quiet window)</div></div>
+    <div class="tile"><div class="v">19</div><div class="k">Ship commits replayed (baseline → Suhl bounded pivot search)</div></div>
+  </div>
+
+  <h2>The big moments</h2>
+  <p class="note">Callouts pulled from the campaign log (<code>docs/HANDOFF.md</code>). Numbers here are the certified/paired figures the ship was measured against.</p>
+  <div class="callouts" id="callouts"></div>
+
+  <h2>The improvement arc</h2>
+  <p class="note">Two views of the whole suite across the 19 replayed commits (baseline first). Suite total is the summed single-shot wall; geomean ratio is the geometric mean of linprogx / HiGHS over the 23 instances HiGHS solves. Lower is better in both. The bump at commits 12–14 is machine-load noise during those replays, not a regression — see the footnote.</p>
+  <div class="chartcard">
+    <p class="ct">Suite total wall-time over commits</p>
+    <p class="cs">Sum of linprogx single-shot wall across all 24 fixtures, seconds.</p>
+    <div id="agg_total"></div>
+  </div>
+  <div class="chartcard">
+    <p class="ct">Geometric-mean time ratio vs HiGHS over commits</p>
+    <p class="cs">Geomean of (linprogx / HiGHS) across the 23 HiGHS-solved instances. The dashed line is parity (1.0); below it, linprogx wins the suite on average.</p>
+    <div id="agg_geo"></div>
+  </div>
+
+  <h2>Per-instance trajectories</h2>
+  <p class="note">Each panel is one fixture: the blue line is linprogx single-shot wall across the 19 commits; the dashed red line is the HiGHS reference (same loaded box). Panels are ordered by final ratio to HiGHS — wins first. Hover any point for the commit and time.</p>
+  <div class="legend">
+    <span><span class="swatch" style="border-top-color:var(--lx)"></span> linprogx (wall over commits)</span>
+    <span><span class="swatch" style="border-top-color:var(--highs);border-top-style:dashed"></span> HiGHS reference</span>
+  </div>
+  <div class="panels" id="panels"></div>
+
+  <div class="foot">
+    <h3>How to read these numbers (measurement honesty)</h3>
+    <p>Every value on this page is a <b>single-shot replay under variable machine load</b> — the box ran at load average 6–16 throughout, with other benchmark work active. This is deliberately <b>narrative-grade</b>: it reconstructs the <i>shape</i> of the improvement arc, not a certifiable head-to-head. The campaign's <b>certification</b> protocol is different — paired, interleaved 5–7-run measurements on a quiet box, recorded in <code>docs/HANDOFF.md</code>. Where a single-shot cell disagrees with the paired record (e.g. a load-spiked pilot87/cre_b in the final commit, both IPM-routed and untouched by the Forrest-Tomlin ship; or a whole commit whose aggregate rose because its replay window was loaded), trust the paired record. HiGHS's qap12 (~103s) and qap15 (timeout) are its own pathological instances on this box. Load average per run is stored in the DB <code>runs</code> table. Data regenerable from <code>assets/campaign.db</code> via <code>tools/replay_bench.py</code> + <code>tools/build_report_data.py</code>.</p>
+  </div>
+</div>
+
+<div class="tooltip" id="tt"></div>
+
+<script id="data" type="application/json">
+{"commits":[{"short":"a1a355d","hash":"a1a355d3c65090b00ebd9f91a9e705dcd0e59668","date":"2026-07-04","subject":"Record pivot anatomy; approve perturbation-with-removal unit"},{"short":"0145c8f","hash":"0145c8f5066ae3ab0d4c470a797dbdc7d6060557","date":"2026-07-09","subject":"fix: gate dtrsv tail-solve on tail_dense_valid (supernodal refactor never populated Tdense)"},{"short":"86d7064","hash":"86d706434fe22ffb82738ce23f5b27e45f48c323","date":"2026-07-09","subject":"perf: resident supernode panels + zero-copy dgemm operands in supernodal refactor"},{"short":"55cae27","hash":"55cae27150113ae8e7fa121b30bb875d20a9ba96","date":"2026-07-09","subject":"perf: size-gated per-call OpenBLAS threading in supernodal refactor"},{"short":"e7186c0","hash":"e7186c0c0c58157ee4ea491ad824e414026a27c8","date":"2026-07-09","subject":"perf: lower dense-tail BLAS threshold 400 -> 256 (LINPROGX_TAIL_BLAS_MIN)"},{"short":"29f77a6","hash":"29f77a681f795c61715fe35a249580a5b1abd54c","date":"2026-07-09","subject":"perf: linear-merge symbolic build + regime-constrained supernodal routing"},{"short":"c1812a7","hash":"c1812a7f6fde7cc4fb8a55f4acaa1d66edf19c48","date":"2026-07-09","subject":"perf: contiguous scalar update kernels for supernodal fine streams"},{"short":"f919642","hash":"f919642581ff5f5cdaa38cf643223a9634249fbd","date":"2026-07-09","subject":"perf: symbolic two-candidate order evaluation (min-degree vs natural)"},{"short":"0a20b2e","hash":"0a20b2e9e6d25ad129fd80754751054c9f045a13","date":"2026-07-09","subject":"perf: retune MCC cost-ratio gate 5.5 -> 3.0 (factor cheapening shifted economics)"},{"short":"c33f12f","hash":"c33f12f5f30b0e0ca40592d3c81502cfc71a40a3","date":"2026-07-12","subject":"perf: port DS rate levers from exp-leaving (scatter reuse, alpha_pattern, candidate cache, phase profiler)"},{"short":"2a73a10","hash":"2a73a10fb906f7ef299d3fa0f3179f50583bcfff","date":"2026-07-12","subject":"fix: explicit dual_simplex algorithm path now runs the certified EXPAND config"},{"short":"3d53bee","hash":"3d53beeabbfd885853dda24e2197a6dc68e97227","date":"2026-07-12","subject":"fix: mu safeguard at breakdown steps (fail-closed, certificate window)"},{"short":"cfed6f6","hash":"cfed6f6313b14943ef2d4432f7a652640aaa5076","date":"2026-07-13","subject":"perf: DS LU cadence \u2014 diag-ratio guard 1e6 -> 1e8 + instrumentation (port from exp-leaving)"},{"short":"459c804","hash":"459c804e7b94d24a0fadc0f53ee9b8b60c4e4931","date":"2026-07-13","subject":"perf: PDHG auto thread rule (physical cores) + dark Halpern experiment"},{"short":"c7190b5","hash":"c7190b573df028e5d93111082533bab49ae52409","date":"2026-07-13","subject":"perf: mu-gated second refinement round + supernodal kwarg parse fix"},{"short":"e09d425","hash":"e09d4254584431433b2881ef90994d60ff509f95","date":"2026-07-13","subject":"perf: cache uplook elimination patterns at symbolic time (bit-exact)"},{"short":"d0e6cb1","hash":"d0e6cb1230a2ec1e692e86e501e0b978e863017f","date":"2026-07-13","subject":"SHIP: Forrest-Tomlin program (port from exp-leaving 8a1fedf)"},{"short":"2f4a1df","hash":"2f4a1dfd6c6405aeda1a5e9825d40dc610b11a6e","date":"2026-07-13","subject":"Merge branch 'exp-panel' into perf-supernodal-simplex"},{"short":"11f4157","hash":"11f4157237c6bb7471239a2b98196701c0ee8d37","date":"2026-07-13","subject":"SHIP: Suhl bounded pivot search (port from exp-leaving)"}],"instances":{"lp_80bau3b":{"walls":[0.3347413089941256,0.33940448600333184,0.330378150974866,0.3324514770065434,0.21549386897822842,0.23646462301257998,0.3619079170166515,0.200055330991745,0.20012321101967245,0.23774407396558672,0.22890816698782146,0.25777841202216223,0.3279555210028775,0.2528032229747623,0.3138197819935158,0.2880266460124403,0.2446168329915963,0.2055342989624478,0.20199499296722934],"route_first":"ipm","route_last":"ipm","highs":0.18106680497294292,"highs_status":"optimal","clarabel":0.330350399017334,"clarabel_status":"optimal"},"lp_cre_a":{"walls":[0.13242595200426877,0.1440743600251153,0.1275428020162508,0.12059823900926858,0.11749742599204183,0.11655167298158631,0.1553688130225055,0.12160499097080901,0.11557102500228211,0.11777014000108466,0.11659658601274714,0.16637897002510726,0.15306386002339423,0.17438430502079427,0.14398423803504556,0.1297044179518707,0.10458751599071547,0.11469163902802393,0.11642407200997695],"route_first":"ipm","route_last":"ipm","highs":0.09008910896955058,"highs_status":"optimal","clarabel":0.13646801299182698,"clarabel_status":"optimal"},"lp_cre_b":{"walls":[5.978299014037475,5.873037997982465,6.551018016994931,5.7337045729509555,6.074867391958833,5.283864319964778,6.1107823079801165,5.951833068975247,6.176842601969838,6.694464915024582,6.505379576003179,6.5816455140011385,6.8130401949747466,6.977518423984293,6.203133894014172,5.942569041042589,9.057642555970233,5.363962450996041,4.658509516972117],"route_first":"ipm","route_last":"ipm","highs":1.942088720970787,"highs_status":"optimal","clarabel":17.24784600897692,"clarabel_status":"optimal"},"lp_cre_d":{"walls":[5.379728995962068,6.086700041953009,6.378959869034588,4.836882747011259,5.767836837039795,5.1127179019968025,5.3964016630197875,4.7613996900036,5.6559951530070975,6.104901345970575,6.019253503007349,5.8437128540244885,6.522550387948286,5.973362935998011,6.846541758975945,6.113990687998012,6.6129788519465365,5.250405124970712,4.607600852963515],"route_first":"ipm","route_last":"ipm","highs":1.0886392050306313,"highs_status":"optimal","clarabel":18.33366542996373,"clarabel_status":"optimal"},"lp_d2q06c":{"walls":[0.3938091170275584,0.4111895959940739,0.42752575600752607,0.40307685104198754,0.3671048990217969,0.3882427830249071,0.5665814090170898,0.39940801600459963,0.4035687689902261,0.37965930200880393,0.35910610400605947,0.5052168419933878,0.4818408620194532,1.4066056899609976,0.46470927499467507,0.42205019301036373,0.40209158801008016,0.3266607639961876,0.3642105939798057],"route_first":"ipm","route_last":"ipm","highs":0.8758162779849954,"highs_status":"optimal","clarabel":2.1764800529927015,"clarabel_status":"optimal"},"lp_degen3":{"walls":[0.20658080198336393,0.2094404450035654,0.19727110903477296,0.2010053580161184,0.17711916798725724,0.2179929040139541,0.18164730805438012,0.20644528098637238,0.20101427496410906,0.20834189699962735,0.2027347189723514,0.21644985699094832,0.21627719298703596,0.2147885569720529,0.17418060405179858,0.20882366300793365,0.19349935796344653,0.17576050700154155,0.18494019703939557],"route_first":"ipm","route_last":"ipm","highs":0.22386611002730206,"highs_status":"optimal","clarabel":0.4864247639779933,"clarabel_status":"optimal"},"lp_fit2p":{"walls":[0.09168645099271089,0.09076376399025321,0.08841332700103521,0.08879629301372916,0.0963113809702918,0.11516461195424199,0.09556039603194222,0.09223243099404499,0.08857424301095307,0.09131157404044643,0.10545866697793826,0.1183909050305374,0.11649882298661396,0.09806678700260818,0.09592139004962519,0.11174590099835768,0.11903098004404455,0.09093478403519839,0.09219239902449772],"route_first":"ipm","route_last":"ipm","highs":1.4522706150310114,"highs_status":"optimal","clarabel":0.261004263011273,"clarabel_status":"optimal"},"lp_greenbea":{"walls":[3.8717221199767664,3.8527481270139106,3.847868042998016,3.8248089510016143,3.8552866770187393,3.881668489018921,4.359590851003304,3.834589459991548,3.847882086003665,2.9215546490158886,2.91094096301822,4.032608942012303,2.770656873995904,4.087739987997338,3.9622922809794545,3.8915784840355627,2.3688690490089357,2.290419906959869,1.6758091190131381],"route_first":"simplex","route_last":"simplex","highs":0.26666594203561544,"highs_status":"optimal","clarabel":2.314693772001192,"clarabel_status":"optimal"},"lp_ken_07":{"walls":[0.02467297704424709,0.024551879963837564,0.022349561972077936,0.026989235018845648,0.020123959984630346,0.022269842971581966,0.02444790699519217,0.024770285992417485,0.02159159304574132,0.022186728019732982,0.025210379040800035,0.08019883598899469,0.07966690103057772,0.024829116999171674,0.021760408009868115,0.024659685033839196,0.024261743004899472,0.022881873999722302,0.02374261902878061],"route_first":"ipm","route_last":"ipm","highs":0.037165652960538864,"highs_status":"optimal","clarabel":0.0558248630259186,"clarabel_status":"optimal"},"lp_ken_11":{"walls":[0.23747911001555622,0.2100111939944327,0.24751895404187962,0.21045271295588464,0.21680356399156153,0.2522342600277625,0.1951524069881998,0.17737711599329486,0.1691457799752243,0.21111728000687435,0.17329443100607023,0.2307479149894789,0.2635681399842724,0.2548118059639819,0.2290538260131143,0.22816818597493693,0.2383112509851344,0.1735993649926968,0.18689474900020286],"route_first":"ipm","route_last":"ipm","highs":0.2962093550013378,"highs_status":"optimal","clarabel":0.6653267120127566,"clarabel_status":"optimal"},"lp_ken_13":{"walls":[0.6664244240382686,0.6502498220070265,0.9166651199921034,0.665151629014872,0.7159348350251094,0.6334321099566296,0.4956662050099112,0.490149040997494,0.49309984099818394,0.4818097009556368,0.49489482201170176,0.5511687810067087,0.6540589740034193,0.6156337190186605,0.6172379690106027,0.5718007549876347,0.7394654619856738,0.4975804569548927,0.514714972989168],"route_first":"ipm","route_last":"ipm","highs":0.959920346038416,"highs_status":"optimal","clarabel":1.6535052779945545,"clarabel_status":"optimal"},"lp_ken_18":{"walls":[8.988350723986514,7.727410274965223,5.125109393033199,5.505768479022663,7.064769960008562,5.257963249052409,5.058603237965144,5.074011663033161,5.232986413000617,4.990984687989112,6.373245387047064,6.699977452051826,7.579452924022917,6.579894579015672,6.456660595024005,5.59519719198579,5.764794892980717,5.4368347600102425,5.553815171006136],"route_first":"ipm","route_last":"ipm","highs":8.560723249975126,"highs_status":"optimal","clarabel":4.313189805019647,"clarabel_status":"DualInfeasible"},"lp_maros_r7":{"walls":[2.3897964119678363,1.7227604680228978,1.7017709580250084,1.5960444890079089,1.6367817140417174,1.7334528460050933,1.633074421028141,1.15385173400864,1.0875909319729544,1.082703833002597,1.118611450016033,1.34361350198742,1.4763223850168288,2.9793059149524197,1.310152009013109,1.2868397000129335,1.1251067169941962,1.1450086529948749,1.1475974600180052],"route_first":"ipm","route_last":"ipm","highs":1.00526817899663,"highs_status":"optimal","clarabel":2.1088346889591776,"clarabel_status":"optimal"},"lp_osa_14":{"walls":[1.0977670599822886,1.0924068709718995,1.0689918149728328,0.9238375410204753,1.0192721610073932,1.1265277769998647,0.9802712029777467,0.9674949240288697,0.8928169799619354,0.989071240008343,1.1723562619881704,1.1471255849464796,1.160819019016344,1.1812034660251811,1.1403214059537277,1.2498962639947422,1.0790912859956734,0.965425344009418,0.9540374699863605],"route_first":"ipm","route_last":"ipm","highs":1.086941261019092,"highs_status":"optimal","clarabel":2.1618079130421393,"clarabel_status":"optimal"},"lp_osa_30":{"walls":[2.0953076499863528,2.0806641950039193,1.9378764660214074,1.8426920730271377,1.9668796160258353,1.63812036201125,1.956722573027946,1.9911247099516913,1.9711918839602731,2.005823848012369,2.2714672870351933,2.1387207329971716,2.6367114189779386,2.2437043840182014,2.0510613759979606,2.065004031988792,2.083967089012731,1.597562222974375,1.6699447479913943],"route_first":"ipm","route_last":"ipm","highs":4.23060401895782,"highs_status":"optimal","clarabel":5.96950189396739,"clarabel_status":"optimal"},"lp_osa_60":{"walls":[7.785955744038802,6.265732436033431,5.867389193037525,5.737148397020064,7.754671370959841,6.358267409028485,6.050516069983132,5.196319289971143,6.742081600998063,6.107081299007405,6.995621455018409,8.786641012004111,8.348213667981327,7.009657802002039,7.629407808999531,8.394837046042085,8.869631823035888,4.984913430002052,4.989419701974839],"route_first":"ipm","route_last":"ipm","highs":19.130345115961973,"highs_status":"optimal","clarabel":23.344231185968965,"clarabel_status":"optimal"},"lp_pds_10":{"walls":[3.713601363997441,3.6845074230222963,3.7602929740096442,2.914975132967811,3.7631970400107093,3.730519318021834,2.876865188998636,2.9555769859580323,2.9688874339917675,2.83461990498472,2.733062796003651,4.1318799370201305,4.098439736990258,5.831819301005453,3.486653985979501,3.289002396981232,3.536238886998035,2.9602675829664804,2.9887658279621974],"route_first":"pdhg","route_last":"pdhg","highs":1.4509841229883023,"highs_status":"optimal","clarabel":26.876980103959795,"clarabel_status":"optimal"},"lp_pds_20":{"walls":[20.977696881978773,17.260497911949642,17.31428347300971,15.423877989000175,21.025670642964542,20.762852635991294,14.814985665027052,15.402400128019508,16.397258421988226,15.528572276991326,22.20282310503535,22.690470602014102,23.14447746699443,19.431373217026703,19.575873852008954,18.926195558044128,18.174858241982292,15.902578335022554,15.639875562046655],"route_first":"pdhg","route_last":"pdhg","highs":10.722172868961934,"highs_status":"optimal","clarabel":108.23897534998832,"clarabel_status":"optimal"},"lp_pilot87":{"walls":[4.094731357996352,4.451101824990474,6.194252314046025,3.9931479059741832,3.9473370410269126,3.6129133380018175,3.7855479400022887,3.8985340779763646,3.5819463480147533,3.800852018990554,4.093076793011278,4.070358908968046,4.122755753051024,4.364722362020984,4.1918317310046405,4.034125758975279,8.480817210976966,3.5169558819616213,3.515045344014652],"route_first":"ipm","route_last":"ipm","highs":3.62932628497947,"highs_status":"optimal","clarabel":9.273984534025658,"clarabel_status":"optimal"},"lp_qap12":{"walls":[1.7395088000339456,1.845256204949692,1.732834801019635,1.6466903010150418,1.9306159850093536,1.6732055459870026,1.9424161670031026,1.645775664015673,1.6019446750287898,1.5999064540374093,1.813757887983229,2.1022421359666623,1.8238582980120555,1.9502469570143148,1.921745426952839,1.9903801080072299,1.8706317850155756,1.9532545109977946,1.9568542950437404],"route_first":"pdhg","route_last":"pdhg","highs":102.97548189596273,"highs_status":"optimal","clarabel":3.32314072502777,"clarabel_status":"optimal"},"lp_qap15":{"walls":[0.8746506169554777,0.880246946006082,0.8874283130280674,0.6957970370422117,0.9100045540253632,0.8715481190010905,0.8948014170164242,0.694901003036648,0.7001805130275898,0.6985465550096706,0.650013169972226,0.9420695140142925,0.9757223580381833,2.2971592280082405,0.8504816350177862,0.8060471679782495,0.94333653699141,0.739550802973099,0.7427895399741828],"route_first":"pdhg","route_last":"pdhg","highs":null,"highs_status":"timeout","clarabel":16.34671121701831,"clarabel_status":"optimal"},"lp_stocfor3":{"walls":[0.9027246079640463,0.9009207719936967,0.7972782339784317,0.7970298600266688,0.8054904900491238,0.6964828360360116,0.7334427500027232,0.5640402879798785,0.6553024259628728,0.6427985250484198,0.6248585050343536,0.7725975420325994,0.7861420920235105,0.9178425949648954,0.6493189299944788,0.6687823989777826,0.6311974289710633,0.6279691390227526,0.6648337329970673],"route_first":"ipm","route_last":"ipm","highs":0.6131514020380564,"highs_status":"optimal","clarabel":1.0396099769859575,"clarabel_status":"optimal"},"lp_truss":{"walls":[0.12699457502458245,0.13004378095502034,0.13029143295716494,0.11347552697407082,0.13290324405534193,0.14195288001792505,0.11499358102446422,0.11837155401008204,0.11901681497693062,0.12562996696215123,0.11532326997257769,0.19190901197725907,0.20319062401540577,0.1740678580245003,0.13546369201503694,0.13225998496636748,0.14333076501498,0.10902924399124458,0.10847304202616215],"route_first":"ipm","route_last":"ipm","highs":2.7517202199669555,"highs_status":"optimal","clarabel":0.16337626398308203,"clarabel_status":"optimal"},"lp_woodw":{"walls":[0.18143541197059676,0.4942661989480257,0.1577969630016014,0.1513594199786894,0.16823627997655421,0.21760403999360278,0.30061197001487017,0.1585429510450922,0.19303024397231638,0.16241776396054775,0.15778837096877396,0.21102682402124628,0.2117665730183944,0.23436615301761776,0.2065975540317595,0.2024149259668775,0.21443622995866463,0.17250186199089512,0.15423498500604182],"route_first":"ipm","route_last":"ipm","highs":0.08923264301847667,"highs_status":"optimal","clarabel":0.22672118298942223,"clarabel_status":"optimal"}},"ordered_instances":["lp_qap12","lp_truss","lp_fit2p","lp_osa_60","lp_osa_30","lp_d2q06c","lp_ken_13","lp_ken_11","lp_ken_07","lp_ken_18","lp_degen3","lp_osa_14","lp_pilot87","lp_stocfor3","lp_80bau3b","lp_maros_r7","lp_cre_a","lp_pds_20","lp_woodw","lp_pds_10","lp_cre_b","lp_cre_d","lp_greenbea","lp_qap15"],"final_ratio":{"lp_80bau3b":1.116,"lp_cre_a":1.292,"lp_cre_b":2.399,"lp_cre_d":4.232,"lp_d2q06c":0.416,"lp_degen3":0.826,"lp_fit2p":0.063,"lp_greenbea":6.284,"lp_ken_07":0.639,"lp_ken_11":0.631,"lp_ken_13":0.536,"lp_ken_18":0.649,"lp_maros_r7":1.142,"lp_osa_14":0.878,"lp_osa_30":0.395,"lp_osa_60":0.261,"lp_pds_10":2.06,"lp_pds_20":1.459,"lp_pilot87":0.969,"lp_qap12":0.019,"lp_qap15":null,"lp_stocfor3":1.084,"lp_truss":0.039,"lp_woodw":1.728},"aggregate":[{"total":72.29,"geomean_ratio":0.868,"n_ratio":23},{"total":66.43,"geomean_ratio":0.882,"n_ratio":23},{"total":65.81,"geomean_ratio":0.838,"n_ratio":23},{"total":57.79,"geomean_ratio":0.766,"n_ratio":23},{"total":69.75,"geomean_ratio":0.807,"n_ratio":23},{"total":64.08,"geomean_ratio":0.8,"n_ratio":23},{"total":59.09,"geomean_ratio":0.81,"n_ratio":23},{"total":56.08,"geomean_ratio":0.714,"n_ratio":23},{"total":59.52,"geomean_ratio":0.725,"n_ratio":23},{"total":58.04,"geomean_ratio":0.728,"n_ratio":23},{"total":67.46,"geomean_ratio":0.761,"n_ratio":23},{"total":73.81,"geomean_ratio":0.939,"n_ratio":23},{"total":74.97,"geomean_ratio":0.96,"n_ratio":23},{"total":75.28,"geomean_ratio":0.98,"n_ratio":23},{"total":68.68,"geomean_ratio":0.833,"n_ratio":23},{"total":66.57,"geomean_ratio":0.827,"n_ratio":23},{"total":73.02,"geomean_ratio":0.844,"n_ratio":23},{"total":54.62,"geomean_ratio":0.683,"n_ratio":23},{"total":52.71,"geomean_ratio":0.675,"n_ratio":23}],"generated":"2026-07-13"}
+</script>
+<script>
+const D = JSON.parse(document.getElementById('data').textContent);
+const NS = 'http://www.w3.org/2000/svg';
+const C = D.commits, N = C.length;
+const tt = document.getElementById('tt');
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const el = (t, a={}, kids=[]) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); (Array.isArray(kids)?kids:[kids]).forEach(c=>c&&e.appendChild(typeof c==='string'?document.createTextNode(c):c)); return e; };
+const fmt = v => v==null?'—':(v>=10?v.toFixed(1):v.toFixed(2));
+
+// ---------------- theme toggle ----------------
+(function () {
+  const btn = document.getElementById('themebtn');
+  const order = [null, 'dark', 'light'];
+  let idx = 0;
+  btn.addEventListener('click', () => {
+    idx = (idx + 1) % order.length;
+    const t = order[idx];
+    if (t) document.documentElement.setAttribute('data-theme', t);
+    else document.documentElement.removeAttribute('data-theme');
+    btn.textContent = t ? (t === 'dark' ? '◑ dark' : '◐ light') : '◑ theme';
+  });
+})();
+
+// ---------------- generated meta ----------------
+document.getElementById('genmeta').textContent =
+  `Generated ${D.generated} · ${N} replayed commits, baseline (${C[0].short}) → ${C[N-1].short} · single-shot wall-clock, 24-fixture LPnetlib suite.`;
+
+// ---------------- tooltip ----------------
+function showTip(ev, html) {
+  tt.innerHTML = html;
+  tt.style.opacity = 1;
+  tt.style.left = (ev.clientX + 14) + 'px';
+  tt.style.top = (ev.clientY + 14) + 'px';
+}
+function hideTip() { tt.style.opacity = 0; }
+
+// ---------------- callouts ----------------
+const CALLOUTS = [
+  { short: '0145c8f', title: 'Tdense latent-bug fix', big: 'maros_r7 ~2.4s → ~1.7s',
+    text: 'The supernodal refactor never populated ctx->Tdense; the dtrsv tail solve fed zeros and NaN’d its first IPM attempt, surviving only via the floored retry. Gating the tail solve on tail_dense_valid fixed it (scalar CSC walk measured faster than gather+dtrsv anyway).' },
+  { short: 'f919642', title: 'Two-candidate symbolic ordering', big: 'maros_r7 wall −23%',
+    text: 'Min-degree vs natural order evaluated at symbolic time; fires only on maros_r7’s banded/QP structure (natural order = 2.36× fewer flops). Fill −32%.' },
+  { short: 'c33f12f', title: 'DS rate levers', big: 'greenbea 382 → 292 µs/pivot',
+    text: 'Scatter reuse, alpha_pattern support list, candidate cache ported from exp-leaving. greenbea ~3.9s → ~2.9s.' },
+  { short: '3d53bee', title: 'mu safeguard at breakdown steps', big: 'Dissolves the 60,000× endgame detonation',
+    text: 'Fail-closed step guard in the certificate window (mu < 1e-7): reject any tentative step whose post-step mu exceeds ~10× pre-step mu. Inert on every default path; 80bau3b 105 → 52 iters under forced correctors.' },
+  { short: 'd0e6cb1', title: 'Forrest-Tomlin program ship', big: 'greenbea 3.80s → 2.36s certified',
+    text: 'True FT replaces PFI eta chains: expand=1 + FT default on + dtau=5e-11 + wmax=3e5 (ported from exp-leaving 8a1fedf). LU program (steps 1–4) complete.' },
+  { short: '2f4a1df', title: 'Block-row uplook gate', big: 'cre_b wall −12.8% (uplook −35%), osa_14 −4.1%',
+    text: 'Consecutive rows (≤4) sharing pattern structure processed as blocks with per-row accumulators, amortizing the random-load Li/Lx stream. Gated by a symbolic-time census of the saveable scatter-pair fraction at b=4: engages when saved ≥ 0.5×W (clean separation — losers ≤45.5%, winners ≥56.4%). Outcome-exact (obj reldiff ≤ 2.8e-12), not bit-exact. Merged from exp-panel.' },
+  { short: '11f4157', title: 'Suhl bounded pivot search', big: 'greenbea pivot search −96%, paired wall +35.4%',
+    text: 'Column walk stops after LU_SUHL_MAX_COLS=8 threshold-viable columns, or immediate accept at merit≤4. greenbea pivot search 0.322s → 0.013s (44× fewer column visits), compounding with a −14% favorable iteration shift into the paired wall gain. All DS-family instances improve (woodw +20.3%, stocfor3 +12.6%, cre_d +7.9%, 80bau3b +8.1%). Session arc: greenbea 3.80s → 1.65s certified. cre_d same-basis fill +40% is a monitored proxy-gate breach (outcomes healthy — wall improves, zero refac storms).' },
+];
+const byShort = Object.fromEntries(C.map(c => [c.short, c]));
+const calloutsEl = document.getElementById('callouts');
+for (const co of CALLOUTS) {
+  const c = byShort[co.short];
+  const card = document.createElement('div'); card.className = 'callout';
+  const h3 = document.createElement('h3'); h3.textContent = co.title;
+  const mono = document.createElement('div'); mono.className = 'commit';
+  mono.textContent = c ? `${co.short} · ${c.date}` : co.short;
+  const p = document.createElement('p');
+  const big = document.createElement('span'); big.className = 'big'; big.textContent = co.big;
+  p.appendChild(big);
+  p.appendChild(document.createTextNode(' — ' + co.text));
+  card.append(h3, mono, p);
+  calloutsEl.appendChild(card);
+}
+
+// ---------------- shared svg helpers ----------------
+function makeSvg(w, h) {
+  return el('svg', { viewBox: `0 0 ${w} ${h}`, width: '100%', height: h, preserveAspectRatio: 'xMinYMid meet', style: 'display:block' });
+}
+function axisTicksY(svg, x0, y0top, y0bot, lo, hi, w) {
+  const steps = 4;
+  for (let i = 0; i <= steps; i++) {
+    const v = lo + (hi - lo) * i / steps;
+    const y = y0bot - (y0bot - y0top) * i / steps;
+    svg.appendChild(el('line', { x1: x0, x2: x0 + w, y1: y, y2: y, 'stroke-width': 1, style: 'stroke: var(--grid)' }));
+    svg.appendChild(el('text', { x: x0 - 6, y: y + 3, class: 'tick', 'text-anchor': 'end' }, fmt(v)));
+  }
+}
+
+// ---------------- aggregate charts ----------------
+function aggChart(container, key, opts = {}) {
+  const w = 1080, h = 220, ml = 46, mr = 16, mt = 14, mb = 26;
+  const iw = w - ml - mr, ih = h - mt - mb;
+  const vals = D.aggregate.map(a => a[key]).filter(v => v != null);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (opts.includeOne) { lo = Math.min(lo, 1); hi = Math.max(hi, 1); }
+  const pad = (hi - lo) * 0.08 || 1;
+  lo -= pad; hi += pad;
+  const xOf = i => ml + (N === 1 ? 0 : i / (N - 1) * iw);
+  const yOf = v => mt + ih - (v - lo) / (hi - lo) * ih;
+  const svg = makeSvg(w, h);
+  axisTicksY(svg, ml, mt, mt + ih, lo, hi, iw);
+  if (opts.includeOne) {
+    const y1 = yOf(1);
+    svg.appendChild(el('line', { x1: ml, x2: ml + iw, y1, y2: y1, 'stroke-width': 1, 'stroke-dasharray': '4 3', style: 'stroke: var(--axis)' }));
+  }
+  let d = '';
+  D.aggregate.forEach((a, i) => {
+    const v = a[key];
+    if (v == null) return;
+    d += (d ? 'L' : 'M') + xOf(i) + ',' + yOf(v) + ' ';
+  });
+  svg.appendChild(el('path', { d, fill: 'none', 'stroke-width': 2, style: 'stroke: var(--lx)' }));
+  D.aggregate.forEach((a, i) => {
+    const v = a[key];
+    if (v == null) return;
+    const c = el('circle', { cx: xOf(i), cy: yOf(v), r: 3.4, style: 'cursor:pointer; fill: var(--lx)' });
+    c.addEventListener('mousemove', ev => showTip(ev, `<b>${C[i].short}</b> · ${C[i].date}<br>${opts.label}: <b>${fmt(v)}</b><div class="mono">${C[i].subject}</div>`));
+    c.addEventListener('mouseleave', hideTip);
+    svg.appendChild(c);
+  });
+  [0, Math.floor((N - 1) / 2), N - 1].forEach(i => {
+    svg.appendChild(el('text', { x: xOf(i), y: h - 6, class: 'tick', 'text-anchor': 'middle' }, C[i].short));
+  });
+  container.appendChild(svg);
+}
+aggChart(document.getElementById('agg_total'), 'total', { label: 'suite total (s)' });
+aggChart(document.getElementById('agg_geo'), 'geomean_ratio', { label: 'geomean ratio', includeOne: true });
+
+// ---------------- per-instance panels ----------------
+const panelsEl = document.getElementById('panels');
+for (const inst of D.ordered_instances) {
+  const s = D.instances[inst];
+  const name = inst.replace(/^lp_/, '');
+  const ratio = D.final_ratio[inst];
+  const win = ratio != null && ratio < 1.0;
+
+  const panel = document.createElement('div'); panel.className = 'panel';
+  const ph = document.createElement('div'); ph.className = 'ph';
+  const pn = document.createElement('span'); pn.className = 'pn'; pn.textContent = name;
+  const badge = document.createElement('span');
+  badge.className = 'badge ' + (ratio == null ? '' : (win ? 'win' : 'loss'));
+  badge.textContent = ratio == null ? 'n/a' : (win ? 'WIN ' : '') + fmt(ratio) + '×';
+  ph.append(pn, badge);
+  const pmeta = document.createElement('div'); pmeta.className = 'pmeta';
+  pmeta.textContent = `${s.route_last}${s.route_first !== s.route_last ? ` (was ${s.route_first})` : ''} · HiGHS ${s.highs_status === 'timeout' ? 'TIMEOUT' : fmt(s.highs) + 's'}`;
+  panel.append(ph, pmeta);
+
+  const w = 240, h = 76, ml = 4, mr = 4, mt = 6, mb = 4;
+  const iw = w - ml - mr, ih = h - mt - mb;
+  const present = s.walls.map((v, i) => ({ v, i })).filter(p => p.v != null);
+  const vals = present.map(p => p.v).concat((s.highs != null && s.highs_status !== 'timeout') ? [s.highs] : []);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi - lo) * 0.12 || (hi * 0.1) || 1;
+  lo = Math.max(0, lo - pad); hi = hi + pad;
+  const xOf = i => ml + (N === 1 ? 0 : i / (N - 1) * iw);
+  const yOf = v => mt + ih - (hi === lo ? ih / 2 : (v - lo) / (hi - lo) * ih);
+  const svg = makeSvg(w, h);
+  if (s.highs != null && s.highs_status !== 'timeout') {
+    const y = yOf(s.highs);
+    svg.appendChild(el('line', { x1: ml, x2: ml + iw, y1: y, y2: y, 'stroke-width': 1.4, 'stroke-dasharray': '4 3', style: 'stroke: var(--highs)' }));
+  }
+  let d = '';
+  present.forEach(p => { d += (d ? 'L' : 'M') + xOf(p.i) + ',' + yOf(p.v) + ' '; });
+  svg.appendChild(el('path', { d, fill: 'none', 'stroke-width': 1.8, style: 'stroke: var(--lx)' }));
+  present.forEach(p => {
+    const c = el('circle', { cx: xOf(p.i), cy: yOf(p.v), r: 2.6, style: 'cursor:pointer; fill: var(--lx)' });
+    c.addEventListener('mousemove', ev => showTip(ev, `<b>${name}</b> · ${C[p.i].short} · ${C[p.i].date}<br>wall: <b>${fmt(p.v)}s</b> [${s.route_last}]<div class="mono">${C[p.i].subject}</div>`));
+    c.addEventListener('mouseleave', hideTip);
+    svg.appendChild(c);
+  });
+  panel.appendChild(svg);
+  panelsEl.appendChild(panel);
+}
+
+// ---------------- full headline table (collapsible detail) ----------------
+(function () {
+  const det = document.createElement('details'); det.className = 'tbl';
+  const sum = document.createElement('summary'); sum.textContent = 'Full headline table (baseline → current, all 24 fixtures)';
+  const table = document.createElement('table'); table.className = 'dat';
+  const thead = document.createElement('tr');
+  ['instance', 'baseline (s)', 'current (s)', 'HiGHS (s)', 'ratio', 'route', 'W/L'].forEach(t => {
+    const th = document.createElement('th'); th.textContent = t; thead.appendChild(th);
+  });
+  table.appendChild(thead);
+  for (const inst of D.ordered_instances) {
+    const s = D.instances[inst];
+    const ratio = D.final_ratio[inst];
+    const tr = document.createElement('tr');
+    const cells = [
+      inst.replace(/^lp_/, ''),
+      fmt(s.walls[0]),
+      fmt(s.walls[N - 1]),
+      s.highs_status === 'timeout' ? 'TIMEOUT' : fmt(s.highs),
+      ratio == null ? 'n/a' : fmt(ratio),
+      s.route_last,
+      ratio == null ? 'n/a' : (ratio < 1 ? 'WIN' : 'loss'),
+    ];
+    cells.forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+    table.appendChild(tr);
+  }
+  det.append(sum, table);
+  document.querySelector('.foot').before(det);
+})();
+
+</script>
+</body>
+</html>
