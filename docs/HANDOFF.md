@@ -1153,3 +1153,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   the bound), CG instead of Richardson, exact endgame — the 60-iter
   path-tracking says the physics allows it; the exit says the guards
   must be real.
+
+- INEXACT-NEWTON HARDENED (2026-07-12, exp-panel, merged; dark
+  LINPROGX_IPM_LAG machinery kept as the experimental record):
+  DIRECTION (b) CLOSED PERMANENTLY by the pre-registered criterion —
+  100% redo storm (cre_b 0/15 accepts, cre_d 0/13, identical at eta
+  0.1/0.3/1.0): six stale-preconditioned IR rounds never reach ladder
+  accuracy; CG declined by arithmetic (pays only within ~4-5 rounds).
+  The guard DID rescue certification at baseline iteration counts,
+  which retro-explains the probe glimmer as genuinely bad steps
+  tracking the path until the endgame broke. THE CRE PAIR IS NOW
+  MEASURED-UNREACHABLE BY EVERY IPM-SIDE LEVER (factor floor,
+  correctors optimal, ordering near-optimal, supernodal refuted by
+  arithmetic, inexact Newton refuted by preconditioner quality); its
+  3-5x gap belongs to the DS count program (crash reachable-set +
+  pricing locality).
