@@ -1225,3 +1225,20 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   certified; then re-run the MCC matrix and re-derive the gate below
   3.0 (woodw 36->29, stocfor3 45->35, cre_a 36->28 become reachable).
   Check pilot87/osa tails for the same mu-jump signature.
+
+- MU SAFEGUARD SHIPPED / CORRECTOR AXIS CLOSED (2026-07-12, exp-panel,
+  merged): fail-closed step safeguard in the certificate window
+  (mu<1e-7): tentative post-step mu computed before commit, <=3
+  ap/ad halvings while post>10x pre, else skip the step and certify
+  the converged iterate. Endgame detonation DISSOLVED: 80bau3b
+  MCC-forced 105->52 certified (gap 3.17e-6, netlib-consistent);
+  bit-identical reruns; INERT on every default path (0 fires,
+  11-instance fingerprint sweep byte-identical, 249 green). Exit-gate
+  discriminator confirmed: detonation strikes between mu-convergence
+  and raw_pres convergence (5.26e-5 > feas_tol at it=52). GATE STAYS
+  3.0: with the pathology gone, every ratio<3.0 instance still loses
+  or ties wall under forced correctors (osa_14 +12%, 80bau3b +8% are
+  the first casualties of any behavior-changing reduction; nothing
+  sits in [2.0,3.0)). The hostile band was economics, not correctness.
+  THE CORRECTOR/ITERATION-COUNT AXIS IS FULLY MAPPED AND CLOSED:
+  safeguard for robustness, 3.0 for economics, matrix on record.
