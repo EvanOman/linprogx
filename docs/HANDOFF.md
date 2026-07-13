@@ -1298,3 +1298,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   safe). greenbea trajectory: 2.89 -> ~2.5 (step 1) -> ~2.2 projected
   drift-neutral FT -> ~1.9 with (a); <=1.5 needs the btran/scatter
   slices too.
+
+- PDHG UNIT (2026-07-13, exp-panel, merged): first-ever PDHG profile.
+  The implementation is PDLP-COMPLETE already (Ruiz+l2 equilibration,
+  Malitsky-Pock adaptive steps, adaptive omega, KKT-based restarts,
+  averaging, CGLS cleanup); convergence smooth, no pathology; loop is
+  memory-bandwidth-bound (391us/iter, 85% dense step-trial passes,
+  ~15 GB/s at 4 threads = practical floor). SHIPPED: threads=0 auto =
+  physical cores (logical/2, clamp [2,8]); DEFAULT_PDHG_THREADS 4->0.
+  Bit-identical trajectories: pds_10 -21.5% (2.78s vs HiGHS 1.42 =
+  1.9x), pds_20 -36.6% (15.8 vs 13.24 = 1.2x), qap12 -2.2%, qap15
+  -9.1%. NEGATIVES PINNED DARK: LINPROGX_PDHG_HALPERN (anchored +55%
+  iters; reflected divergent under adaptive steps — a fixed-step
+  reflected-Halpern retune is a PROGRAM, not a unit),
+  adaptive_weight=2 (iteration_limit). VERDICT: pds gap is pure
+  iteration count at 2e-5 (8.5k/21.7k iters); per-iteration at floor.
+  Remaining pds paths: fixed-step Halpern program, or DS
+  pricing-locality program. Side notes: qap12 is CGLS-dominated
+  (1.41/1.70s); PDHG debug=1 costs 10x.
