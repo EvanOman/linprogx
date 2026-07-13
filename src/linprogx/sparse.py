@@ -249,6 +249,7 @@ class SparseSolver:
                 solve_lo,
                 solve_hi,
                 max_iter=min(self.max_iterations, 200_000),
+                expand=1,
             )
         if chosen == "ipm":
             result = matrix.solve_eq_box_ipm(
