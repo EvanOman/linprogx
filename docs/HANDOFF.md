@@ -1416,3 +1416,15 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   outcomes healthy). QUEUED IDEA if it ever bites: fill-feedback
   fallback (redo factorize exhaustively when fill exceeds ~1.5x
   prediction).
+
+- CLEAN-BOX BENCHMARKING (2026-07-13, tools/modal_bench.py): Modal
+  4-CPU dedicated containers, loadavg 0.00, ~\$0.30/full run. FIRST
+  CLEAN-BOX CERTIFICATION at 7e9947a: osa_14 WIN 0.96 (6/7) and cre_a
+  WIN 0.97 (5/7) — both FLIP from local losses; degen3 flips the OTHER
+  way (local WIN 0.80, Modal 1.06) and pilot87 similarly — THE
+  KNIFE-EDGE BAND IS MACHINE-DEPENDENT; the controlled box is now the
+  scoreboard of record. Suite geomean 0.735; clean-box loss ladder:
+  greenbea 4.8-5.25, cre_d 4.63, pds_10 2.83, cre_b 2.75-2.83,
+  pds_20 1.63, woodw 1.44, maros_r7 1.24, 80bau3b 1.20-1.27,
+  stocfor3 1.06-1.15, degen3 1.06, pilot87 1.11. Volumes:
+  linprogx-lpsuite (fixtures), linprogx-src (snapshots by sha).
