@@ -1452,3 +1452,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   rank-revealing crash-factorization construction would be the only
   escalation and its prior is now much lower. The crossover program
   is closed at probe level.
+
+- NINETEENTH SETTLED — FIXED-STEP HALPERN PDHG (2026-07-13, codex
+  probe on exp-leaving, probe_out/pds10-halpern-slope.json incl.
+  extension_10k): KILL, decisively. The 2k-window terminal-KKT
+  advantage of reset-anchor cells was an artifact (baseline KKT
+  descent is restart-lumpy early); at 10k iterations the adaptive
+  baseline converges (1.02e-8 at equal 20.6k operator passes, optimal
+  at endpoint) while the best Halpern cells sit at ~1e-3 — ~98,000x
+  worse at equal work, late slopes 1.5-1.8% of baseline. All Halpern
+  variants (anchored/reflected x anchor policies x fixed etas) are now
+  dead for pds. METHOD LESSON: slope probes must span restart-scale
+  dynamics; 2k was too short. NEXT PDS IDEA (prior improved by this
+  data): PDLP-style DIAGONAL step sizes (current eta is scalar
+  0.99/||A||) — the baseline's late acceleration shows mechanics are
+  healthy; worst-column throttling is the remaining geometry problem.
