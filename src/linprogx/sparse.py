@@ -224,6 +224,7 @@ class SparseSolver:
                     solve_lo,
                     solve_hi,
                     max_iter=min(self.max_iterations, 50_000),
+                    leaving_rule=1,
                     expand=1,
                 )
                 if ds_early["status"] == "optimal":
@@ -247,6 +248,8 @@ class SparseSolver:
         result = None
         feasible_ipm_candidate: tuple[list[float], float, int, float] | None = None
         if chosen == "dual_simplex":
+            # Preserve the library default for explicit user-selected dual simplex;
+            # the Dantzig leaving rule is only a route-level auto rescue policy.
             result = matrix.solve_eq_box_dual_simplex(
                 solve_c,
                 solve_b,
@@ -347,6 +350,7 @@ class SparseSolver:
                             solve_lo,
                             solve_hi,
                             max_iter=min(self.max_iterations, 50_000),
+                            leaving_rule=1,
                             expand=1,
                         )
                         if ds_result["status"] == "optimal":
