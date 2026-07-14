@@ -1523,3 +1523,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   reductions exceeded census projections on the big four. 260 tests,
   LINPROGX_PRESOLVE_V2=0 reverts. NEXT: clean-box re-certification of
   the whole board + chronicle update.
+
+- CLEAN-BOX CERTIFICATION AT 1f4351d (2026-07-14, AWS us-west-2,
+  loadavg 0.00, assets/modal_bench_1f4351dcfa96_{suite,paired}.json):
+  13W-11L; geomean 0.558 (was 0.735); aggregate 49.1s vs 192.8s+
+  qap15-timeout; coverage 24/24 vs 23/24. FLIP: cre_b LOSS 2.75 ->
+  WIN 0.940 (6/7, IPM 2.42 vs 2.57 — presolve V2's headline).
+  cre_a flipped back to loss (1.066, knife-edge churn). THE LADDER
+  COLLAPSED — remaining losses, none above 2x: greenbea 1.89 (was
+  5.25; 0.69s via Dantzig route), woodw 1.69, pds_10 1.66 (was 2.83),
+  cre_d 1.53 (was 4.63), 80bau3b 1.32 (REGRESSION from 1.20 paired —
+  investigate: local A/B showed -9%; clean box disagrees), maros_r7
+  1.17, degen3 1.08, cre_a 1.07, stocfor3 1.06, pds_20 1.03
+  (near-tie, was 1.63), pilot87 1.008 (dead knife-edge, 3/7).
+  Session totals: 20+ ships, 21 settled hypotheses, geomean nearly
+  halved in two days.
