@@ -283,3 +283,63 @@ The report is served at https://evanoman.github.io/linprogx/ from the
 `docs/campaign_report.html` (tools/build_report_data.py + re-embed),
 then copy it to `index.html` on `gh-pages` (with CAMPAIGN.md alongside)
 and push. A Claude-hosted mirror is redeployed from the same file.
+
+## Modal cloud benchmarking harness (`tools/modal_bench.py`)
+
+Suite benchmarks can run on a **clean, reproducible, no-other-load CPU
+container** (Modal) instead of the busy dev machine. Absolute walls differ
+across CPUs; the apples-to-apples product is the **ratio** of linprogx wall
+to HiGHS wall measured on the same box.
+
+**Environment** (full pins in the file header): Modal `debian_slim`
+python 3.12 image + `build-essential`, `git`, `libopenblas-dev`,
+`pkg-config`; `uv` installs the repo's own `uv.lock` (`uv sync --extra dev`),
+so scipy/clarabel/numpy versions are exactly the committed lockfile.
+Resources: `cpu=4.0` dedicated, 8 GiB, 3600s timeout, **CPU-only** — never
+requests a GPU. Cost is cents per full run (one container-hour ceiling).
+
+**Fixtures** live in the `linprogx-lpsuite` Modal Volume (uploaded once
+from local `/tmp/lpsuite`, more reliable than re-downloading from
+sparse.tamu.edu per run). **Source** comes either from a `git clone` of the
+public repo (for pushed refs) or — the default — a `git archive HEAD`
+snapshot tarball uploaded to the `linprogx-src` Volume keyed by sha, which
+lets the harness benchmark local commits that aren't on GitHub yet.
+
+```bash
+# one-time setup (idempotent)
+uvx modal run tools/modal_bench.py --action upload-fixtures
+uvx modal run tools/modal_bench.py --action upload-src   # archives worktree HEAD
+
+# smoke test
+uvx modal run tools/modal_bench.py --action bench --mode paired \
+    --ref <sha> --instances lp_woodw --pairs 3
+
+# full 24-instance single-shot suite (rows match experiments/suite_bench.py shape,
+# so results can feed assets/campaign.db)
+uvx modal run tools/modal_bench.py --action bench --mode suite --ref <sha>
+
+# certified knife-edge paired verdicts (interleaved lx/HiGHS, median/min/wins)
+uvx modal run tools/modal_bench.py --action bench --mode paired --ref <sha> \
+    --instances lp_degen3,lp_osa_14,lp_stocfor3,lp_80bau3b,lp_cre_a,lp_greenbea,lp_cre_b \
+    --pairs 7
+```
+
+Output JSON (`{ref, machine_info, load_checks, rows|paired}`) is printed to
+stdout and saved to `/tmp/modal_bench_<ref>_<mode>.json`. `machine_info`
+records the CPU model/count, memory, Modal region/cloud, and start/end
+loadavg so every run carries its own load-honesty check. Per-cell subprocess
+timeout is 200s.
+
+First validated run (2026-07-13, ref `7e9947a`; suite on GCP
+`europe-west1`, paired on Azure `westus3`, loadavg 0.00 throughout):
+24/24 linprogx coverage, geomean lx/HiGHS ratio **0.735** (local quiet
+reference ~0.78); most per-instance ratios agreed with local within
+~±30%. Material shifts: `greenbea` 4.8x vs 10.1x local (clean box much
+kinder — local load was inflating the loss), `fit2p` 0.14 vs 0.07 (lx
+advantage halved but still ~7x faster), `ken_07` 0.39 vs 0.64 (sub-100ms
+walls, noise-prone). Paired knife-edge verdicts flipped two losses into
+wins on the clean box: `osa_14` 0.96 (WIN 6/7) and `cre_a` 0.97 (WIN 5/7);
+`degen3`/`stocfor3` sit at 1.06, `80bau3b` 1.20, `cre_b` 2.75,
+`greenbea` 5.25. Total cost of the full validation (uploads + smoke +
+24-instance suite + 7x7 paired): ~22 container-minutes on 4 CPU / 8 GiB,
+roughly $0.25-0.40.
