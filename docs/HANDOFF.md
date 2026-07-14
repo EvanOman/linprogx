@@ -1428,3 +1428,14 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   pds_20 1.63, woodw 1.44, maros_r7 1.24, 80bau3b 1.20-1.27,
   stocfor3 1.06-1.15, degen3 1.06, pilot87 1.11. Volumes:
   linprogx-lpsuite (fixtures), linprogx-src (snapshots by sha).
+
+- SEVENTEENTH SETTLED — BFRT POST-FT/SUHL (2026-07-13, codex probe,
+  experiments/bfrt_probe.py + probe_out/bfrt-probe.json): KILL by
+  pre-registered criteria. greenbea 9,150 -> 9,865 pivots (+7.8%,
+  wall 1.65 -> 2.60s) with bfrt=1 — the fresh economics do NOT
+  rehabilitate BFRT on the target. Numerics clean everywhere
+  (residuals <=2.2e-7, obj deltas <=2.3e-12). ANOMALY FOR THE RECORD:
+  80bau3b DS walk -40% pivots / -36% wall under BFRT (6,560 -> 3,957)
+  — but its public route is IPM (0.30s < DS 0.363s), so no scoreboard
+  relevance; the boxedness signal does NOT discriminate (greenbea is
+  M-boxed-heavy and regressed). BFRT stays off the routes.
