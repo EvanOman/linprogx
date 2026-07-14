@@ -1487,3 +1487,15 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   at bandwidth floor, threads shipped, restarts/adaptivity healthy and
   superior to every fixed-geometry variant tried (Halpern x3, diag).
   Remaining pds gap is program-scale or accepted.
+
+- TWENTY-FIRST SETTLED — EXACT DSE POST-FT/SUHL (2026-07-13, codex
+  recheck, probe_out/dse-recheck.json): KILL, refutation refreshed at
+  current economics. Count cuts real but small (greenbea 9,150->8,474
+  = -7.4%; 80bau3b -14.5%) while pricing_update becomes a 12-28% phase
+  bucket (extra solve + carried weights) — wall regresses everywhere
+  (greenbea +4%, woodw +75%, stocfor3 +43%); cre_d DETONATES
+  (iteration_limit at 300k, certificate broken — carried-weight drift
+  x EXPAND interaction). Devex stays. The stale-conditions audit's
+  top recheck is closed; its remaining items (LU cadence grid
+  post-Suhl, router/gate threshold matrix) stay queued at low
+  priority.
