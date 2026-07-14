@@ -1508,3 +1508,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   population is {greenbea-shaped, cycle} — route-level config is the
   correct ship shape (same class as expand=1). greenbea session arc:
   3.80 -> 0.83s; clean-box ratio projection ~2.6x from ~5x.
+
+- PRESOLVE V2 SHIPPED (2026-07-14, codex 3-round build from the
+  fresh-eyes census): THE CAMPAIGN'S BIGGEST SINGLE UNIT. Column
+  singletons (free/implied-free, chained), fixed columns, dual fixing,
+  row forcing, duplicate-column merge — fill-guarded + native O(nnz)
+  opportunity gate (zero-cost when nothing qualifies).
+  HAND-VERIFIED: cre_d 1.279s best (was 4.9-6.2 = 4.6x loss ->
+  ~1.15-1.3x), cre_b 1.69s (vs HiGHS ~2.0 = LIKELY FLIPS TO WIN),
+  greenbea 0.466s (session arc 3.80 -> 0.47 = 8x; ratio ~1.6x from
+  14x at session start), woodw/maros/stocfor3/80bau3b all improve.
+  The "cre pair closed on every IPM axis" verdict was TRUE AT FIXED
+  PROBLEM SIZE — the presolve layer moved the size. Realized
+  reductions exceeded census projections on the big four. 260 tests,
+  LINPROGX_PRESOLVE_V2=0 reverts. NEXT: clean-box re-certification of
+  the whole board + chronicle update.
