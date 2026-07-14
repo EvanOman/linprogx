@@ -275,3 +275,11 @@ DB by `tools/build_report_data.py`, so the page is standalone.
 
 To add future commits: append their hashes to a `replay` call, then re-run
 `build_report_data.py` and re-embed the JSON into the report.
+
+## Publishing
+
+The report is served at https://evanoman.github.io/linprogx/ from the
+`gh-pages` branch. To republish after extending the DB: regenerate
+`docs/campaign_report.html` (tools/build_report_data.py + re-embed),
+then copy it to `index.html` on `gh-pages` (with CAMPAIGN.md alongside)
+and push. A Claude-hosted mirror is redeployed from the same file.
