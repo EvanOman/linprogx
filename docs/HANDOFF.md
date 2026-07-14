@@ -1475,3 +1475,15 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   -5.5% when forced, pilot87 +0.2% neutral; iterations identical).
   The 0.5 saveable-fraction constant stands; anomaly-miner item 2
   closed.
+
+- TWENTIETH SETTLED — PDLP DIAGONAL STEPS (2026-07-13, codex probe on
+  exp-leaving, probe_out/diag-steps.json): KILL. Post-Ruiz alpha=1
+  row/col L1 diagonal steps (adaptation disabled per Pock-Chambolle)
+  stall far above tolerance on pds_10/pds_20 and DESTROY the qap12 win
+  (misses 1e-3 where baseline reaches 2e-5 at 8.3k passes; equal-work
+  terminal KKT 3-5 orders worse everywhere). Ruiz had already banked
+  the diagonal-geometry win; the adaptive eta/omega machinery IS the
+  strength. THE PDS PAIR IS CLOSED AT UNIT LEVEL: PDHG per-iteration
+  at bandwidth floor, threads shipped, restarts/adaptivity healthy and
+  superior to every fixed-geometry variant tried (Halpern x3, diag).
+  Remaining pds gap is program-scale or accepted.
