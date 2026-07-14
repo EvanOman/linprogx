@@ -1467,3 +1467,11 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   data): PDLP-style DIAGONAL step sizes (current eta is scalar
   0.99/||A||) — the baseline's late acceleration shows mechanics are
   healthy; worst-column throttling is the remaining geometry problem.
+
+- BLOCK-GATE THRESHOLD VALIDATED (2026-07-13, codex probe,
+  probe_out/blockgate-probe.json): the near-threshold gated-OFF
+  instances (80bau3b 44.6%, pilot87 45.5%, plus cre_a/woodw) all
+  KEEP_OFF under forced block4 with 9 interleaved trials (80bau3b
+  -5.5% when forced, pilot87 +0.2% neutral; iterations identical).
+  The 0.5 saveable-fraction constant stands; anomaly-miner item 2
+  closed.
