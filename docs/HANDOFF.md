@@ -1439,3 +1439,16 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   — but its public route is IPM (0.30s < DS 0.363s), so no scoreboard
   relevance; the boxedness signal does NOT discriminate (greenbea is
   M-boxed-heavy and regressed). BFRT stays off the routes.
+
+- EIGHTEENTH SETTLED — IPM->DS CROSSOVER BASIS (2026-07-13, codex
+  probe on exp-panel: LINPROGX_IPM_CROSSOVER_TRACE snapshots +
+  experiments/crossover_basis_probe.py): KILL 0/4 (bar was 2/4).
+  Tapia-ranked deterministic structural matching achieves FULL
+  structural coverage at every mu crossing (1e-4/1e-6/1e-8) on
+  woodw/stocfor3/80bau3b/cre_d — and EVERY candidate basis is
+  numerically SINGULAR at the Markowitz LU gate (singular at steps
+  588-14,433) before cleanup metrics can even be computed. The
+  degenerate optimal faces do not admit cheap crossover bases; a
+  rank-revealing crash-factorization construction would be the only
+  escalation and its prior is now much lower. The crossover program
+  is closed at probe level.
