@@ -1499,3 +1499,12 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   top recheck is closed; its remaining items (LU cadence grid
   post-Suhl, router/gate threshold matrix) stay queued at low
   priority.
+
+- DANTZIG ROUTE SHIP (2026-07-13, codex battery): plain-Dantzig
+  leaving (leaving_rule=1) enabled on the DS auto-rescue routes only.
+  greenbea public 1.66 -> 0.83s (-50%, 6,533 pivots); cycle improves
+  (905 -> 676, resid 3.6e-12); 249 green; deterministic. Formal
+  kwarg-default probe was KILL (cre_d +41% direct-DS) but the route
+  population is {greenbea-shaped, cycle} — route-level config is the
+  correct ship shape (same class as expand=1). greenbea session arc:
+  3.80 -> 0.83s; clean-box ratio projection ~2.6x from ~5x.
