@@ -177,9 +177,7 @@ def evaluate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     green_runs = by_name["greenbea"]["runs"]
     green_base = green_runs["default-devex"]
     green_candidate = green_runs["plain-dantzig"]
-    green_iter_reduction = _reduction(
-        green_candidate["iterations"], green_base["iterations"]
-    )
+    green_iter_reduction = _reduction(green_candidate["iterations"], green_base["iterations"])
     green_wall_reduction = _reduction(green_candidate["wall"], green_base["wall"])
     green_rel_delta = _relative_objective_delta(green_base, green_candidate)
     green_cert_ok = (
@@ -191,9 +189,7 @@ def evaluate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     )
     green_lift_ok = (
         green_iter_reduction is not None and green_iter_reduction >= GREENBEA_MIN_REDUCTION
-    ) or (
-        green_wall_reduction is not None and green_wall_reduction >= GREENBEA_MIN_REDUCTION
-    )
+    ) or (green_wall_reduction is not None and green_wall_reduction >= GREENBEA_MIN_REDUCTION)
     criteria["greenbea_lift"] = {
         "iteration_reduction": green_iter_reduction,
         "wall_reduction": green_wall_reduction,

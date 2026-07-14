@@ -14682,6 +14682,7 @@ static PyObject *csparse_lu_update_test(PyObject *self, PyObject *args) {
 #define PRESOLVE_RATIO_HI  1e4
 #define PRESOLVE_PIVOT_EPS 1e-12
 #define PRESOLVE_DROP_EPS  1e-15
+#define PRESOLVE_BOUND_EPS 1e-10
 
 /* Per-row sparse entry: col == -1 marks a deleted slot. */
 typedef struct { Py_ssize_t col; double val; } PSEntry;
@@ -14844,6 +14845,261 @@ static int ps_entry_cmp(const void *a, const void *b) {
     Py_ssize_t ca = ((const PSEntry *)a)->col;
     Py_ssize_t cb = ((const PSEntry *)b)->col;
     return (ca > cb) - (ca < cb);
+}
+
+static inline int ps_near_bound(double value, double bound) {
+    double scale = fmax(1.0, fmax(fabs(value), fabs(bound)));
+    return fabs(value - bound) <= PRESOLVE_BOUND_EPS * scale;
+}
+
+static inline uint64_t ps_hash_mix(uint64_t hash, uint64_t value) {
+    hash ^= value + UINT64_C(0x9e3779b97f4a7c15) + (hash << 6) + (hash >> 2);
+    return hash;
+}
+
+static inline uint64_t ps_double_key(double value) {
+    uint64_t bits = 0;
+    if (value != 0.0) memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+/* Count rows and columns that the Python V2 pass can remove immediately.
+ * This keeps low-yield problems on the native presolve path. */
+static PyObject *csparse_presolve_v2_candidates(PyObject *self, PyObject *args) {
+    (void)self;
+    PyObject *matrix_obj;
+    const char *b_buf, *c_buf, *lo_buf, *hi_buf;
+    Py_ssize_t b_len, c_len, lo_len, hi_len;
+    if (!PyArg_ParseTuple(args, "Oy#y#y#y#", &matrix_obj,
+                          &b_buf, &b_len, &c_buf, &c_len,
+                          &lo_buf, &lo_len, &hi_buf, &hi_len))
+        return NULL;
+    if (!PyObject_TypeCheck(matrix_obj, &CSRMatrixType)) {
+        PyErr_SetString(PyExc_TypeError, "first argument must be a CSRMatrix");
+        return NULL;
+    }
+
+    CSRMatrixObject *matrix = (CSRMatrixObject *)matrix_obj;
+    Py_ssize_t rows = matrix->rows;
+    Py_ssize_t cols = matrix->cols;
+    if (b_len != (Py_ssize_t)(rows * sizeof(double)) ||
+        c_len != (Py_ssize_t)(cols * sizeof(double)) ||
+        lo_len != (Py_ssize_t)(cols * sizeof(double)) ||
+        hi_len != (Py_ssize_t)(cols * sizeof(double))) {
+        PyErr_SetString(PyExc_ValueError, "b/c/lo/hi buffer size mismatch");
+        return NULL;
+    }
+
+    const double *b = (const double *)b_buf;
+    const double *c = (const double *)c_buf;
+    const double *lo = (const double *)lo_buf;
+    const double *hi = (const double *)hi_buf;
+    size_t row_count = (size_t)(rows > 0 ? rows : 1);
+    size_t col_count = (size_t)(cols > 0 ? cols : 1);
+    size_t hash_cap = 1;
+    if (col_count > SIZE_MAX / 2) return PyErr_NoMemory();
+    while (hash_cap < col_count * 2) {
+        if (hash_cap > SIZE_MAX / 2) return PyErr_NoMemory();
+        hash_cap <<= 1;
+    }
+
+    const size_t row_stride = 2 * sizeof(double) + 2 * sizeof(int32_t) + 2;
+    const size_t col_stride = 2;
+    const size_t hash_stride = sizeof(Py_ssize_t) + sizeof(uint64_t);
+    if (row_count > SIZE_MAX / row_stride ||
+        col_count > SIZE_MAX / col_stride ||
+        hash_cap > SIZE_MAX / hash_stride) {
+        return PyErr_NoMemory();
+    }
+    size_t workspace_size = row_count * row_stride;
+    if (col_count * col_stride > SIZE_MAX - workspace_size) return PyErr_NoMemory();
+    workspace_size += col_count * col_stride;
+    if (hash_cap * hash_stride > SIZE_MAX - workspace_size) return PyErr_NoMemory();
+    workspace_size += hash_cap * hash_stride;
+
+    /* One allocation keeps a no-op opportunity scan from perturbing the
+     * allocator state seen by the factorization that follows it. Arrays with
+     * stricter alignment come first; every preceding extent is naturally
+     * aligned for the next element type. */
+    char *workspace = (char *)calloc(workspace_size, 1);
+    if (!workspace) {
+        return PyErr_NoMemory();
+    }
+    size_t workspace_offset = 0;
+    double *row_lower = (double *)(workspace + workspace_offset);
+    workspace_offset += row_count * sizeof(double);
+    double *row_upper = (double *)(workspace + workspace_offset);
+    workspace_offset += row_count * sizeof(double);
+    Py_ssize_t *hash_cols = (Py_ssize_t *)(workspace + workspace_offset);
+    workspace_offset += hash_cap * sizeof(Py_ssize_t);
+    uint64_t *hash_values = (uint64_t *)(workspace + workspace_offset);
+    workspace_offset += hash_cap * sizeof(uint64_t);
+    int32_t *lower_inf = (int32_t *)(workspace + workspace_offset);
+    workspace_offset += row_count * sizeof(int32_t);
+    int32_t *upper_inf = (int32_t *)(workspace + workspace_offset);
+    workspace_offset += row_count * sizeof(int32_t);
+    char *row_mark = workspace + workspace_offset;
+    workspace_offset += row_count;
+    char *singleton_row_mark = workspace + workspace_offset;
+    workspace_offset += row_count;
+    char *col_mark = workspace + workspace_offset;
+    workspace_offset += col_count;
+    char *forcing_col_mark = workspace + workspace_offset;
+
+    Py_ssize_t fixed_columns = 0;
+    Py_ssize_t empty_columns = 0;
+    for (Py_ssize_t j = 0; j < cols; j++) {
+        int fixed = isfinite(lo[j]) && isfinite(hi[j]) && ps_near_bound(lo[j], hi[j]);
+        if (fixed) {
+            col_mark[j] = 1;
+            fixed_columns++;
+        } else if (matrix->csc_indptr[j] == matrix->csc_indptr[j + 1]) {
+            int eligible = (c[j] > PRESOLVE_DROP_EPS && isfinite(lo[j])) ||
+                           (c[j] < -PRESOLVE_DROP_EPS && isfinite(hi[j])) ||
+                           fabs(c[j]) <= PRESOLVE_DROP_EPS;
+            if (eligible) {
+                col_mark[j] = 1;
+                empty_columns++;
+            }
+        }
+    }
+
+    Py_ssize_t forcing_rows = 0;
+    for (Py_ssize_t i = 0; i < rows; i++) {
+        for (Py_ssize_t off = matrix->indptr[i]; off < matrix->indptr[i + 1]; off++) {
+            Py_ssize_t j = matrix->indices[off];
+            double a = matrix->data[off];
+            if (a >= 0.0) {
+                if (isfinite(lo[j])) row_lower[i] += a * lo[j]; else lower_inf[i]++;
+                if (isfinite(hi[j])) row_upper[i] += a * hi[j]; else upper_inf[i]++;
+            } else {
+                if (isfinite(hi[j])) row_lower[i] += a * hi[j]; else lower_inf[i]++;
+                if (isfinite(lo[j])) row_upper[i] += a * lo[j]; else upper_inf[i]++;
+            }
+        }
+        if (matrix->indptr[i] == matrix->indptr[i + 1]) continue;
+        int forcing = (lower_inf[i] == 0 && isfinite(row_lower[i]) &&
+                       ps_near_bound(b[i], row_lower[i])) ||
+                      (upper_inf[i] == 0 && isfinite(row_upper[i]) &&
+                       ps_near_bound(b[i], row_upper[i]));
+        if (forcing) {
+            row_mark[i] = 1;
+            forcing_rows++;
+            for (Py_ssize_t off = matrix->indptr[i]; off < matrix->indptr[i + 1]; off++) {
+                Py_ssize_t j = matrix->indices[off];
+                col_mark[j] = 1;
+                forcing_col_mark[j] = 1;
+            }
+        }
+    }
+
+    Py_ssize_t singleton_columns = 0;
+    for (Py_ssize_t j = 0; j < cols; j++) {
+        Py_ssize_t start = matrix->csc_indptr[j];
+        Py_ssize_t end = matrix->csc_indptr[j + 1];
+        if (end - start != 1) continue;
+        if (isfinite(lo[j]) && isfinite(hi[j]) && ps_near_bound(lo[j], hi[j])) continue;
+        Py_ssize_t i = matrix->csc_rows[start];
+        if (matrix->indptr[i + 1] - matrix->indptr[i] <= 2) continue;
+        double pivot = matrix->csc_data[start];
+        if (fabs(pivot) < PRESOLVE_PIVOT_EPS) continue;
+
+        double lower_bound = pivot >= 0.0 ? lo[j] : hi[j];
+        double upper_bound = pivot >= 0.0 ? hi[j] : lo[j];
+        int rest_lo_inf = lower_inf[i];
+        int rest_hi_inf = upper_inf[i];
+        double rest_lo = row_lower[i];
+        double rest_hi = row_upper[i];
+        if (isfinite(lower_bound)) {
+            rest_lo -= pivot * lower_bound;
+        } else {
+            rest_lo_inf--;
+        }
+        if (isfinite(upper_bound)) {
+            rest_hi -= pivot * upper_bound;
+        } else {
+            rest_hi_inf--;
+        }
+
+        double implied_lo, implied_hi;
+        if (pivot > 0.0) {
+            implied_lo = rest_hi_inf > 0 || !isfinite(rest_hi) ? -INFINITY : (b[i] - rest_hi) / pivot;
+            implied_hi = rest_lo_inf > 0 || !isfinite(rest_lo) ? INFINITY : (b[i] - rest_lo) / pivot;
+        } else {
+            implied_lo = rest_lo_inf > 0 || !isfinite(rest_lo) ? -INFINITY : (b[i] - rest_lo) / pivot;
+            implied_hi = rest_hi_inf > 0 || !isfinite(rest_hi) ? INFINITY : (b[i] - rest_hi) / pivot;
+        }
+        int redundant = 1;
+        if (isfinite(lo[j]) && (!isfinite(implied_lo) ||
+            implied_lo < lo[j] - PRESOLVE_BOUND_EPS * fmax(1.0, fmax(fabs(lo[j]), fabs(implied_lo)))))
+            redundant = 0;
+        if (isfinite(hi[j]) && (!isfinite(implied_hi) ||
+            implied_hi > hi[j] + PRESOLVE_BOUND_EPS * fmax(1.0, fmax(fabs(hi[j]), fabs(implied_hi)))))
+            redundant = 0;
+        if (redundant) {
+            row_mark[i] = 1;
+            singleton_row_mark[i] = 1;
+            col_mark[j] = 1;
+            singleton_columns++;
+        }
+    }
+
+    Py_ssize_t duplicate_columns = 0;
+    for (Py_ssize_t j = 0; j < cols; j++) {
+        Py_ssize_t start = matrix->csc_indptr[j];
+        Py_ssize_t end = matrix->csc_indptr[j + 1];
+        if (start == end || !isfinite(lo[j]) || !isfinite(hi[j]) || !isfinite(c[j])) continue;
+        if (ps_near_bound(lo[j], hi[j])) continue;
+
+        uint64_t hash = ps_hash_mix(UINT64_C(0xcbf29ce484222325), ps_double_key(c[j]));
+        hash = ps_hash_mix(hash, (uint64_t)(end - start));
+        for (Py_ssize_t at = start; at < end; at++) {
+            hash = ps_hash_mix(hash, (uint64_t)matrix->csc_rows[at]);
+            hash = ps_hash_mix(hash, ps_double_key(matrix->csc_data[at]));
+        }
+        size_t slot = (size_t)hash & (hash_cap - 1);
+        int matched = 0;
+        while (hash_cols[slot] != 0) {
+            Py_ssize_t first = hash_cols[slot] - 1;
+            if (hash_values[slot] == hash && c[first] == c[j]) {
+                Py_ssize_t first_start = matrix->csc_indptr[first];
+                Py_ssize_t first_end = matrix->csc_indptr[first + 1];
+                if (first_end - first_start == end - start) {
+                    matched = 1;
+                    for (Py_ssize_t offset = 0; offset < end - start; offset++) {
+                        if (matrix->csc_rows[first_start + offset] != matrix->csc_rows[start + offset] ||
+                            matrix->csc_data[first_start + offset] != matrix->csc_data[start + offset]) {
+                            matched = 0;
+                            break;
+                        }
+                    }
+                }
+                if (matched) break;
+            }
+            slot = (slot + 1) & (hash_cap - 1);
+        }
+        if (matched) {
+            col_mark[j] = 1;
+            duplicate_columns++;
+        } else {
+            hash_cols[slot] = j + 1;
+            hash_values[slot] = hash;
+        }
+    }
+
+    Py_ssize_t candidate_rows = 0, candidate_cols = 0;
+    Py_ssize_t forcing_columns = 0, singleton_rows = 0;
+    for (Py_ssize_t i = 0; i < rows; i++) candidate_rows += row_mark[i] != 0;
+    for (Py_ssize_t i = 0; i < rows; i++) singleton_rows += singleton_row_mark[i] != 0;
+    for (Py_ssize_t j = 0; j < cols; j++) {
+        candidate_cols += col_mark[j] != 0;
+        forcing_columns += forcing_col_mark[j] != 0;
+    }
+    free(workspace);
+    return Py_BuildValue("(nnnnnnnnn)", candidate_rows, candidate_cols,
+                         fixed_columns, empty_columns, forcing_rows,
+                         forcing_columns, singleton_rows, singleton_columns,
+                         duplicate_columns);
 }
 
 /* ---- the main presolve function --------------------------------------- */
@@ -15312,6 +15568,8 @@ static PyMethodDef module_methods[] = {
      "Test hook: sparse LU basis-change update. Returns (solutions, should_refactor, n_singular)."},
     {"presolve_eq_box", csparse_presolve_eq_box, METH_VARARGS,
      "C presolve for equality-plus-bounds LP (mirrors Python presolve_eq_box)."},
+    {"presolve_v2_candidates", csparse_presolve_v2_candidates, METH_VARARGS,
+     "Count immediately removable V2 rows and columns."},
     {NULL, NULL, 0, NULL}
 };
 

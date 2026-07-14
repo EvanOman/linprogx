@@ -1,0 +1,411 @@
+{
+  "cycle_wall_change": -0.3849907936855935,
+  "determinism": [
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 6533,
+      "message": "stall predictor routed to dual simplex; max equality residual 6.216e-08",
+      "objective": -72555248.12984511,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f61ep+26",
+      "residual": 6.21621438767761e-08,
+      "residual_hex": "0x1.0afc000000000p-24",
+      "run": "determinism-1",
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.8190988360438496,
+      "x_sha256": "d17e1354c954f230d91727c264b110e8645b7c76a1df9683048b53c5c2a8d4a7"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 6533,
+      "message": "stall predictor routed to dual simplex; max equality residual 6.216e-08",
+      "objective": -72555248.12984511,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f61ep+26",
+      "residual": 6.21621438767761e-08,
+      "residual_hex": "0x1.0afc000000000p-24",
+      "run": "determinism-2",
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.8204058549599722,
+      "x_sha256": "d17e1354c954f230d91727c264b110e8645b7c76a1df9683048b53c5c2a8d4a7"
+    }
+  ],
+  "determinism_match": true,
+  "greenbea_wall_win": 0.5003633186010035,
+  "medians": {
+    "cycle": {
+      "baseline": {
+        "backends": [
+          "native-c-sparse-dual-simplex"
+        ],
+        "iterations": 905.0,
+        "residual": 3.637978807091713e-12,
+        "statuses": [
+          "optimal"
+        ],
+        "wall": 0.09192506794352084
+      },
+      "candidate": {
+        "backends": [
+          "native-c-sparse-dual-simplex"
+        ],
+        "iterations": 676.0,
+        "residual": 3.637978807091713e-12,
+        "statuses": [
+          "optimal"
+        ],
+        "wall": 0.05653476307634264
+      }
+    },
+    "greenbea": {
+      "baseline": {
+        "backends": [
+          "native-c-sparse-dual-simplex"
+        ],
+        "iterations": 9150.0,
+        "residual": 1.3081449878882268e-07,
+        "statuses": [
+          "optimal"
+        ],
+        "wall": 1.6606114259921014
+      },
+      "candidate": {
+        "backends": [
+          "native-c-sparse-dual-simplex"
+        ],
+        "iterations": 6533.0,
+        "residual": 6.21621438767761e-08,
+        "statuses": [
+          "optimal"
+        ],
+        "wall": 0.8297023819759488
+      }
+    }
+  },
+  "rows": [
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 9150,
+      "message": "stall predictor routed to dual simplex; max equality residual 1.308e-07",
+      "objective": -72555248.12984715,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f6a7p+26",
+      "residual": 1.3081449878882268e-07,
+      "residual_hex": "0x1.18ec080000000p-23",
+      "run": 1,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 1.6660908119520172,
+      "x_sha256": "6138fc4599dc92d3656dd7aa1adbee101583abef25f7e848c017231ec73a6da6"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 6533,
+      "message": "stall predictor routed to dual simplex; max equality residual 6.216e-08",
+      "objective": -72555248.12984511,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f61ep+26",
+      "residual": 6.21621438767761e-08,
+      "residual_hex": "0x1.0afc000000000p-24",
+      "run": 1,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.8891863550525159,
+      "x_sha256": "d17e1354c954f230d91727c264b110e8645b7c76a1df9683048b53c5c2a8d4a7"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 905,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894101,
+      "objective_delta": 5.899281063648232e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c8p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 1,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 0.08905828290153295,
+      "x_sha256": "47c33482a6a534dfe3ee0841165dcbd2b8c5aa6cb6866ad3f88599b37b619eba"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 676,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894102,
+      "objective_delta": 5.898392885228532e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c9p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 1,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.05834139499347657,
+      "x_sha256": "476ba5af36eeafde46293e4e4eae29d01530723dcf5af113272840f3af13e01b"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 9150,
+      "message": "stall predictor routed to dual simplex; max equality residual 1.308e-07",
+      "objective": -72555248.12984715,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f6a7p+26",
+      "residual": 1.3081449878882268e-07,
+      "residual_hex": "0x1.18ec080000000p-23",
+      "run": 2,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 1.6924528550589457,
+      "x_sha256": "6138fc4599dc92d3656dd7aa1adbee101583abef25f7e848c017231ec73a6da6"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 6533,
+      "message": "stall predictor routed to dual simplex; max equality residual 6.216e-08",
+      "objective": -72555248.12984511,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f61ep+26",
+      "residual": 6.21621438767761e-08,
+      "residual_hex": "0x1.0afc000000000p-24",
+      "run": 2,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.8297023819759488,
+      "x_sha256": "d17e1354c954f230d91727c264b110e8645b7c76a1df9683048b53c5c2a8d4a7"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 905,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894101,
+      "objective_delta": 5.899281063648232e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c8p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 2,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 0.09192506794352084,
+      "x_sha256": "47c33482a6a534dfe3ee0841165dcbd2b8c5aa6cb6866ad3f88599b37b619eba"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 676,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894102,
+      "objective_delta": 5.898392885228532e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c9p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 2,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.05556015204638243,
+      "x_sha256": "476ba5af36eeafde46293e4e4eae29d01530723dcf5af113272840f3af13e01b"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 9150,
+      "message": "stall predictor routed to dual simplex; max equality residual 1.308e-07",
+      "objective": -72555248.12984715,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f6a7p+26",
+      "residual": 1.3081449878882268e-07,
+      "residual_hex": "0x1.18ec080000000p-23",
+      "run": 3,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 1.6590386329917237,
+      "x_sha256": "6138fc4599dc92d3656dd7aa1adbee101583abef25f7e848c017231ec73a6da6"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 6533,
+      "message": "stall predictor routed to dual simplex; max equality residual 6.216e-08",
+      "objective": -72555248.12984511,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f61ep+26",
+      "residual": 6.21621438767761e-08,
+      "residual_hex": "0x1.0afc000000000p-24",
+      "run": 3,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.8276124660624191,
+      "x_sha256": "d17e1354c954f230d91727c264b110e8645b7c76a1df9683048b53c5c2a8d4a7"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 905,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894101,
+      "objective_delta": 5.899281063648232e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c8p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 3,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 0.08959573798347265,
+      "x_sha256": "47c33482a6a534dfe3ee0841165dcbd2b8c5aa6cb6866ad3f88599b37b619eba"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 676,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894102,
+      "objective_delta": 5.898392885228532e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c9p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 3,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.05653476307634264,
+      "x_sha256": "476ba5af36eeafde46293e4e4eae29d01530723dcf5af113272840f3af13e01b"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 9150,
+      "message": "stall predictor routed to dual simplex; max equality residual 1.308e-07",
+      "objective": -72555248.12984715,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f6a7p+26",
+      "residual": 1.3081449878882268e-07,
+      "residual_hex": "0x1.18ec080000000p-23",
+      "run": 4,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 1.6524870899738744,
+      "x_sha256": "6138fc4599dc92d3656dd7aa1adbee101583abef25f7e848c017231ec73a6da6"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 6533,
+      "message": "stall predictor routed to dual simplex; max equality residual 6.216e-08",
+      "objective": -72555248.12984511,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f61ep+26",
+      "residual": 6.21621438767761e-08,
+      "residual_hex": "0x1.0afc000000000p-24",
+      "run": 4,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.8278186550596729,
+      "x_sha256": "d17e1354c954f230d91727c264b110e8645b7c76a1df9683048b53c5c2a8d4a7"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 905,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894101,
+      "objective_delta": 5.899281063648232e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c8p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 4,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 0.12768962990958244,
+      "x_sha256": "47c33482a6a534dfe3ee0841165dcbd2b8c5aa6cb6866ad3f88599b37b619eba"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 676,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894102,
+      "objective_delta": 5.898392885228532e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c9p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 4,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.07510899601038545,
+      "x_sha256": "476ba5af36eeafde46293e4e4eae29d01530723dcf5af113272840f3af13e01b"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 9150,
+      "message": "stall predictor routed to dual simplex; max equality residual 1.308e-07",
+      "objective": -72555248.12984715,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f6a7p+26",
+      "residual": 1.3081449878882268e-07,
+      "residual_hex": "0x1.18ec080000000p-23",
+      "run": 5,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 1.6606114259921014,
+      "x_sha256": "6138fc4599dc92d3656dd7aa1adbee101583abef25f7e848c017231ec73a6da6"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "greenbea",
+      "iterations": 6533,
+      "message": "stall predictor routed to dual simplex; max equality residual 6.216e-08",
+      "objective": -72555248.12984511,
+      "objective_delta": null,
+      "objective_hex": "-0x1.14c6bc084f61ep+26",
+      "residual": 6.21621438767761e-08,
+      "residual_hex": "0x1.0afc000000000p-24",
+      "run": 5,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.8538671160349622,
+      "x_sha256": "d17e1354c954f230d91727c264b110e8645b7c76a1df9683048b53c5c2a8d4a7"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 905,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894101,
+      "objective_delta": 5.899281063648232e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c8p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 5,
+      "status": "optimal",
+      "variant": "baseline",
+      "wall": 0.09827953099738806,
+      "x_sha256": "47c33482a6a534dfe3ee0841165dcbd2b8c5aa6cb6866ad3f88599b37b619eba"
+    },
+    {
+      "backend": "native-c-sparse-dual-simplex",
+      "instance": "cycle",
+      "iterations": 676,
+      "message": "stall predictor routed to dual simplex; max equality residual 3.638e-12",
+      "objective": -5.226393024894102,
+      "objective_delta": 5.898392885228532e-12,
+      "objective_hex": "-0x1.4e7d392b7d9c9p+2",
+      "residual": 3.637978807091713e-12,
+      "residual_hex": "0x1.0000000000000p-38",
+      "run": 5,
+      "status": "optimal",
+      "variant": "candidate",
+      "wall": 0.05442175199277699,
+      "x_sha256": "476ba5af36eeafde46293e4e4eae29d01530723dcf5af113272840f3af13e01b"
+    }
+  ]
+}

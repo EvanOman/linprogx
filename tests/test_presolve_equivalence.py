@@ -13,18 +13,50 @@ from pathlib import Path
 
 import pytest
 from scipy.io import loadmat
+from scipy.optimize import linprog
 
+import linprogx.presolve as presolve_module
 from linprogx.presolve import (
     PresolveResult,
+    _c_v2_candidates,
+    _ColumnSingleton,
     _Doubleton,
+    _DuplicateColumn,
     _FixedVar,
+    _pack_dbls,
     _presolve_eq_box_python,
+    _v2_enabled,
+    _v2_worth_python_pass,
+    postsolve_x,
     presolve_eq_box,
+    presolve_matrix,
 )
 from linprogx.sparse import SparseSolver, csr_matrix
 from linprogx.types import Status
 
 INF = float("inf")
+
+
+@pytest.fixture
+def v2_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LINPROGX_PRESOLVE_V2", "1")
+
+
+def _max_residual(
+    rows: int,
+    indptr: list[int],
+    indices: list[int],
+    data: list[float],
+    x: list[float],
+    b: list[float],
+) -> float:
+    max_abs = 0.0
+    for i in range(rows):
+        lhs = 0.0
+        for offset in range(indptr[i], indptr[i + 1]):
+            lhs += data[offset] * x[indices[offset]]
+        max_abs = max(max_abs, abs(lhs - b[i]))
+    return max_abs
 
 
 # ---------------------------------------------------------------------------
@@ -70,9 +102,8 @@ def _assert_results_identical(
             assert isinstance(cr, _FixedVar)
             assert cr.column == pr.column, f"record {k} column mismatch{msg}"
             assert cr.value == pr.value, f"record {k} value mismatch{msg}"
-        else:
+        elif isinstance(pr, _Doubleton):
             assert isinstance(cr, _Doubleton)
-            assert isinstance(pr, _Doubleton)
             assert cr.eliminated == pr.eliminated, f"record {k} eliminated mismatch{msg}"
             assert cr.kept == pr.kept, f"record {k} kept mismatch{msg}"
             assert cr.coef_eliminated == pr.coef_eliminated, (
@@ -80,6 +111,23 @@ def _assert_results_identical(
             )
             assert cr.coef_kept == pr.coef_kept, f"record {k} coef_kept mismatch{msg}"
             assert cr.rhs == pr.rhs, f"record {k} rhs mismatch{msg}"
+        elif isinstance(pr, _ColumnSingleton):
+            assert isinstance(cr, _ColumnSingleton)
+            assert cr.eliminated == pr.eliminated, f"record {k} eliminated mismatch{msg}"
+            assert cr.coef_eliminated == pr.coef_eliminated, (
+                f"record {k} coef_eliminated mismatch{msg}"
+            )
+            assert cr.rhs == pr.rhs, f"record {k} rhs mismatch{msg}"
+            assert cr.terms == pr.terms, f"record {k} terms mismatch{msg}"
+        else:
+            assert isinstance(cr, _DuplicateColumn)
+            assert isinstance(pr, _DuplicateColumn)
+            assert cr.removed == pr.removed, f"record {k} removed mismatch{msg}"
+            assert cr.kept == pr.kept, f"record {k} kept mismatch{msg}"
+            assert cr.removed_lo == pr.removed_lo, f"record {k} removed_lo mismatch{msg}"
+            assert cr.removed_hi == pr.removed_hi, f"record {k} removed_hi mismatch{msg}"
+            assert cr.kept_lo == pr.kept_lo, f"record {k} kept_lo mismatch{msg}"
+            assert cr.kept_hi == pr.kept_hi, f"record {k} kept_hi mismatch{msg}"
 
 
 def _run_both(
@@ -124,6 +172,346 @@ def _run_both(
         max_fill=max_fill,
     )
     _assert_results_identical(c_result, py_result, label=label)
+
+
+def test_v2_python_pass_requires_eight_percent_projected_reduction() -> None:
+    assert not _v2_worth_python_pass(7, 0, 100, 100)
+    assert not _v2_worth_python_pass(0, 7, 100, 100)
+    assert _v2_worth_python_pass(8, 0, 100, 100)
+    assert _v2_worth_python_pass(0, 8, 100, 100)
+
+
+def test_v2_defaults_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LINPROGX_PRESOLVE_V2", raising=False)
+    assert _v2_enabled()
+
+
+def test_v2_candidate_scan_does_not_treat_overflow_as_forcing() -> None:
+    matrix = csr_matrix(1, 3, [0, 3], [0, 1, 2], [2.0, 2.0, 2.0])
+    assert _c_v2_candidates is not None
+    assert _c_v2_candidates(
+        matrix,
+        _pack_dbls([0.0]),
+        _pack_dbls([0.0, 1.0, 2.0]),
+        _pack_dbls([1e308, 1e308, 1e308]),
+        _pack_dbls([INF, INF, INF]),
+    ) == (0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+
+def test_v2_candidate_scan_reports_each_qualification_type() -> None:
+    assert _c_v2_candidates is not None
+    forcing = csr_matrix(1, 3, [0, 3], [0, 1, 2], [1.0, 1.0, 1.0])
+    assert _c_v2_candidates(
+        forcing,
+        _pack_dbls([0.0]),
+        _pack_dbls([0.0, 1.0, 2.0]),
+        _pack_dbls([0.0, 0.0, 0.0]),
+        _pack_dbls([0.0, 10.0, 10.0]),
+    ) == (1, 3, 1, 0, 1, 3, 0, 0, 0)
+
+    empty_and_duplicate = csr_matrix(1, 4, [0, 2], [0, 1], [1.0, 1.0])
+    assert _c_v2_candidates(
+        empty_and_duplicate,
+        _pack_dbls([1.0]),
+        _pack_dbls([2.0, 2.0, 0.0, 1.0]),
+        _pack_dbls([0.0, 0.0, 0.0, -INF]),
+        _pack_dbls([1.0, 1.0, 1.0, INF]),
+    ) == (0, 2, 0, 1, 0, 0, 0, 0, 1)
+
+
+def test_v2_zero_opportunity_path_packs_vectors_once(
+    v2_enabled: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = 0
+    real_pack = presolve_module._pack_dbls
+
+    def counting_pack(values: list[float]) -> bytes:
+        nonlocal calls
+        calls += 1
+        return real_pack(values)
+
+    monkeypatch.setattr(presolve_module, "_pack_dbls", counting_pack)
+    matrix = csr_matrix(1, 3, [0, 3], [0, 1, 2], [1.0, 2.0, 3.0])
+    presolve_matrix(
+        matrix,
+        [4.0],
+        [1.0, 2.0, 3.0],
+        [0.0, 0.0, 0.0],
+        [INF, INF, INF],
+    )
+    assert calls == 4
+
+
+def test_matrix_v2_uses_direct_high_yield_path_and_postsolves_exactly(
+    v2_enabled: None,
+) -> None:
+    matrix = csr_matrix(
+        3,
+        6,
+        [0, 3, 5, 8],
+        [0, 1, 3, 1, 2, 3, 4, 5],
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    )
+    reduction = presolve_matrix(
+        matrix,
+        [6.0, 3.0, 7.0],
+        [10.0, 5.0, 1.0, 2.0, 3.0, 4.0],
+        [0.0, 1.0, 1.0, 2.0, 0.0, 0.0],
+        [INF, 2.0, 2.0, 3.0, 10.0, 10.0],
+    )
+
+    assert reduction is not None
+    assert reduction._active_cols == [2, 3, 4, 5]
+    assert reduction._reduction_counts["column_singletons"] == 1
+    assert reduction._reduction_counts["doubletons"] == 1
+    x = postsolve_x([1.5, 2.5, 2.0, 2.5], reduction)
+    assert x == pytest.approx([2.0, 1.5, 1.5, 2.5, 2.0, 2.5])
+    assert (
+        _max_residual(
+            3,
+            [0, 3, 5, 8],
+            [0, 1, 3, 1, 2, 3, 4, 5],
+            [1.0] * 8,
+            x,
+            [6.0, 3.0, 7.0],
+        )
+        <= 1e-12
+    )
+
+
+def test_implied_free_column_singletons_chain_and_postsolve_exactly(v2_enabled: None) -> None:
+    # x0 is lower-bounded, but row 0 plus x1 in [1, 2] and x3 in [2, 3]
+    # implies x0 in [1, 3].
+    # Removing row 0 makes x1 a lower-bounded singleton in row 1, whose bound
+    # is likewise implied by x2 in [1, 2].
+    reduction = presolve_eq_box(
+        3,
+        6,
+        [0, 3, 5, 8],
+        [0, 1, 3, 1, 2, 3, 4, 5],
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        [6.0, 3.0, 7.0],
+        [10.0, 5.0, 1.0, 2.0, 3.0, 4.0],
+        [0.0, 1.0, 1.0, 2.0, 0.0, 0.0],
+        [INF, 2.0, 2.0, 3.0, 10.0, 10.0],
+    )
+
+    assert reduction is not None
+    assert reduction.rows == 1
+    assert reduction.cols == 4
+    assert reduction._active_cols == [2, 3, 4, 5]
+    assert reduction._reduction_counts["column_singletons"] == 1
+    assert reduction._reduction_counts["doubletons"] == 1
+
+    x = postsolve_x([1.5, 2.5, 2.0, 2.5], reduction)
+    assert x == pytest.approx([2.0, 1.5, 1.5, 2.5, 2.0, 2.5])
+    assert (
+        _max_residual(
+            3,
+            [0, 3, 5, 8],
+            [0, 1, 3, 1, 2, 3, 4, 5],
+            [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            x,
+            [6.0, 3.0, 7.0],
+        )
+        <= 1e-12
+    )
+
+
+def test_fixed_columns_substitute_without_removing_rows_unnecessarily(v2_enabled: None) -> None:
+    reduction = presolve_eq_box(
+        1,
+        4,
+        [0, 4],
+        [0, 1, 2, 3],
+        [3.0, 1.0, 1.0, 1.0],
+        [7.0],
+        [2.0, 3.0, 5.0, 7.0],
+        [2.0, 0.0, 0.0, 0.0],
+        [2.0, 10.0, 10.0, 10.0],
+    )
+
+    assert reduction is not None
+    assert reduction.rows == 1
+    assert reduction.cols == 3
+    assert reduction.b == pytest.approx([1.0])
+    assert reduction.c == pytest.approx([3.0, 5.0, 7.0])
+    assert reduction.objective_offset == pytest.approx(4.0)
+    assert reduction._active_cols == [1, 2, 3]
+    assert reduction._reduction_counts["fixed_columns"] == 1
+
+    x = postsolve_x([0.25, 0.25, 0.5], reduction)
+    assert x == pytest.approx([2.0, 0.25, 0.25, 0.5])
+    assert (
+        _max_residual(
+            1,
+            [0, 4],
+            [0, 1, 2, 3],
+            [3.0, 1.0, 1.0, 1.0],
+            x,
+            [7.0],
+        )
+        <= 1e-12
+    )
+
+
+def test_forcing_equality_row_fixes_all_columns_at_activity_bound(v2_enabled: None) -> None:
+    reduction = presolve_eq_box(
+        1,
+        3,
+        [0, 3],
+        [0, 1, 2],
+        [1.0, 2.0, 3.0],
+        [0.0],
+        [4.0, 5.0, 6.0],
+        [0.0, 0.0, 0.0],
+        [10.0, 10.0, 10.0],
+    )
+
+    assert reduction is not None
+    assert reduction.rows == 0
+    assert reduction.cols == 0
+    assert reduction.objective_offset == pytest.approx(0.0)
+    assert reduction._reduction_counts["forcing_rows"] == 1
+    assert reduction._reduction_counts["forcing_columns"] == 3
+
+    x = postsolve_x([], reduction)
+    assert x == pytest.approx([0.0, 0.0, 0.0])
+    assert (
+        _max_residual(
+            1,
+            [0, 3],
+            [0, 1, 2],
+            [1.0, 2.0, 3.0],
+            x,
+            [0.0],
+        )
+        <= 1e-12
+    )
+
+
+def test_duplicate_bounded_columns_merge_and_split_in_postsolve(v2_enabled: None) -> None:
+    reduction = presolve_eq_box(
+        2,
+        4,
+        [0, 4, 8],
+        [0, 1, 2, 3, 0, 1, 2, 3],
+        [1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 1.0, 3.0],
+        [6.0, 11.0],
+        [3.0, 3.0, 1.0, 2.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [2.0, 4.0, 5.0, 5.0],
+    )
+
+    assert reduction is not None
+    assert reduction.rows == 2
+    assert reduction.cols == 3
+    assert reduction._active_cols == [0, 2, 3]
+    assert reduction.lo == pytest.approx([1.0, 0.0, 0.0])
+    assert reduction.hi == pytest.approx([6.0, 5.0, 5.0])
+    assert reduction._reduction_counts["duplicate_columns"] == 1
+
+    x = postsolve_x([3.0, 2.0, 1.0], reduction)
+    assert x == pytest.approx([2.0, 1.0, 2.0, 1.0])
+    assert (
+        _max_residual(
+            2,
+            [0, 4, 8],
+            [0, 1, 2, 3, 0, 1, 2, 3],
+            [1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 1.0, 3.0],
+            x,
+            [6.0, 11.0],
+        )
+        <= 1e-12
+    )
+
+
+def test_random_small_implied_free_reductions_match_scipy_linprog(v2_enabled: None) -> None:
+    rng = random.Random(1234)
+    for case in range(8):
+        a1 = rng.uniform(0.5, 2.0)
+        a4 = rng.uniform(-2.0, -0.5)
+        x1_lo = rng.uniform(0.0, 1.0)
+        x1_hi = x1_lo + rng.uniform(0.5, 2.0)
+        x4_lo = rng.uniform(0.0, 1.0)
+        x4_hi = x4_lo + rng.uniform(0.5, 2.0)
+        rest_upper = a1 * x1_hi + a4 * x4_lo
+        b0 = rest_upper + rng.uniform(0.25, 2.0)
+        row1 = [
+            0.0,
+            rng.uniform(-2.0, 2.0),
+            rng.uniform(0.5, 2.0),
+            rng.uniform(-2.0, -0.5),
+            rng.uniform(0.5, 2.0),
+        ]
+        x_star = [
+            b0 - a1 * ((x1_lo + x1_hi) / 2.0) - a4 * ((x4_lo + x4_hi) / 2.0),
+            (x1_lo + x1_hi) / 2.0,
+            rng.uniform(0.5, 3.5),
+            rng.uniform(0.5, 3.5),
+            (x4_lo + x4_hi) / 2.0,
+        ]
+        b1 = sum(coef * value for coef, value in zip(row1, x_star, strict=True))
+        c_vec = [rng.uniform(-3.0, 3.0) for _ in range(5)]
+
+        rows = 2
+        cols = 5
+        indptr = [0, 3, 7]
+        indices = [0, 1, 4, 1, 2, 3, 4]
+        data = [1.0, a1, a4, row1[1], row1[2], row1[3], row1[4]]
+        b_vec = [b0, b1]
+        lo = [0.0, x1_lo, 0.0, 0.0, x4_lo]
+        hi = [INF, x1_hi, 4.0, 4.0, x4_hi]
+
+        reduction = presolve_eq_box(
+            rows,
+            cols,
+            list(indptr),
+            list(indices),
+            list(data),
+            list(b_vec),
+            list(c_vec),
+            list(lo),
+            list(hi),
+        )
+        assert reduction is not None, f"case {case} did not reduce"
+
+        original = linprog(
+            c_vec,
+            A_eq=[
+                [1.0, a1, 0.0, 0.0, a4],
+                [0.0, row1[1], row1[2], row1[3], row1[4]],
+            ],
+            b_eq=b_vec,
+            bounds=list(zip(lo, hi, strict=True)),
+            method="highs",
+        )
+        assert original.success, original.message
+
+        if reduction.cols == 0:
+            x_reduced: list[float] = []
+        else:
+            reduced_rows = []
+            for i in range(reduction.rows):
+                row = [0.0] * reduction.cols
+                for offset in range(reduction.indptr[i], reduction.indptr[i + 1]):
+                    row[reduction.indices[offset]] = reduction.data[offset]
+                reduced_rows.append(row)
+            reduced = linprog(
+                reduction.c,
+                A_eq=reduced_rows if reduced_rows else None,
+                b_eq=reduction.b if reduced_rows else None,
+                bounds=list(zip(reduction.lo, reduction.hi, strict=True)),
+                method="highs",
+            )
+            assert reduced.success, reduced.message
+            x_reduced = [float(value) for value in reduced.x]
+
+        x = postsolve_x(x_reduced, reduction)
+        assert _max_residual(rows, indptr, indices, data, x, b_vec) <= 1e-8
+        assert sum(v * coef for v, coef in zip(x, c_vec, strict=True)) == pytest.approx(
+            float(original.fun), abs=1e-7
+        )
 
 
 # ---------------------------------------------------------------------------

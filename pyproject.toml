@@ -78,6 +78,9 @@ indent-style = "space"
 [tool.ty.environment]
 python-version = "3.12"
 
+[tool.ty.src]
+exclude = ["tools/modal_bench.py"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"

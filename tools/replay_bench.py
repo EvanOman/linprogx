@@ -255,7 +255,9 @@ def run_cell(path: Path, solver: str) -> dict[str, object]:
 # --- modes ------------------------------------------------------------------
 
 
-def do_reference(conn: sqlite3.Connection, subset: list[str] | None, solvers: tuple[str, ...]) -> None:
+def do_reference(
+    conn: sqlite3.Connection, subset: list[str] | None, solvers: tuple[str, ...]
+) -> None:
     paths = fixtures(subset)
     la1, la5, la15 = os.getloadavg()
     started = time.strftime("%Y-%m-%dT%H:%M:%S")
@@ -280,7 +282,9 @@ def do_reference(conn: sqlite3.Connection, subset: list[str] | None, solvers: tu
             n += 1
             w = cell["wall_seconds"]
             wtxt = f"{w:8.2f}s" if isinstance(w, (int, float)) else "   TIMEOUT"
-            print(f"  ref   {path.stem:>14} {solver:>9}: {str(cell['status']):<12} {wtxt}", flush=True)
+            print(
+                f"  ref   {path.stem:>14} {solver:>9}: {str(cell['status']):<12} {wtxt}", flush=True
+            )
     record_run(
         conn,
         commit_hash=REFERENCE_TAG,
@@ -304,7 +308,9 @@ def do_replay(conn: sqlite3.Connection, commits: list[str], subset: list[str] | 
         # Skip build entirely if every cell for this commit is already present.
         pending = [p for p in paths if not already_done(conn, full, p.stem, "linprogx")]
         if not pending:
-            print(f"== {full[:9]} {subject[:60]}\n   all {len(paths)} cells present, skip", flush=True)
+            print(
+                f"== {full[:9]} {subject[:60]}\n   all {len(paths)} cells present, skip", flush=True
+            )
             continue
         print(f"== {full[:9]} {date[:10]} {subject[:60]}", flush=True)
         print(f"   checkout + build ({len(pending)} pending cells)...", flush=True)
@@ -329,8 +335,7 @@ def do_replay(conn: sqlite3.Connection, commits: list[str], subset: list[str] | 
             w = cell["wall_seconds"]
             wtxt = f"{w:8.2f}s" if isinstance(w, (int, float)) else "   TIMEOUT"
             print(
-                f"   {path.stem:>14}: {str(cell['status']):<12} {wtxt} "
-                f"[{cell['route']}]",
+                f"   {path.stem:>14}: {str(cell['status']):<12} {wtxt} [{cell['route']}]",
                 flush=True,
             )
         record_run(
@@ -353,9 +358,7 @@ def do_status(conn: sqlite3.Connection) -> None:
     n_commits = conn.execute(
         "SELECT COUNT(DISTINCT commit_hash) FROM results WHERE solver='linprogx'"
     ).fetchone()[0]
-    n_ref = conn.execute(
-        "SELECT COUNT(*) FROM results WHERE commit_hash='reference'"
-    ).fetchone()[0]
+    n_ref = conn.execute("SELECT COUNT(*) FROM results WHERE commit_hash='reference'").fetchone()[0]
     total = conn.execute("SELECT COUNT(*) FROM results").fetchone()[0]
     print(f"linprogx commits: {n_commits}")
     print(f"reference cells : {n_ref}")
@@ -373,7 +376,9 @@ def do_status(conn: sqlite3.Connection) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = ap.add_subparsers(dest="mode", required=True)
 
     r = sub.add_parser("reference", help="run HiGHS+Clarabel reference cells (idempotent)")

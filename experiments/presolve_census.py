@@ -541,7 +541,7 @@ def write_json(out: Path, rows: list[dict[str, Any]]) -> None:
             "cascade_modeling": "none; projected size removes counted rows/columns once",
             "duplicate_rows": "same nonzero pattern, coefficient values, and rhs after 1e-12-ish quantization",
             "duplicate_columns": "same nonzero pattern, coefficient values, objective, and bounds after 1e-12-ish quantization",
-            "dominance_test": __doc__.split("Dominance test used here", 1)[1].strip(),
+            "dominance_test": (__doc__ or "").split("Dominance test used here", 1)[1].strip(),
             "projected_factor_flops": "current tail from chol debug when available; projected change uses m^3/3 row-removal proxy divided by dense-tail speed factor 58",
         },
         "instances": rows,

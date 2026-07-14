@@ -96,16 +96,41 @@ PUBLIC_REPO = "https://github.com/EvanOman/linprogx"
 
 # The 24 LPnetlib fixtures (stems), used as the default suite set.
 ALL_INSTANCES = [
-    "lp_80bau3b", "lp_cre_a", "lp_cre_b", "lp_cre_d", "lp_d2q06c", "lp_degen3",
-    "lp_fit2p", "lp_greenbea", "lp_ken_07", "lp_ken_11", "lp_ken_13", "lp_ken_18",
-    "lp_maros_r7", "lp_osa_14", "lp_osa_30", "lp_osa_60", "lp_pds_10", "lp_pds_20",
-    "lp_pilot87", "lp_qap12", "lp_qap15", "lp_stocfor3", "lp_truss", "lp_woodw",
+    "lp_80bau3b",
+    "lp_cre_a",
+    "lp_cre_b",
+    "lp_cre_d",
+    "lp_d2q06c",
+    "lp_degen3",
+    "lp_fit2p",
+    "lp_greenbea",
+    "lp_ken_07",
+    "lp_ken_11",
+    "lp_ken_13",
+    "lp_ken_18",
+    "lp_maros_r7",
+    "lp_osa_14",
+    "lp_osa_30",
+    "lp_osa_60",
+    "lp_pds_10",
+    "lp_pds_20",
+    "lp_pilot87",
+    "lp_qap12",
+    "lp_qap15",
+    "lp_stocfor3",
+    "lp_truss",
+    "lp_woodw",
 ]
 
 # Certified knife-edge set for paired verdicts (from docs/HANDOFF.md).
 CERTIFIED_SET = [
-    "lp_degen3", "lp_osa_14", "lp_stocfor3", "lp_80bau3b", "lp_cre_a",
-    "lp_greenbea", "lp_cre_b",
+    "lp_degen3",
+    "lp_osa_14",
+    "lp_stocfor3",
+    "lp_80bau3b",
+    "lp_cre_a",
+    "lp_greenbea",
+    "lp_cre_b",
 ]
 
 SOLVERS = ("highs", "clarabel", "linprogx")
@@ -209,9 +234,13 @@ def _run_cell(workdir: Path, fixture: Path, solver: str) -> dict[str, Any]:
     try:
         proc = subprocess.run(
             [
-                "uv", "run", "python",
+                "uv",
+                "run",
+                "python",
                 "experiments/suite_bench.py",
-                "--worker", str(fixture), solver,
+                "--worker",
+                str(fixture),
+                solver,
             ],
             cwd=str(workdir),
             capture_output=True,
@@ -222,11 +251,13 @@ def _run_cell(workdir: Path, fixture: Path, solver: str) -> dict[str, Any]:
         if proc.returncode == 0 and proc.stdout.strip():
             row.update(json.loads(proc.stdout.strip().splitlines()[-1]))
         else:
-            row.update({
-                "status": "crashed",
-                "seconds": time.perf_counter() - started,
-                "error": proc.stderr.strip()[-400:],
-            })
+            row.update(
+                {
+                    "status": "crashed",
+                    "seconds": time.perf_counter() - started,
+                    "error": proc.stderr.strip()[-400:],
+                }
+            )
     except subprocess.TimeoutExpired:
         row.update({"status": "timeout", "seconds": CELL_TIMEOUT})
     return row
@@ -328,15 +359,9 @@ def bench(
             lx_st = _stat(lx_secs)
             hx_st = _stat(hx_secs)
             ratio_median = (
-                lx_st["median"] / hx_st["median"]
-                if lx_st["median"] and hx_st["median"]
-                else None
+                lx_st["median"] / hx_st["median"] if lx_st["median"] and hx_st["median"] else None
             )
-            ratio_min = (
-                lx_st["min"] / hx_st["min"]
-                if lx_st["min"] and hx_st["min"]
-                else None
-            )
+            ratio_min = lx_st["min"] / hx_st["min"] if lx_st["min"] and hx_st["min"] else None
             verdict = None
             if ratio_median is not None:
                 verdict = "lx_faster" if ratio_median < 1.0 else "highs_faster"
@@ -406,7 +431,9 @@ def main(
     if action == "upload-src":
         sha = subprocess.run(
             ["git", "-C", worktree, "rev-parse", "HEAD"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
         tar_local = Path(f"/tmp/linprogx_src_{sha}.tar")
         # clean archive of tracked files at HEAD, under a top-level dir stripped

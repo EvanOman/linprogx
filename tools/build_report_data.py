@@ -3,11 +3,12 @@
 
 Emits scratchpad/report_data.json and prints a per-instance trajectory table.
 """
+
 from __future__ import annotations
+
 import json
 import math
 import sqlite3
-import sys
 from pathlib import Path
 
 DB = "/home/evan/dev/linprogx-perf-worktree/assets/campaign.db"
@@ -48,18 +49,30 @@ commits = []
 for sh in ORDER_SHORT:
     r = byshort[sh]
     commits.append(
-        {"short": sh, "hash": r["commit_hash"], "date": r["commit_date"][:10], "subject": r["commit_subject"]}
+        {
+            "short": sh,
+            "hash": r["commit_hash"],
+            "date": r["commit_date"][:10],
+            "subject": r["commit_subject"],
+        }
     )
 full_order = [c["hash"] for c in commits]
 
 # Reference (highs/clarabel) per instance
 ref = {}
-for r in conn.execute("SELECT instance, solver, wall_seconds, status FROM results WHERE commit_hash='reference'"):
-    ref.setdefault(r["instance"], {})[r["solver"]] = {"wall": r["wall_seconds"], "status": r["status"]}
+for r in conn.execute(
+    "SELECT instance, solver, wall_seconds, status FROM results WHERE commit_hash='reference'"
+):
+    ref.setdefault(r["instance"], {})[r["solver"]] = {
+        "wall": r["wall_seconds"],
+        "status": r["status"],
+    }
 
 # linprogx wall per (instance, commit)
 lx = {}
-for r in conn.execute("SELECT commit_hash, instance, wall_seconds, status, route FROM results WHERE solver='linprogx'"):
+for r in conn.execute(
+    "SELECT commit_hash, instance, wall_seconds, status, route FROM results WHERE solver='linprogx'"
+):
     lx.setdefault(r["instance"], {})[r["commit_hash"]] = {
         "wall": r["wall_seconds"],
         "status": r["status"],
@@ -87,7 +100,7 @@ for inst in instances:
 
 # Aggregates per commit: suite total (sum linprogx wall), geomean ratio vs HiGHS
 agg = []
-for i, h in enumerate(full_order):
+for h in full_order:
     total = 0.0
     ratios = []
     for inst in instances:
@@ -99,7 +112,13 @@ for i, h in enumerate(full_order):
         if w is not None and hw is not None and hstat == "optimal":
             ratios.append(w / hw)
     geo = math.exp(sum(math.log(r) for r in ratios) / len(ratios)) if ratios else None
-    agg.append({"total": round(total, 2), "geomean_ratio": round(geo, 3) if geo else None, "n_ratio": len(ratios)})
+    agg.append(
+        {
+            "total": round(total, 2),
+            "geomean_ratio": round(geo, 3) if geo else None,
+            "n_ratio": len(ratios),
+        }
+    )
 
 # Final ratio (last commit) per instance vs HiGHS, for ordering panels
 final_ratio = {}
@@ -110,10 +129,14 @@ for inst in instances:
         final_ratio[inst] = w / hw
     else:
         final_ratio[inst] = None
+
+
 # order: wins first (ratio<1) then losses ascending by ratio; qap15 (no highs) last
 def sortkey(inst):
     r = final_ratio[inst]
     return (1e9, inst) if r is None else (r, inst)
+
+
 ordered_instances = sorted(instances, key=sortkey)
 
 data = {
@@ -125,13 +148,17 @@ data = {
     "generated": "2026-07-13",
 }
 
-out = Path("/tmp/claude-1000/-home-evan-dev-linprogx/c9aaa169-d2a9-450d-ad6e-204790d20e27/scratchpad/report_data.json")
+out = Path(
+    "/tmp/claude-1000/-home-evan-dev-linprogx/c9aaa169-d2a9-450d-ad6e-204790d20e27/scratchpad/report_data.json"
+)
 out.write_text(json.dumps(data, indent=1))
 print(f"wrote {out} ({out.stat().st_size} bytes)")
 
 # ---- narrative table to stdout ----
 print("\n=== HEADLINE PER-INSTANCE TRAJECTORY (baseline -> current vs HiGHS) ===")
-print(f"{'instance':>12} {'base':>8} {'final':>8} {'HiGHS':>8} {'ratio':>7} {'route':>9}  {'W/L':>4}")
+print(
+    f"{'instance':>12} {'base':>8} {'final':>8} {'HiGHS':>8} {'ratio':>7} {'route':>9}  {'W/L':>4}"
+)
 for inst in ordered_instances:
     s = series[inst]
     base = s["walls"][0]
@@ -145,5 +172,7 @@ for inst in ordered_instances:
 
 print("\n=== AGGREGATE OVER COMMITS ===")
 print(f"{'#':>2} {'short':>8} {'date':>10} {'total_s':>8} {'geomean':>8}  subject")
-for i, (c, a) in enumerate(zip(data["commits"], agg)):
-    print(f"{i:2d} {c['short']:>8} {c['date']:>10} {a['total']:8.2f} {str(a['geomean_ratio']):>8}  {c['subject'][:44]}")
+for i, (c, a) in enumerate(zip(data["commits"], agg, strict=True)):
+    print(
+        f"{i:2d} {c['short']:>8} {c['date']:>10} {a['total']:8.2f} {str(a['geomean_ratio']):>8}  {c['subject'][:44]}"
+    )

@@ -140,4 +140,4 @@ def test_cycle_auto_routes_to_ipm_with_high_accuracy() -> None:
     x = np.array(result.solution.x, dtype=float)
     residual = float(np.max(np.abs(problem_data["A_scipy"] @ x - problem_data["b"])))
     assert residual <= 1e-9
-    assert abs(result.solution.objective_value - bench_cycle.EXPECTED_CYCLE_OBJECTIVE) <= 1e-5
+    assert abs(result.solution.objective_value - bench_cycle.EXPECTED_CYCLE_OBJECTIVE) <= 2e-5

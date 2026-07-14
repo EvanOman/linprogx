@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import array
 import importlib
+import os
 import struct
 from dataclasses import dataclass, field
 from math import isfinite
@@ -34,13 +35,17 @@ _RATIO_LO = 1e-4
 _RATIO_HI = 1e4
 _PIVOT_EPS = 1e-12
 _DROP_EPS = 1e-15
+_BOUND_EPS = 1e-10
+_V2_MIN_REDUCTION_FRACTION = 0.08
 
 try:
     _csparse: object = importlib.import_module("linprogx._csparse")
     _c_presolve = _csparse.presolve_eq_box  # type: ignore[attr-defined]
+    _c_v2_candidates = _csparse.presolve_v2_candidates  # type: ignore[attr-defined]
 except (ImportError, AttributeError):  # pragma: no cover - source tree before extension build
     _csparse = None
     _c_presolve = None
+    _c_v2_candidates = None
 
 _SSZ = struct.calcsize("n")  # sizeof(Py_ssize_t)
 
@@ -83,6 +88,24 @@ class _Doubleton:
     rhs: float
 
 
+@dataclass(frozen=True)
+class _ColumnSingleton:
+    eliminated: int
+    coef_eliminated: float
+    rhs: float
+    terms: tuple[tuple[int, float], ...]
+
+
+@dataclass(frozen=True)
+class _DuplicateColumn:
+    removed: int
+    kept: int
+    removed_lo: float
+    removed_hi: float
+    kept_lo: float
+    kept_hi: float
+
+
 class _LazyRecordList:
     """Lazily materializes _FixedVar/_Doubleton from raw C tuples.
 
@@ -102,15 +125,33 @@ class _LazyRecordList:
         for rec in self._raw:
             if rec[0] == 0:
                 yield _FixedVar(rec[1], rec[2])
-            else:
+            elif rec[0] == 1:
                 yield _Doubleton(rec[1], rec[2], rec[3], rec[4], rec[5])
+            else:
+                raise ValueError(f"unknown presolve record tag {rec[0]}")
 
     def __reversed__(self):  # type: ignore[override]
         for rec in reversed(self._raw):
             if rec[0] == 0:
                 yield _FixedVar(rec[1], rec[2])
-            else:
+            elif rec[0] == 1:
                 yield _Doubleton(rec[1], rec[2], rec[3], rec[4], rec[5])
+            else:
+                raise ValueError(f"unknown presolve record tag {rec[0]}")
+
+
+def _empty_reduction_counts() -> dict[str, int]:
+    return {
+        "fixed_columns": 0,
+        "empty_columns": 0,
+        "forcing_rows": 0,
+        "forcing_columns": 0,
+        "empty_rows": 0,
+        "singleton_rows": 0,
+        "column_singletons": 0,
+        "doubletons": 0,
+        "duplicate_columns": 0,
+    }
 
 
 @dataclass
@@ -129,10 +170,118 @@ class PresolveResult:
     objective_offset: float
     removed_rows: int
     removed_cols: int
-    _records: list[_FixedVar | _Doubleton] | _LazyRecordList
+    _records: list[_FixedVar | _Doubleton | _ColumnSingleton | _DuplicateColumn] | _LazyRecordList
     _active_cols: list[int]
     _original_cols: int
+    _reduction_counts: dict[str, int] = field(default_factory=_empty_reduction_counts)
     _matrix: Any = field(default=None, repr=False)
+
+
+def _v2_enabled() -> bool:
+    return os.environ.get("LINPROGX_PRESOLVE_V2", "1") != "0"
+
+
+def _v2_worth_python_pass(
+    candidate_rows: int,
+    candidate_cols: int,
+    rows: int,
+    cols: int,
+) -> bool:
+    return candidate_rows >= _V2_MIN_REDUCTION_FRACTION * max(
+        1, rows
+    ) or candidate_cols >= _V2_MIN_REDUCTION_FRACTION * max(1, cols)
+
+
+def _same_bound(lo_value: float, hi_value: float) -> bool:
+    return (
+        isfinite(lo_value)
+        and isfinite(hi_value)
+        and abs(lo_value - hi_value) <= _BOUND_EPS * max(1.0, abs(lo_value), abs(hi_value))
+    )
+
+
+def _near_bound(value: float, bound: float) -> bool:
+    return abs(value - bound) <= _BOUND_EPS * max(1.0, abs(value), abs(bound))
+
+
+def _activity_bounds(
+    terms: tuple[tuple[int, float], ...] | list[tuple[int, float]],
+    lo: list[float],
+    hi: list[float],
+) -> tuple[float, float]:
+    lower = 0.0
+    upper = 0.0
+    lower_unbounded = False
+    upper_unbounded = False
+    for j, coef in terms:
+        if coef >= 0.0:
+            if isfinite(lo[j]):
+                lower += coef * lo[j]
+            else:
+                lower_unbounded = True
+            if isfinite(hi[j]):
+                upper += coef * hi[j]
+            else:
+                upper_unbounded = True
+        else:
+            if isfinite(hi[j]):
+                lower += coef * hi[j]
+            else:
+                lower_unbounded = True
+            if isfinite(lo[j]):
+                upper += coef * lo[j]
+            else:
+                upper_unbounded = True
+    return (-float("inf") if lower_unbounded else lower, float("inf") if upper_unbounded else upper)
+
+
+def _column_bounds_are_redundant(
+    j: int,
+    coef: float,
+    rhs: float,
+    terms: tuple[tuple[int, float], ...],
+    lo: list[float],
+    hi: list[float],
+) -> bool:
+    if not isfinite(lo[j]) and not isfinite(hi[j]):
+        return True
+    rest_lo, rest_hi = _activity_bounds(terms, lo, hi)
+    if coef > 0.0:
+        implied_lo = -float("inf") if not isfinite(rest_hi) else (rhs - rest_hi) / coef
+        implied_hi = float("inf") if not isfinite(rest_lo) else (rhs - rest_lo) / coef
+    else:
+        implied_lo = -float("inf") if not isfinite(rest_lo) else (rhs - rest_lo) / coef
+        implied_hi = float("inf") if not isfinite(rest_hi) else (rhs - rest_hi) / coef
+
+    if isfinite(lo[j]):
+        if not isfinite(implied_lo):
+            return False
+        if implied_lo < lo[j] - _BOUND_EPS * max(1.0, abs(lo[j]), abs(implied_lo)):
+            return False
+    if isfinite(hi[j]):
+        if not isfinite(implied_hi):
+            return False
+        if implied_hi > hi[j] + _BOUND_EPS * max(1.0, abs(hi[j]), abs(implied_hi)):
+            return False
+    return True
+
+
+def _choose_empty_column_value(
+    j: int, c: list[float], lo: list[float], hi: list[float]
+) -> float | None:
+    # Equality dual variables are free, so sign-based dual fixing is sound here
+    # only for columns absent from every equality row.
+    if c[j] > _DROP_EPS:
+        return lo[j] if isfinite(lo[j]) else None
+    if c[j] < -_DROP_EPS:
+        return hi[j] if isfinite(hi[j]) else None
+    if (not isfinite(lo[j]) or lo[j] <= 0.0) and (not isfinite(hi[j]) or hi[j] >= 0.0):
+        return 0.0
+    if isfinite(lo[j]):
+        return lo[j]
+    if isfinite(hi[j]):
+        return hi[j]
+    return 0.0
 
 
 def _presolve_eq_box_python(
@@ -168,20 +317,105 @@ def _presolve_eq_box_python(
         for j in row_entries[i]:
             col_rows[j].add(i)
 
-    records: list[_FixedVar | _Doubleton] = []
+    records: list[_FixedVar | _Doubleton | _ColumnSingleton | _DuplicateColumn] = []
     removed_rows: set[int] = set()
     removed_cols: set[int] = set()
     objective_offset = 0.0
+    v2 = _v2_enabled()
+    reduction_counts = _empty_reduction_counts()
 
     changed = True
     while changed:
         changed = False
+
+        if v2:
+            for j in range(cols):
+                if j in removed_cols or not _same_bound(lo[j], hi[j]):
+                    continue
+                value = lo[j]
+                records.append(_FixedVar(j, value))
+                objective_offset += c[j] * value
+                for i in list(col_rows[j]):
+                    if i in removed_rows:
+                        continue
+                    coef = row_entries[i].get(j)
+                    if coef is None:
+                        continue
+                    b[i] -= coef * value
+                    del row_entries[i][j]
+                    col_rows[j].discard(i)
+                removed_cols.add(j)
+                col_rows[j].clear()
+                reduction_counts["fixed_columns"] += 1
+                changed = True
+
+            for j in range(cols):
+                if j in removed_cols or col_rows[j]:
+                    continue
+                value = _choose_empty_column_value(j, c, lo, hi)
+                if value is None:
+                    continue
+                records.append(_FixedVar(j, value))
+                objective_offset += c[j] * value
+                removed_cols.add(j)
+                reduction_counts["empty_columns"] += 1
+                changed = True
+
+            for i in range(rows):
+                if i in removed_rows or not row_entries[i]:
+                    continue
+                entries: tuple[tuple[int, float], ...] = tuple(row_entries[i].items())
+                lower, upper = _activity_bounds(entries, lo, hi)
+                at_lower = isfinite(lower) and _near_bound(b[i], lower)
+                at_upper = isfinite(upper) and _near_bound(b[i], upper)
+                if not at_lower and not at_upper:
+                    continue
+
+                fixes: list[tuple[int, float]] = []
+                for j, coef in entries:
+                    if j in removed_cols:
+                        continue
+                    if at_lower:
+                        value = lo[j] if coef >= 0.0 else hi[j]
+                    else:
+                        value = hi[j] if coef >= 0.0 else lo[j]
+                    if not isfinite(value):
+                        fixes = []
+                        break
+                    fixes.append((j, value))
+                if not fixes:
+                    continue
+
+                forcing_columns = 0
+                for j, value in fixes:
+                    if j in removed_cols:
+                        continue
+                    records.append(_FixedVar(j, value))
+                    objective_offset += c[j] * value
+                    for other in list(col_rows[j]):
+                        if other in removed_rows:
+                            continue
+                        coef = row_entries[other].get(j)
+                        if coef is None:
+                            continue
+                        b[other] -= coef * value
+                        del row_entries[other][j]
+                        col_rows[j].discard(other)
+                    removed_cols.add(j)
+                    col_rows[j].clear()
+                    forcing_columns += 1
+                    changed = True
+                reduction_counts["forcing_rows"] += 1
+                reduction_counts["forcing_columns"] += forcing_columns
+                if not row_entries[i]:
+                    removed_rows.add(i)
 
         for i in range(rows):
             if i in removed_rows:
                 continue
             if not row_entries[i]:
                 removed_rows.add(i)
+                reduction_counts["empty_rows"] += 1
                 changed = True
 
         for i in range(rows):
@@ -205,7 +439,34 @@ def _presolve_eq_box_python(
             removed_rows.add(i)
             removed_cols.add(j)
             col_rows[j].clear()
+            reduction_counts["singleton_rows"] += 1
             changed = True
+
+        if v2:
+            for j in range(cols):
+                if j in removed_cols or len(col_rows[j]) != 1:
+                    continue
+                i = next(iter(col_rows[j]))
+                if i in removed_rows or j not in row_entries[i] or len(row_entries[i]) <= 2:
+                    continue
+                coef = row_entries[i][j]
+                if abs(coef) < _PIVOT_EPS:
+                    continue
+                terms = tuple((k, value) for k, value in row_entries[i].items() if k != j)
+                if not _column_bounds_are_redundant(j, coef, b[i], terms, lo, hi):
+                    continue
+
+                records.append(_ColumnSingleton(j, coef, b[i], terms))
+                objective_offset += c[j] * b[i] / coef
+                cost_scale = c[j] / coef
+                for k, value in terms:
+                    c[k] -= cost_scale * value
+                    col_rows[k].discard(i)
+                removed_rows.add(i)
+                removed_cols.add(j)
+                col_rows[j].clear()
+                reduction_counts["column_singletons"] += 1
+                changed = True
 
         for i in range(rows):
             if i in removed_rows or len(row_entries[i]) != 2:
@@ -276,7 +537,54 @@ def _presolve_eq_box_python(
             removed_rows.add(i)
             removed_cols.add(jp)
             col_rows[jp].clear()
+            reduction_counts["doubletons"] += 1
             changed = True
+
+        if v2:
+            signatures: dict[tuple[tuple[tuple[int, float], ...], float], int] = {}
+            for j in range(cols):
+                if (
+                    j in removed_cols
+                    or not col_rows[j]
+                    or not isfinite(lo[j])
+                    or not isfinite(hi[j])
+                ):
+                    continue
+                signature = (
+                    tuple(
+                        sorted(
+                            (i, row_entries[i][j])
+                            for i in col_rows[j]
+                            if i not in removed_rows and j in row_entries[i]
+                        )
+                    ),
+                    c[j],
+                )
+                if not signature[0]:
+                    continue
+                kept = signatures.get(signature)
+                if kept is None or kept in removed_cols:
+                    signatures[signature] = j
+                    continue
+                if not isfinite(lo[kept]) or not isfinite(hi[kept]):
+                    continue
+
+                # Exact duplicate columns with equal objective coefficients
+                # may be represented by y = x_kept + x_removed. Summed bounds
+                # are exact, and postsolve can split any y in that interval
+                # back into values satisfying both original boxes.
+                records.append(_DuplicateColumn(j, kept, lo[j], hi[j], lo[kept], hi[kept]))
+                lo[kept] += lo[j]
+                hi[kept] += hi[j]
+                for i in list(col_rows[j]):
+                    if i in removed_rows:
+                        continue
+                    row_entries[i].pop(j, None)
+                    col_rows[j].discard(i)
+                removed_cols.add(j)
+                col_rows[j].clear()
+                reduction_counts["duplicate_columns"] += 1
+                changed = True
 
     if not removed_rows and not removed_cols:
         return None
@@ -312,6 +620,7 @@ def _presolve_eq_box_python(
         _records=records,
         _active_cols=active_cols,
         _original_cols=cols,
+        _reduction_counts=reduction_counts,
     )
 
 
@@ -340,6 +649,48 @@ def presolve_eq_box(
     )
 
 
+def _result_from_c(raw: tuple[Any, ...]) -> PresolveResult:
+    (
+        r_matrix,
+        r_b_b,
+        r_c_b,
+        r_lo_b,
+        r_hi_b,
+        r_offset,
+        r_removed_rows,
+        r_removed_cols,
+        r_records_raw,
+        r_active_cols_b,
+        r_original_cols,
+    ) = raw
+    r_shape = r_matrix.shape
+    reduction_counts = _empty_reduction_counts()
+    for record in r_records_raw:
+        if record[0] == 0:
+            reduction_counts["singleton_rows"] += 1
+        elif record[0] == 1:
+            reduction_counts["doubletons"] += 1
+    return PresolveResult(
+        rows=r_shape[0],
+        cols=r_shape[1],
+        indptr=[],
+        indices=[],
+        data=[],
+        b=_unpack_dbls(r_b_b),
+        c=_unpack_dbls(r_c_b),
+        lo=_unpack_dbls(r_lo_b),
+        hi=_unpack_dbls(r_hi_b),
+        objective_offset=r_offset,
+        removed_rows=r_removed_rows,
+        removed_cols=r_removed_cols,
+        _records=_LazyRecordList(r_records_raw),
+        _active_cols=_unpack_ints(r_active_cols_b),
+        _original_cols=r_original_cols,
+        _reduction_counts=reduction_counts,
+        _matrix=r_matrix,
+    )
+
+
 def presolve_matrix(
     matrix: Any,
     b: list[float],
@@ -351,56 +702,52 @@ def presolve_matrix(
 ) -> PresolveResult | None:
     """Fast presolve accepting a CSRMatrix directly.
 
-    When the C accelerator is available, this avoids converting the matrix
-    to Python lists and back, eliminating ~20ms of marshalling overhead.
+    When the C accelerator is available, a native opportunity scan routes
+    only high-yield V2 problems through Python. Low-yield problems stay on
+    the C path and avoid Python marshalling and fixpoint overhead.
 
     Returns a PresolveResult whose ``_matrix`` attribute holds the reduced
     CSRMatrix (avoids rebuilding from components). Falls back to the
     list-based path when the C extension is unavailable.
     """
     if _c_presolve is not None:
+        packed_b = _pack_dbls(b)
+        packed_c = _pack_dbls(c)
+        packed_lo = _pack_dbls(lo)
+        packed_hi = _pack_dbls(hi)
+        if _v2_enabled() and _c_v2_candidates is not None:
+            candidate_rows, candidate_cols, *_ = _c_v2_candidates(
+                matrix,
+                packed_b,
+                packed_c,
+                packed_lo,
+                packed_hi,
+            )
+            rows_val, cols_val = matrix.shape  # type: ignore[attr-defined]
+            if _v2_worth_python_pass(candidate_rows, candidate_cols, rows_val, cols_val):
+                indptr, indices, data = matrix.to_components()  # type: ignore[attr-defined]
+                return _presolve_eq_box_python(
+                    rows_val,
+                    cols_val,
+                    indptr,
+                    indices,
+                    data,
+                    b,
+                    c,
+                    lo,
+                    hi,
+                    max_fill=max_fill,
+                )
+
         raw = _c_presolve(
             matrix,
-            _pack_dbls(b),
-            _pack_dbls(c),
-            _pack_dbls(lo),
-            _pack_dbls(hi),
+            packed_b,
+            packed_c,
+            packed_lo,
+            packed_hi,
             max_fill,
         )
-        if raw is None:
-            return None
-        (
-            r_matrix,
-            r_b_b,
-            r_c_b,
-            r_lo_b,
-            r_hi_b,
-            r_offset,
-            r_removed_rows,
-            r_removed_cols,
-            r_records_raw,
-            r_active_cols_b,
-            r_original_cols,
-        ) = raw
-        r_shape = r_matrix.shape
-        return PresolveResult(
-            rows=r_shape[0],
-            cols=r_shape[1],
-            indptr=[],
-            indices=[],
-            data=[],
-            b=_unpack_dbls(r_b_b),
-            c=_unpack_dbls(r_c_b),
-            lo=_unpack_dbls(r_lo_b),
-            hi=_unpack_dbls(r_hi_b),
-            objective_offset=r_offset,
-            removed_rows=r_removed_rows,
-            removed_cols=r_removed_cols,
-            _records=_LazyRecordList(r_records_raw),
-            _active_cols=_unpack_ints(r_active_cols_b),
-            _original_cols=r_original_cols,
-            _matrix=r_matrix,
-        )
+        return None if raw is None else _result_from_c(raw)
 
     # Fallback: extract components and use Python path
     rows_val, cols_val = matrix.shape  # type: ignore[attr-defined]
@@ -418,8 +765,26 @@ def postsolve_x(x_reduced: list[float], reduction: PresolveResult) -> list[float
     for record in reversed(reduction._records):
         if isinstance(record, _FixedVar):
             x_full[record.column] = record.value
-        else:
+        elif isinstance(record, _Doubleton):
             x_full[record.eliminated] = (
                 record.rhs - record.coef_kept * x_full[record.kept]
             ) / record.coef_eliminated
+        elif isinstance(record, _ColumnSingleton):
+            rest = sum(coef * x_full[j] for j, coef in record.terms)
+            x_full[record.eliminated] = (record.rhs - rest) / record.coef_eliminated
+        else:
+            y = x_full[record.kept]
+            kept_value = min(
+                record.kept_hi,
+                max(record.kept_lo, y - record.removed_lo),
+            )
+            removed_value = y - kept_value
+            if removed_value < record.removed_lo:
+                removed_value = record.removed_lo
+                kept_value = y - removed_value
+            elif removed_value > record.removed_hi:
+                removed_value = record.removed_hi
+                kept_value = y - removed_value
+            x_full[record.kept] = kept_value
+            x_full[record.removed] = removed_value
     return x_full
