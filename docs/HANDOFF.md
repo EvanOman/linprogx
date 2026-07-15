@@ -1538,3 +1538,16 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   (near-tie, was 1.63), pilot87 1.008 (dead knife-edge, 3/7).
   Session totals: 20+ ships, 21 settled hypotheses, geomean nearly
   halved in two days.
+
+- GREENBEA POST-V2 ANATOMY (2026-07-15, codex): cadence constants
+  VALIDATED at the new size (diag/fill grid flat ~0.42s local, refac
+  ~5.6us/pivot — the stale-conditions cadence recheck closes
+  still-valid); Dantzig is the leaving-family optimum (4,399 vs Devex
+  6,807, rule2 11,948, rule3 15,188, rule4 fails); count not obviously
+  cuttable (near-zero degeneracy). LIVE LEVER: column-side rate slice
+  ~42us/pivot (pivot-row + ratio + rcost = largest coherent block).
+  Queued unit: support-characteristic histograms (rho_nnz, alpha_nnz,
+  candidate count, reuse windows) then a targeted prototype; kill if
+  ceiling <20us/pivot or prototype <10% wall. Also queued: restore
+  top1pct_progress_frac for the current route (the anatomy instrument
+  lives on exp-leaving, pre-V2).
