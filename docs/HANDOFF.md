@@ -1551,3 +1551,17 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   ceiling <20us/pivot or prototype <10% wall. Also queued: restore
   top1pct_progress_frac for the current route (the anatomy instrument
   lives on exp-leaving, pre-V2).
+
+- POST-V2 IPM RE-PROFILE (2026-07-15, codex): (1) 80bau3b "regression"
+  RESOLVED AS ENVIRONMENT DRIFT — V2 does not fire there
+  (worth_python_pass=False; V2-on/off identical shapes and walls);
+  clean-box 1.32 vs 1.20 was variance, not code. (2) THE NEW BIGGEST
+  EXPOSED SLICE: presolve V2's own pass cost — cre_d 0.412s of 1.38s
+  wall, maros_r7 0.228s (unit running: native fast path, kill unless
+  >=0.25s/0.15s saved with bit-identical reduced problems). (3)
+  maros_r7 slid BELOW the MCC 3.0 gate at its new size (ratio
+  3.62->2.54): forced MCC gives 20->17 iters / -9.6% wall, but global
+  lowering stays dead (cre_d 71->60 iters yet +56% wall) — a
+  structural-guard unit is queued behind the fast path. Gate-position
+  audit otherwise clean: tail/block-row/supernodal decisions all on
+  correct sides at the new sizes.
