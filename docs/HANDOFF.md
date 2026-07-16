@@ -1607,3 +1607,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   Ruiz pass-count probe. 15-PAIR PRECISION (Modal): pilot87 0/15,
   stocfor3 0/15, degen3 0/15, cre_a 4/15 — the knife-edges are REAL
   small losses, not variance; they need genuine 2-8% wins.
+
+- HOST-CONDITIONAL MARGINS (2026-07-16, 15-pair Modal precision,
+  /tmp/knife_chunk{A,B}.json): the knife-edge verdicts depend on host
+  class. vs the us-west-2 certification: pilot87 1.008 -> 1.223 on
+  Azure-Asia (HiGHS gains 4.63->2.98s; we gain less), degen3 1.075 ->
+  1.297, stocfor3 1.06 -> 1.111, pds_20 1.03 -> 1.878 (our
+  bandwidth-bound PDHG is dramatically host-sensitive: 14.0 -> 20.0s
+  while HiGHS moved 13.7 -> 10.6), cre_a 1.066 -> 1.036 (the one TRUE
+  knife-edge: 4.5ms / 3.5% from median parity; min-vs-min already
+  0.969). None are coin flips at 15 pairs (0/15 x4, 4/15 cre_a).
+  DOCTRINE: certifications must pin the host class — the harness
+  currently doesn't set a Modal region; add region pinning and
+  standardize on one region for the scoreboard of record. Also a
+  finding in itself: PDHG's memory-bandwidth sensitivity is ~2x
+  HiGHS's simplex on the same hardware swing.
