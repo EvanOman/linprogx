@@ -1583,3 +1583,15 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   cross-pivot incremental support maintenance is unshipped and under
   algebra review. METHOD LESSON: kernel-slice experiments must run on
   the current stack; stale worktrees rediscover shipped levers.
+
+- TWENTY-THIRD SETTLED — CROSS-PIVOT SUPPORT REUSE (2026-07-15, codex
+  verification): the exp-panel REUSE_ALPHA prototype is REDUNDANT with
+  shipped c33f12f (alpha_scratch stays live through 4g on this
+  branch). The cross-pivot lever is KILLED ON ALGEBRA: after basis
+  change B'=BE, alpha'_k = alpha_k - (d_k/d_p) alpha_p needs the OLD
+  alpha_k for arbitrary k — i.e., the very BTRAN+scatter being
+  avoided; only k==p is cheap. Full-tableau maintenance is not viable.
+  Histograms ported (LINPROGX_DS_RATE_HIST): current-stack pivot_row
+  phase is 25-41% of DS wall with candidates p50 182-5k and overlap
+  99.9% — informative but the reuse family is now closed both
+  within-pivot (shipped) and cross-pivot (impossible).
