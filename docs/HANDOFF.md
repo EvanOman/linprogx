@@ -1565,3 +1565,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   structural-guard unit is queued behind the fast path. Gate-position
   audit otherwise clean: tail/block-row/supernodal decisions all on
   correct sides at the new sizes.
+
+- TWENTY-SECOND SETTLED — PRESOLVE PASS FAST-PATH (2026-07-15, codex,
+  honest revert): dirty-row scans, activity caches, native
+  to_component_bytes and rebuild-batching recovered only cre_d +0.121s
+  / maros +0.109s of the 0.25/0.15 bar; public-route walls moved
+  within noise. The V2 pass cost (~0.4s on cre_d) is mostly inherent
+  Python-side reduction work; a FULL native V2 port remains the only
+  escalation (L-size, queued at low priority). Reduced-problem
+  bit-equality held throughout.
+
+- COLUMN-RATE UNIT CAVEAT (2026-07-15): the exp-panel prototype's -11
+  to -15% was measured on the PRE-RATE-SHIP branch and its REUSE_ALPHA
+  mechanism likely duplicates shipped c33f12f (verification worker
+  running). NEW DATUM that survives regardless: consecutive-pivot
+  support overlap 96-99.97% (rho p50 1.8-2.2k, alpha p50 6.5-58k) —
+  cross-pivot incremental support maintenance is unshipped and under
+  algebra review. METHOD LESSON: kernel-slice experiments must run on
+  the current stack; stale worktrees rediscover shipped levers.
