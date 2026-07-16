@@ -272,6 +272,9 @@ def _run_cell(workdir: Path, fixture: Path, solver: str) -> dict[str, Any]:
     cpu=4.0,
     memory=8192,
     timeout=3600,
+    # Scoreboard-of-record host class: margins are host-conditional
+    # (HANDOFF 2026-07-16) — certifications must run in one region.
+    region="us-west",
 )
 def bench(
     git_ref: str,
