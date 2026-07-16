@@ -23,7 +23,15 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_INSTANCES = ("lp_degen3", "lp_cre_a", "lp_woodw", "lp_80bau3b", "lp_stocfor3")
+DEFAULT_INSTANCES = (
+    "lp_degen3",
+    "lp_cre_a",
+    "lp_stocfor3",
+    "lp_80bau3b",
+    "lp_woodw",
+    "lp_cre_d",
+    "lp_maros_r7",
+)
 
 
 def load_instance(path: Path) -> dict[str, Any]:
@@ -147,10 +155,17 @@ def run_direct(data: dict[str, Any], *, max_iter: int, debug: bool) -> dict[str,
     }
 
 
+def run_fingerprint(data: dict[str, Any]) -> dict[str, Any]:
+    prep = prepare(data)
+    return prep["matrix"].cholesky_symbolic_fingerprint()
+
+
 def worker(args: argparse.Namespace) -> int:
     data = load_instance(args.data_dir / f"{args.instance}.mat")
     if args.mode == "public":
         out = run_public(data)
+    elif args.mode == "fingerprint":
+        out = run_fingerprint(data)
     else:
         out = run_direct(data, max_iter=args.max_iter, debug=args.debug)
     print(json.dumps(out, sort_keys=True))
@@ -158,6 +173,7 @@ def worker(args: argparse.Namespace) -> int:
 
 
 SETUP_RE = re.compile(r"chol_setup\s+([a-z-]+)\s+([0-9.]+)s")
+SETUP_PROFILE_RE = re.compile(r"chol_setup_profile\s+([a-z0-9-]+)\s+([0-9.]+)")
 MCC_GATE_RE = re.compile(r"ipm mcc gate: .* ratio=([0-9.]+) budget=([0-9-]+)")
 MCC_RE = re.compile(r"ipm mcc: budget=([0-9-]+) accepted_rounds=([0-9-]+)")
 SAFE_RE = re.compile(r"ipm safeguard: shrinks=([0-9-]+) breaks=([0-9-]+)")
@@ -176,9 +192,11 @@ FILL_RE = re.compile(r"chol_setup fill: nnzL=([0-9.]+) flops=([0-9.e+-]+)")
 
 
 def parse_stderr(stderr: str) -> dict[str, Any]:
-    parsed: dict[str, Any] = {"setup_phases_s": {}}
+    parsed: dict[str, Any] = {"setup_phases_s": {}, "setup_profile_s": {}}
     for label, value in SETUP_RE.findall(stderr):
         parsed["setup_phases_s"][label] = float(value)
+    for label, value in SETUP_PROFILE_RE.findall(stderr):
+        parsed["setup_profile_s"][label] = float(value)
     if m := MCC_GATE_RE.search(stderr):
         parsed["mcc_gate_ratio"] = float(m.group(1))
         parsed["mcc_gate_budget"] = int(m.group(2))
@@ -254,7 +272,11 @@ def instance_profile(instance: str, data_dir: Path, runs: int) -> dict[str, Any]
     zero_runs = [invoke(instance, "direct", data_dir, max_iter=0)[0] for _ in range(runs)]
     one_runs = [invoke(instance, "direct", data_dir, max_iter=1)[0] for _ in range(runs)]
 
-    debug_env = {"LINPROGX_CHOL_DEBUG": "1", "LINPROGX_REFAC_PROFILE": "1"}
+    debug_env = {
+        "LINPROGX_CHOL_DEBUG": "1",
+        "LINPROGX_CHOL_SETUP_PROFILE": "1",
+        "LINPROGX_REFAC_PROFILE": "1",
+    }
     debug_full, debug_full_stderr = invoke(
         instance, "direct", data_dir, max_iter=200, debug=True, env=debug_env
     )
@@ -263,6 +285,7 @@ def instance_profile(instance: str, data_dir: Path, runs: int) -> dict[str, Any]
     )
     parsed_full = parse_stderr(debug_full_stderr)
     parsed_zero = parse_stderr(debug_zero_stderr)
+    fingerprint = invoke(instance, "fingerprint", data_dir)[0]
 
     public_wall = median([r["wall_s"] for r in public_runs])
     direct_wall = median([r["wall_s"] for r in direct_runs])
@@ -327,6 +350,7 @@ def instance_profile(instance: str, data_dir: Path, runs: int) -> dict[str, Any]
         "loop_solve_tail_s": loop_solve_tail,
         "debug_full": parsed_full,
         "debug_zero": parsed_zero,
+        "symbolic_fingerprint": fingerprint,
     }
 
 
@@ -369,6 +393,28 @@ def write_tables(rows: list[dict[str, Any]]) -> None:
             f"mcc={row['debug_full'].get('mcc_budget', 'n/a')}/"
             f"{row['debug_full'].get('mcc_accepted_rounds', 'n/a')} |"
         )
+    print()
+    labels = sorted(
+        {
+            label
+            for row in rows
+            for label in row["debug_full"].get("setup_profile_s", {})
+            if label != "total"
+        }
+    )
+    print("| setup phase | " + " | ".join(r["instance"] for r in rows) + " |")
+    print("| --- | " + " | ".join("---:" for _ in rows) + " |")
+    for label in labels:
+        cells = []
+        for row in rows:
+            value = row["debug_full"].get("setup_profile_s", {}).get(label, 0.0)
+            cells.append(f"{value * 1e3:.2f} ms")
+        print("| " + label + " | " + " | ".join(cells) + " |")
+    totals = [
+        f"{row['debug_full'].get('setup_profile_s', {}).get('total', 0.0) * 1e3:.2f} ms"
+        for row in rows
+    ]
+    print("| total | " + " | ".join(totals) + " |")
 
 
 def main() -> int:
@@ -379,7 +425,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=Path("experiments/ipm_other_profile_results.json"))
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--instance", default="")
-    parser.add_argument("--mode", choices=("public", "direct"), default="direct")
+    parser.add_argument("--mode", choices=("public", "direct", "fingerprint"), default="direct")
     parser.add_argument("--max-iter", type=int, default=200)
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()

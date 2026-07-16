@@ -91,6 +91,33 @@ class TestNormalEquationsSolve:
 
         assert first == second
 
+    def test_symbolic_fingerprint_is_deterministic(self) -> None:
+        matrix = csr_matrix(
+            4,
+            6,
+            [0, 3, 6, 9, 12],
+            [0, 1, 4, 1, 2, 5, 0, 3, 5, 2, 3, 4],
+            [1.0, -2.0, 0.5, 3.0, 1.5, -1.0, 2.0, 4.0, -0.5, 2.5, 1.0, 1.25],
+        )
+
+        first = matrix.cholesky_symbolic_fingerprint()
+        second = matrix.cholesky_symbolic_fingerprint()
+
+        assert first == second
+        assert set(first) == {
+            "perm_hash",
+            "lp_hash",
+            "li_hash",
+            "snode_hash",
+            "m",
+            "nnzL",
+            "n_snodes",
+            "block_gate",
+            "auto_supernodal",
+        }
+        assert first["m"] == 4
+        assert first["nnzL"] >= 4
+
 
 class TestMinDegree:
     def test_chain_pattern(self) -> None:

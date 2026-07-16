@@ -2261,6 +2261,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
 static PyObject *CSRMatrix_solve_eq_box_dual_simplex(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
 static PyObject *CSRMatrix_supernode_sizes(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_supernode_symbolic_structure(CSRMatrixObject *self, PyObject *args);
+static PyObject *CSRMatrix_cholesky_symbolic_fingerprint(CSRMatrixObject *self, PyObject *args);
 
 static PyGetSetDef CSRMatrix_getset[] = {
     {"shape", (getter)CSRMatrix_shape, NULL, "matrix shape", NULL},
@@ -2280,6 +2281,7 @@ static PyMethodDef CSRMatrix_methods[] = {
     {"solve_eq_box_dual_simplex", (PyCFunction)CSRMatrix_solve_eq_box_dual_simplex, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with bounded-variable dual simplex."},
     {"supernode_sizes", (PyCFunction)CSRMatrix_supernode_sizes, METH_NOARGS, "Test hook: fundamental supernode sizes of the Cholesky factor of A A'."},
     {"supernode_symbolic_structure", (PyCFunction)CSRMatrix_supernode_symbolic_structure, METH_NOARGS, "Test hook: supernodal row lists and descendant update maps."},
+    {"cholesky_symbolic_fingerprint", (PyCFunction)CSRMatrix_cholesky_symbolic_fingerprint, METH_NOARGS, "Test hook: hashes of Cholesky symbolic structures."},
     {NULL}
 };
 
@@ -2376,6 +2378,141 @@ static int64_t heap_pop(MinHeap *h) {
         h->keys[i] = last;
     }
     return top;
+}
+
+typedef struct {
+    int32_t *keys;   /* var ids, lazy deletion */
+    Py_ssize_t len;
+    Py_ssize_t cap;
+} VarHeap;
+
+static int varheap_push(VarHeap *h, int32_t var) {
+    if (h->len == h->cap) {
+        Py_ssize_t cap = h->cap < 4 ? 4 : h->cap * 2;
+        int32_t *grown = realloc(h->keys, (size_t)cap * sizeof(int32_t));
+        if (grown == NULL) {
+            return -1;
+        }
+        h->keys = grown;
+        h->cap = cap;
+    }
+    Py_ssize_t i = h->len++;
+    while (i > 0) {
+        Py_ssize_t parent = (i - 1) / 2;
+        if (h->keys[parent] <= var) {
+            break;
+        }
+        h->keys[i] = h->keys[parent];
+        i = parent;
+    }
+    h->keys[i] = var;
+    return 0;
+}
+
+static int32_t varheap_pop(VarHeap *h) {
+    int32_t top = h->keys[0];
+    int32_t last = h->keys[--h->len];
+    Py_ssize_t i = 0;
+    for (;;) {
+        Py_ssize_t left = 2 * i + 1;
+        if (left >= h->len) {
+            break;
+        }
+        Py_ssize_t small = left;
+        if (left + 1 < h->len && h->keys[left + 1] < h->keys[left]) {
+            small = left + 1;
+        }
+        if (h->keys[small] >= last) {
+            break;
+        }
+        h->keys[i] = h->keys[small];
+        i = small;
+    }
+    if (h->len > 0) {
+        h->keys[i] = last;
+    }
+    return top;
+}
+
+typedef struct {
+    int use_heap;
+    MinHeap heap;
+    VarHeap *buckets;
+    int32_t bucket_cap;
+    int32_t min_degree;
+} OrderQueue;
+
+static int order_queue_init(OrderQueue *q, int32_t m) {
+    const char *e = getenv("LINPROGX_MD_QUEUE");
+    q->use_heap = (e != NULL && strcmp(e, "heap") == 0);
+    q->heap.keys = NULL;
+    q->heap.len = 0;
+    q->heap.cap = 0;
+    q->buckets = NULL;
+    q->bucket_cap = 0;
+    q->min_degree = 0;
+    if (q->use_heap) {
+        return 0;
+    }
+    q->bucket_cap = m > 0 ? m + 1 : 1;
+    q->buckets = calloc((size_t)q->bucket_cap, sizeof(VarHeap));
+    return q->buckets != NULL ? 0 : -1;
+}
+
+static int order_queue_ensure_bucket(OrderQueue *q, int32_t degree) {
+    if (degree < q->bucket_cap) {
+        return 0;
+    }
+    int32_t cap = q->bucket_cap;
+    while (degree >= cap) {
+        cap = cap < 16 ? 16 : cap * 2;
+    }
+    VarHeap *grown = realloc(q->buckets, (size_t)cap * sizeof(VarHeap));
+    if (grown == NULL) {
+        return -1;
+    }
+    memset(grown + q->bucket_cap, 0, (size_t)(cap - q->bucket_cap) * sizeof(VarHeap));
+    q->buckets = grown;
+    q->bucket_cap = cap;
+    return 0;
+}
+
+static int order_queue_push(OrderQueue *q, int32_t degree, int32_t var) {
+    if (q->use_heap) {
+        return heap_push(&q->heap, degree, var);
+    }
+    if (order_queue_ensure_bucket(q, degree) != 0) {
+        return -1;
+    }
+    if (degree < q->min_degree) {
+        q->min_degree = degree;
+    }
+    return varheap_push(&q->buckets[degree], var);
+}
+
+static int64_t order_queue_pop(OrderQueue *q) {
+    if (q->use_heap) {
+        return heap_pop(&q->heap);
+    }
+    while (q->min_degree < q->bucket_cap) {
+        VarHeap *bucket = &q->buckets[q->min_degree];
+        if (bucket->len > 0) {
+            int32_t var = varheap_pop(bucket);
+            return ((int64_t)q->min_degree << 32) | (int64_t)(uint32_t)var;
+        }
+        q->min_degree++;
+    }
+    return -1;
+}
+
+static void order_queue_free(OrderQueue *q) {
+    free(q->heap.keys);
+    if (q->buckets != NULL) {
+        for (int32_t i = 0; i < q->bucket_cap; i++) {
+            free(q->buckets[i].keys);
+        }
+        free(q->buckets);
+    }
 }
 
 /* Symbolic Cholesky cost of eliminating the symmetric pattern (Bp, Bi)
@@ -2480,12 +2617,41 @@ static int min_degree_impl(
     int32_t *elem_mark = NULL;
     int32_t *elem_residual = NULL;
     Py_ssize_t elem_mark_cap = 0;
+    uint64_t *elem_bits = NULL;
+    uint64_t *alive_bits = NULL;
+    uint64_t *nbhd_bits = NULL;
+    Py_ssize_t bit_words = (m + 63) / 64;
+    int use_bitsets = 0;
     int32_t *nbhd = calloc((size_t)m, sizeof(int32_t));
-    MinHeap heap = {NULL, 0, 0};
+    OrderQueue queue;
+    memset(&queue, 0, sizeof(queue));
     int32_t stamp = 0;
+    int md_profile = getenv("LINPROGX_MD_PROFILE") != NULL;
+    double md_t0 = md_profile ? linprogx_monotonic_seconds() : 0.0;
+    double md_adj_s = 0.0;
+    double md_pop_s = 0.0;
+    double md_neigh_s = 0.0;
+    double md_element_s = 0.0;
+    double md_compact_s = 0.0;
+    double md_degree_s = 0.0;
     if (adj == NULL || var_elems == NULL || alive == NULL || degree == NULL ||
-        mark == NULL || nbhd == NULL) {
+        mark == NULL || nbhd == NULL || order_queue_init(&queue, m) != 0) {
         goto cleanup;
+    }
+    {
+        const char *bits_env = getenv("LINPROGX_MD_BITSET");
+        use_bitsets = bits_env != NULL && atoi(bits_env) != 0 && m <= 5000;
+    }
+    if (use_bitsets) {
+        alive_bits = calloc((size_t)(bit_words > 0 ? bit_words : 1), sizeof(uint64_t));
+        nbhd_bits = calloc((size_t)(bit_words > 0 ? bit_words : 1), sizeof(uint64_t));
+        if (alive_bits == NULL || nbhd_bits == NULL) {
+            free(alive_bits);
+            free(nbhd_bits);
+            alive_bits = NULL;
+            nbhd_bits = NULL;
+            use_bitsets = 0;
+        }
     }
 
     /* Dense-node deferral (AMD-style): nodes whose degree far exceeds
@@ -2521,7 +2687,34 @@ static int min_degree_impl(
             n_deferred++;
         } else {
             alive[j] = 1;
+            if (use_bitsets) {
+                alive_bits[j >> 6] |= UINT64_C(1) << (j & 63);
+            }
         }
+    }
+    double md_phase = md_profile ? linprogx_monotonic_seconds() : 0.0;
+    for (int32_t j = 0; j < m; j++) {
+        if (deferred[j]) {
+            continue;
+        }
+        for (Py_ssize_t idx = indptr[j]; idx < indptr[j + 1]; idx++) {
+            int32_t i = (int32_t)indices[idx];
+            if (i > j && !deferred[i]) {
+                degree[i]++;
+                degree[j]++;
+            }
+        }
+    }
+    for (int32_t j = 0; j < m; j++) {
+        if (deferred[j] || degree[j] == 0) {
+            continue;
+        }
+        adj[j].data = malloc((size_t)degree[j] * sizeof(int32_t));
+        if (adj[j].data == NULL) {
+            goto cleanup;
+        }
+        adj[j].cap = degree[j];
+        adj[j].len = 0;
     }
     for (int32_t j = 0; j < m; j++) {
         if (deferred[j]) {
@@ -2536,20 +2729,29 @@ static int min_degree_impl(
             }
         }
     }
+    if (md_profile) {
+        md_adj_s += linprogx_monotonic_seconds() - md_phase;
+    }
     for (int32_t v = 0; v < m; v++) {
         if (deferred[v]) {
             continue;
         }
         degree[v] = adj[v].len;
-        if (heap_push(&heap, degree[v], v) != 0) {
+        if (order_queue_push(&queue, degree[v], v) != 0) {
             goto cleanup;
         }
     }
 
     for (int32_t count = 0; count < m - n_deferred; count++) {
         int32_t v = -1;
+        if (md_profile) {
+            md_phase = linprogx_monotonic_seconds();
+        }
         for (;;) {
-            int64_t key = heap_pop(&heap);
+            int64_t key = order_queue_pop(&queue);
+            if (key < 0) {
+                goto cleanup;
+            }
             int32_t deg = (int32_t)(key >> 32);
             int32_t cand = (int32_t)(uint32_t)(key & 0xffffffff);
             if (alive[cand] && degree[cand] == deg) {
@@ -2557,8 +2759,15 @@ static int min_degree_impl(
                 break;
             }
         }
+        if (md_profile) {
+            md_pop_s += linprogx_monotonic_seconds() - md_phase;
+            md_phase = linprogx_monotonic_seconds();
+        }
         order[count] = v;
         alive[v] = 0;
+        if (use_bitsets) {
+            alive_bits[v >> 6] &= ~(UINT64_C(1) << (v & 63));
+        }
 
         /* Neighborhood = alive adjacency of v plus members of v's elements. */
         stamp++;
@@ -2569,6 +2778,9 @@ static int min_degree_impl(
             int32_t u = adj[v].data[k];
             if (alive[u] && mark[u] != stamp) {
                 mark[u] = stamp;
+                if (use_bitsets) {
+                    nbhd_bits[u >> 6] |= UINT64_C(1) << (u & 63);
+                }
                 nbhd[nbhd_len++] = u;
             }
         }
@@ -2579,9 +2791,16 @@ static int min_degree_impl(
                 int32_t u = e->data[t];
                 if (alive[u] && mark[u] != stamp) {
                     mark[u] = stamp;
+                    if (use_bitsets) {
+                        nbhd_bits[u >> 6] |= UINT64_C(1) << (u & 63);
+                    }
                     nbhd[nbhd_len++] = u;
                 }
             }
+        }
+        if (md_profile) {
+            md_neigh_s += linprogx_monotonic_seconds() - md_phase;
+            md_phase = linprogx_monotonic_seconds();
         }
         int32_t nbhd_stamp = stamp;
         if (max_ops > 0 && ops > max_ops) {
@@ -2600,6 +2819,13 @@ static int min_degree_impl(
             status = -2;
             goto cleanup;
         }
+        for (int32_t k = 0; k < nbhd_len; k++) {
+            int32_t u = nbhd[k];
+            alive[u] = 0;
+            if (use_bitsets) {
+                alive_bits[u >> 6] &= ~(UINT64_C(1) << (u & 63));
+            }
+        }
 
         /* New element holding the neighborhood; absorb v's old elements. */
         if (elements_len == elements_cap) {
@@ -2610,6 +2836,16 @@ static int min_degree_impl(
             }
             memset(grown + elements_cap, 0, (size_t)(cap - elements_cap) * sizeof(IntVec));
             elements = grown;
+            if (use_bitsets) {
+                uint64_t *grown_bits =
+                    realloc(elem_bits, (size_t)cap * (size_t)bit_words * sizeof(uint64_t));
+                if (grown_bits == NULL) {
+                    goto cleanup;
+                }
+                memset(grown_bits + (size_t)elements_cap * (size_t)bit_words, 0,
+                       (size_t)(cap - elements_cap) * (size_t)bit_words * sizeof(uint64_t));
+                elem_bits = grown_bits;
+            }
             elements_cap = cap;
         }
         int32_t eid = (int32_t)elements_len++;
@@ -2631,10 +2867,25 @@ static int min_degree_impl(
             elem_mark_cap = elements_cap;
         }
         IntVec *new_elem = &elements[eid];
-        for (int32_t k = 0; k < nbhd_len; k++) {
-            if (intvec_push(new_elem, nbhd[k]) != 0) {
+        if (nbhd_len > 0) {
+            new_elem->data = malloc((size_t)nbhd_len * sizeof(int32_t));
+            if (new_elem->data == NULL) {
                 goto cleanup;
             }
+            memcpy(new_elem->data, nbhd, (size_t)nbhd_len * sizeof(int32_t));
+            new_elem->len = nbhd_len;
+            new_elem->cap = nbhd_len;
+            if (use_bitsets) {
+                uint64_t *bits = elem_bits + (size_t)eid * (size_t)bit_words;
+                for (int32_t k = 0; k < nbhd_len; k++) {
+                    int32_t u = nbhd[k];
+                    bits[u >> 6] |= UINT64_C(1) << (u & 63);
+                }
+            }
+        }
+        if (md_profile) {
+            md_element_s += linprogx_monotonic_seconds() - md_phase;
+            md_phase = linprogx_monotonic_seconds();
         }
         /* Mark absorbed element ids (they are emptied below). */
         stamp++;
@@ -2648,33 +2899,6 @@ static int min_degree_impl(
             elements[e].cap = 0;
         }
 
-        for (int32_t k = 0; k < nbhd_len; k++) {
-            int32_t u = nbhd[k];
-            /* Drop v and any neighbor covered by the new element. */
-            int32_t kept = 0;
-            for (int32_t t = 0; t < adj[u].len; t++) {
-                int32_t w = adj[u].data[t];
-                if (w == v || !alive[w] || mark[w] == nbhd_stamp) {
-                    continue;
-                }
-                adj[u].data[kept++] = w;
-            }
-            adj[u].len = kept;
-            /* Drop absorbed elements, add the new one. */
-            kept = 0;
-            for (int32_t t = 0; t < var_elems[u].len; t++) {
-                int32_t e = var_elems[u].data[t];
-                if (elem_mark[e] == absorb_stamp) {
-                    continue;
-                }
-                var_elems[u].data[kept++] = e;
-            }
-            var_elems[u].len = kept;
-            if (intvec_push(&var_elems[u], eid) != 0) {
-                goto cleanup;
-            }
-        }
-
         /* Approximate degree update in the spirit of approximate minimum
          * degree: d(u) <= |alive adjacency outside L_p| + |L_p \ {u}| +
          * sum over u's other elements e of |L_e \ L_p|, where each element
@@ -2686,33 +2910,76 @@ static int min_degree_impl(
             int32_t residual_stamp = stamp;
             for (int32_t k = 0; k < nbhd_len; k++) {
                 int32_t u = nbhd[k];
-                int32_t deg = adj[u].len + nbhd_len - 1;
-                ops += var_elems[u].len;
+                /* Drop v and any neighbor covered by the new element. */
+                int32_t kept = 0;
+                for (int32_t t = 0; t < adj[u].len; t++) {
+                    int32_t w = adj[u].data[t];
+                    if (w == v || !alive[w] || mark[w] == nbhd_stamp) {
+                        continue;
+                    }
+                    adj[u].data[kept++] = w;
+                }
+                adj[u].len = kept;
+
+                int32_t deg = kept + nbhd_len - 1;
+                int32_t elem_kept = 0;
                 for (int32_t t = 0; t < var_elems[u].len; t++) {
                     int32_t e = var_elems[u].data[t];
-                    if (e == eid) {
-                        continue; /* covered by the nbhd_len - 1 term */
+                    if (elem_mark[e] == absorb_stamp) {
+                        continue;
                     }
+                    var_elems[u].data[elem_kept++] = e;
                     if (elem_mark[e] != residual_stamp) {
                         elem_mark[e] = residual_stamp;
                         IntVec *ev = &elements[e];
                         int32_t live = 0;
                         ops += ev->len;
-                        for (int32_t t2 = 0; t2 < ev->len; t2++) {
-                            int32_t w = ev->data[t2];
-                            if (alive[w] && mark[w] != nbhd_stamp) {
-                                live++;
+                        if (use_bitsets && ev->len > (int32_t)(bit_words * 2)) {
+                            const uint64_t *bits =
+                                elem_bits + (size_t)e * (size_t)bit_words;
+                            for (Py_ssize_t bw = 0; bw < bit_words; bw++) {
+                                live += __builtin_popcountll(bits[bw] & alive_bits[bw]);
+                            }
+                        } else {
+                            for (int32_t t2 = 0; t2 < ev->len; t2++) {
+                                int32_t w = ev->data[t2];
+                                if (alive[w]) {
+                                    live++;
+                                }
                             }
                         }
                         elem_residual[e] = live;
                     }
                     deg += elem_residual[e];
                 }
+                var_elems[u].len = elem_kept;
+                ops += elem_kept + 1; /* +1 preserves the old count for eid */
+                if (intvec_push(&var_elems[u], eid) != 0) {
+                    goto cleanup;
+                }
                 degree[u] = deg;
-                if (heap_push(&heap, deg, u) != 0) {
+                if (order_queue_push(&queue, deg, u) != 0) {
                     goto cleanup;
                 }
             }
+        }
+        if (use_bitsets) {
+            for (int32_t k = 0; k < nbhd_len; k++) {
+                int32_t u = nbhd[k];
+                nbhd_bits[u >> 6] &= ~(UINT64_C(1) << (u & 63));
+            }
+        }
+        for (int32_t k = 0; k < nbhd_len; k++) {
+            int32_t u = nbhd[k];
+            alive[u] = 1;
+            if (use_bitsets) {
+                alive_bits[u >> 6] |= UINT64_C(1) << (u & 63);
+            }
+        }
+        if (md_profile) {
+            md_compact_s += linprogx_monotonic_seconds() - md_phase;
+            md_phase = linprogx_monotonic_seconds();
+            md_degree_s += linprogx_monotonic_seconds() - md_phase;
         }
         if (max_ops > 0 && ops > max_ops) {
             status = -2;
@@ -2731,6 +2998,13 @@ static int min_degree_impl(
     status = 0;
 
 cleanup:
+    if (md_profile) {
+        fprintf(stderr,
+                "min_degree_profile total=%.6f adj=%.6f pop=%.6f neigh=%.6f "
+                "element=%.6f compact=%.6f degree=%.6f status=%d\n",
+                linprogx_monotonic_seconds() - md_t0, md_adj_s, md_pop_s,
+                md_neigh_s, md_element_s, md_compact_s, md_degree_s, status);
+    }
     if (adj != NULL) {
         for (int32_t v = 0; v < m; v++) {
             free(adj[v].data);
@@ -2755,8 +3029,11 @@ cleanup:
     free(mark);
     free(elem_mark);
     free(elem_residual);
+    free(elem_bits);
+    free(alive_bits);
+    free(nbhd_bits);
     free(nbhd);
-    free(heap.keys);
+    order_queue_free(&queue);
     return status;
 }
 
@@ -3378,10 +3655,37 @@ static double setup_clock(void) {
     return (double)ts.tv_sec + 1e-9 * (double)ts.tv_nsec;
 }
 
+typedef struct {
+    int enabled;
+    double t0;
+    double phase;
+} CholSetupProfile;
+
+static void chol_setup_profile_mark(CholSetupProfile *profile, const char *label) {
+    if (!profile->enabled) {
+        return;
+    }
+    double now = setup_clock();
+    fprintf(stderr, "chol_setup_profile %-20s %.6f\n", label, now - profile->phase);
+    profile->phase = now;
+}
+
+static void chol_setup_profile_total(CholSetupProfile *profile) {
+    if (!profile->enabled) {
+        return;
+    }
+    double now = setup_clock();
+    fprintf(stderr, "chol_setup_profile %-20s %.6f\n", "total", now - profile->t0);
+    profile->phase = now;
+}
+
 static CholContext *chol_setup(
     CSRMatrixObject *A, double factor_flops_cap, int64_t md_ops_cap, int *too_dense) {
     int debug_setup = getenv("LINPROGX_CHOL_DEBUG") != NULL;
+    int profile_setup = getenv("LINPROGX_CHOL_SETUP_PROFILE") != NULL;
     double t_phase = debug_setup ? setup_clock() : 0.0;
+    double profile_t0 = profile_setup ? setup_clock() : 0.0;
+    CholSetupProfile setup_profile = {profile_setup, profile_t0, profile_t0};
 #define SETUP_MARK(label) \
     do { \
         if (debug_setup) { \
@@ -3403,6 +3707,7 @@ static CholContext *chol_setup(
         return NULL;
     }
     ctx->m = m;
+    chol_setup_profile_mark(&setup_profile, "alloc-context");
 
     /* --- dense-column detection: exclude clique-forming columns from the
      * sparse factor and treat them as a low-rank correction --- */
@@ -3448,6 +3753,7 @@ static CholContext *chol_setup(
             }
         }
     }
+    chol_setup_profile_mark(&setup_profile, "dense-cols-alloc");
 
     /* --- unpermuted ADA' pattern (full symmetric, CSC) --- */
     mark = calloc((size_t)m, sizeof(int32_t));
@@ -3497,6 +3803,7 @@ static CholContext *chol_setup(
             memset(mark, 0, (size_t)m * sizeof(int32_t));
         }
     }
+    chol_setup_profile_mark(&setup_profile, "pattern-build");
 
     /* --- minimum-degree ordering on that pattern --- */
     ctx->perm = calloc((size_t)m, sizeof(int32_t));
@@ -3513,9 +3820,11 @@ static CholContext *chol_setup(
         for (Py_ssize_t p = 0; p < Bp[m]; p++) {
             Bi_ss[p] = Bi[p];
         }
+        chol_setup_profile_mark(&setup_profile, "md-index-copy");
         SETUP_MARK("pre-md");
         int status = min_degree_impl(m, Bp_ss, Bi_ss, ctx->perm, md_ops_cap,
                                      factor_flops_cap > 0.0 ? 4.0 * factor_flops_cap : 0.0);
+        chol_setup_profile_mark(&setup_profile, "min-degree");
         SETUP_MARK("min-degree");
         free(Bi_ss);
         if (status == -2 && too_dense != NULL) {
@@ -3560,6 +3869,7 @@ static CholContext *chol_setup(
                     }
                 }
             }
+            chol_setup_profile_mark(&setup_profile, "order-eval");
             SETUP_MARK("order-eval");
         }
     }
@@ -3611,6 +3921,7 @@ static CholContext *chol_setup(
             qsort(ctx->Ci + base, (size_t)nz, sizeof(int32_t), cmp_int32);
         }
     }
+    chol_setup_profile_mark(&setup_profile, "permuted-pattern");
 
     /* --- assembly map --- */
     Py_ssize_t n_pairs = 0;
@@ -3733,6 +4044,7 @@ static CholContext *chol_setup(
         }
         ctx->diag_offset[k] = offset;
     }
+    chol_setup_profile_mark(&setup_profile, "assembly-map");
     SETUP_MARK("assembly-map");
 
     /* --- elimination tree (Liu's algorithm with path compression) --- */
@@ -3756,6 +4068,7 @@ static CholContext *chol_setup(
             }
         }
     }
+    chol_setup_profile_mark(&setup_profile, "etree");
 
     /* --- symbolic: column counts via ereach, then fixed Li --- */
     ctx->estack = calloc((size_t)m, sizeof(int32_t));
@@ -3778,6 +4091,7 @@ static CholContext *chol_setup(
             count[ctx->epattern[s]]++;
         }
     }
+    chol_setup_profile_mark(&setup_profile, "colcounts");
     SETUP_MARK("colcounts");
     {
         double flops = 0.0;
@@ -3838,6 +4152,7 @@ static CholContext *chol_setup(
         }
         ctx->rpat_ptr[k + 1] = at;
     }
+    chol_setup_profile_mark(&setup_profile, "li-rpat-build");
     memset(ctx->emark, 0, (size_t)m * sizeof(int32_t));
     if (getenv("LINPROGX_CHOL_DEBUG") != NULL) {
         /* per-refactor uplook anatomy: pattern entries = one division +
@@ -3859,6 +4174,7 @@ static CholContext *chol_setup(
                 (Py_ssize_t)ctx->rpat_ptr[m], prefix_entries,
                 prefix_entries > 0 ? prefix_pairs / (double)prefix_entries : 0.0);
     }
+    chol_setup_profile_mark(&setup_profile, "rpat-debug-census");
     SETUP_MARK("li-fill");
 
     /* --- fundamental supernode partition. Column j joins the supernode
@@ -3973,6 +4289,7 @@ static CholContext *chol_setup(
             }
         }
     }
+    chol_setup_profile_mark(&setup_profile, "snode-partition");
     /* Cheap structural quantities for the supernodal-vs-row-wise routing
      * model, computed directly from Lp/Li before (and without) the full
      * lazy symbolic build: the panel footprint (total resident panel
@@ -4033,6 +4350,7 @@ static CholContext *chol_setup(
                     ctx->snode_narrow_flops, ctx->snode_wide_flops);
         }
     }
+    chol_setup_profile_mark(&setup_profile, "snode-census");
     SETUP_MARK("supernodes");
 
     /* --- dense-tail selection by a two-speed cost model. Splitting the
@@ -4110,6 +4428,7 @@ static CholContext *chol_setup(
             }
         }
     }
+    chol_setup_profile_mark(&setup_profile, "tail-select");
 
     /* --- Block-ability census: how many uplook scatter pairs would be
      * saved by streaming consecutive rows as a block. Pure structural
@@ -4254,6 +4573,7 @@ static CholContext *chol_setup(
         free(intouch);
         free(touched);
     }
+    chol_setup_profile_mark(&setup_profile, "block-census");
 
     free(head);
     free(mark);
@@ -4262,6 +4582,8 @@ static CholContext *chol_setup(
     free(Bp);
     free(Bi);
     free(ancestor);
+    chol_setup_profile_mark(&setup_profile, "cleanup");
+    chol_setup_profile_total(&setup_profile);
     return ctx;
 
 fail:
@@ -5627,6 +5949,51 @@ static void chol_solve(CholContext *ctx, const double *rhs, double *out) {
             out[i] -= w[i] * scale;
         }
     }
+}
+
+static uint64_t hash_bytes_fnv1a(const void *data, size_t nbytes) {
+    const unsigned char *p = (const unsigned char *)data;
+    uint64_t h = UINT64_C(1469598103934665603);
+    for (size_t i = 0; i < nbytes; i++) {
+        h ^= (uint64_t)p[i];
+        h *= UINT64_C(1099511628211);
+    }
+    h ^= (uint64_t)nbytes;
+    h *= UINT64_C(1099511628211);
+    return h;
+}
+
+static PyObject *CSRMatrix_cholesky_symbolic_fingerprint(CSRMatrixObject *self, PyObject *args) {
+    (void)args;
+    if (self->rows > INT32_MAX) {
+        PyErr_SetString(PyExc_ValueError, "matrix too large for the 32-bit factorization");
+        return NULL;
+    }
+    int too_dense = 0;
+    CholContext *ctx = chol_setup(self, 0.0, 1000000000000LL, &too_dense);
+    if (ctx == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "chol_setup failed");
+        return NULL;
+    }
+    uint64_t perm_hash = hash_bytes_fnv1a(ctx->perm, (size_t)ctx->m * sizeof(int32_t));
+    uint64_t lp_hash = hash_bytes_fnv1a(ctx->Lp, ((size_t)ctx->m + 1) * sizeof(Py_ssize_t));
+    uint64_t li_hash = hash_bytes_fnv1a(ctx->Li, (size_t)ctx->Lp[ctx->m] * sizeof(int32_t));
+    uint64_t snode_hash =
+        hash_bytes_fnv1a(ctx->snode_start, ((size_t)ctx->n_snodes + 1) * sizeof(int32_t));
+    int auto_supernodal = chol_auto_supernodal(ctx);
+    PyObject *result = Py_BuildValue(
+        "{s:K,s:K,s:K,s:K,s:i,s:n,s:i,s:i,s:i}",
+        "perm_hash", (unsigned long long)perm_hash,
+        "lp_hash", (unsigned long long)lp_hash,
+        "li_hash", (unsigned long long)li_hash,
+        "snode_hash", (unsigned long long)snode_hash,
+        "m", ctx->m,
+        "nnzL", ctx->Lp[ctx->m],
+        "n_snodes", ctx->n_snodes,
+        "block_gate", ctx->block_gate,
+        "auto_supernodal", auto_supernodal);
+    chol_free(ctx);
+    return result;
 }
 
 /* Test hook: fundamental supernode sizes of chol(A A' + I)'s factor. */
