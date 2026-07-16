@@ -1645,3 +1645,11 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   LOSSES: greenbea 1.89, woodw 1.60, cre_d 1.46, 80bau3b 1.36,
   pds_10 1.31, maros_r7 1.19, + three parity coin-flips. Session:
   12W -> 15W with the whole ladder under 2x.
+
+- LOOP-MISC AXIS CLOSED (2026-07-16): attribution shipped
+  (residual matvecs + best-iterate copies + RHS assembly are the
+  slice; mu-safeguard confirmed gated); best exact lever (tall-only
+  serial matvec) is worth only 1-5% — target missed, honestly scored.
+  The parity trio's fate rides on re-certification + the native-V2
+  presolve port (NOW COMMISSIONED: cre_d pass cost ~0.4s of 2.15s
+  wall = its clearest single lever; cre_b/maros/greenbea share it).
