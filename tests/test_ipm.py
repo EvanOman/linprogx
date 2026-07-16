@@ -674,6 +674,29 @@ def test_ipm_threads_kwarg_bit_identical() -> None:
     assert r1["y"] == r4["y"]
 
 
+def test_ipm_loop_profile_is_env_gated(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    A = scipy.sparse.csr_matrix([[1.0, 1.0]])
+    matrix = from_scipy_sparse(A)
+    c = [1.0, 2.0]
+    b = [1.0]
+    lo = [0.0, 0.0]
+    hi = [float("inf"), float("inf")]
+
+    matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=2, tol=1e-9)
+    captured = capfd.readouterr()
+    assert "ipm loop profile:" not in captured.err
+
+    monkeypatch.setenv("LINPROGX_IPM_LOOP_PROFILE", "1")
+    matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=2, tol=1e-9)
+    captured = capfd.readouterr()
+    assert "ipm loop profile:" in captured.err
+    assert "resid_matvec=" in captured.err
+    assert "best_copy=" in captured.err
+    assert "mu_safeguard=" in captured.err
+
+
 def test_ipm_blas_and_floored_tail_agree_on_residual() -> None:
     # the BLAS dpotrf tail and the floored hand-kernel tail factor the
     # same system; both must reach the same objective regardless of

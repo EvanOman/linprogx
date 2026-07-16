@@ -22,7 +22,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_INSTANCES = (
     "lp_degen3",
     "lp_cre_a",
@@ -179,6 +178,7 @@ MCC_RE = re.compile(r"ipm mcc: budget=([0-9-]+) accepted_rounds=([0-9-]+)")
 SAFE_RE = re.compile(r"ipm safeguard: shrinks=([0-9-]+) breaks=([0-9-]+)")
 LAG_RE = re.compile(r"ipm lag: attempts=([0-9-]+) accepts=([0-9-]+) redos=([0-9-]+)")
 TIMERS_RE = re.compile(r"ipm timers: refactor=([0-9.]+)s newton_solves=([0-9.]+)s")
+LOOP_PROFILE_RE = re.compile(r"ipm loop profile:\s+(.*)")
 EXIT_RE = re.compile(
     r"ipm exit: status=([a-z_]+) best_gap=([0-9.e+-]+|inf) best_pres=([0-9.e+-]+|inf) "
     r"best_raw=([0-9.e+-]+|inf) best_dres=([0-9.e+-]+|inf) best_mu=([0-9.e+-]+|inf)"
@@ -213,6 +213,15 @@ def parse_stderr(stderr: str) -> dict[str, Any]:
     if m := TIMERS_RE.search(stderr):
         parsed["timer_refactor_s"] = float(m.group(1))
         parsed["timer_newton_s"] = float(m.group(2))
+    if m := LOOP_PROFILE_RE.search(stderr):
+        loop_profile: dict[str, int | float] = {}
+        for part in m.group(1).split():
+            key, value = part.split("=", 1)
+            if key in {"iterations", "best_updates", "safeguard_checks"}:
+                loop_profile[key] = int(value)
+            else:
+                loop_profile[key] = float(value)
+        parsed["loop_profile_s"] = loop_profile
     if m := EXIT_RE.search(stderr):
         parsed["exit_status"] = m.group(1)
         parsed["best_gap"] = float(m.group(2))
@@ -238,8 +247,15 @@ def parse_stderr(stderr: str) -> dict[str, Any]:
     return parsed
 
 
-def invoke(instance: str, mode: str, data_dir: Path, *, max_iter: int = 200,
-           debug: bool = False, env: dict[str, str] | None = None) -> tuple[dict[str, Any], str]:
+def invoke(
+    instance: str,
+    mode: str,
+    data_dir: Path,
+    *,
+    max_iter: int = 200,
+    debug: bool = False,
+    env: dict[str, str] | None = None,
+) -> tuple[dict[str, Any], str]:
     cmd = [
         sys.executable,
         __file__,
@@ -275,6 +291,7 @@ def instance_profile(instance: str, data_dir: Path, runs: int) -> dict[str, Any]
     debug_env = {
         "LINPROGX_CHOL_DEBUG": "1",
         "LINPROGX_CHOL_SETUP_PROFILE": "1",
+        "LINPROGX_IPM_LOOP_PROFILE": "1",
         "LINPROGX_REFAC_PROFILE": "1",
     }
     debug_full, debug_full_stderr = invoke(
@@ -375,6 +392,41 @@ def write_tables(rows: list[dict[str, Any]]) -> None:
             cells.append(f"{value * 1e6:.0f} us ({(value / wall * 100.0 if wall else 0):.1f}%)")
         print("| " + label + " | " + " | ".join(cells) + " |")
     print()
+    loop_labels = [
+        ("residual matvecs", "resid_matvec"),
+        ("residual scans/norms", "resid_scan"),
+        ("best-iterate gap scan", "best_gap"),
+        ("best-iterate copies", "best_copy"),
+        ("certificate/exit gates", "exit_gate"),
+        ("H/D assembly", "hessian"),
+        ("Mehrotra RHS assembly", "rhs"),
+        ("sigma computation", "sigma"),
+        ("step ratio tests", "step_ratio"),
+        ("Gondzio corrector misc", "mcc"),
+        ("mu safeguard", "mu_safeguard"),
+        ("iterate update", "update"),
+    ]
+    print("| loop component | " + " | ".join(r["instance"] for r in rows) + " |")
+    print("| --- | " + " | ".join("---:" for _ in rows) + " |")
+    for label, key in loop_labels:
+        cells = []
+        for row in rows:
+            value = row["debug_full"].get("loop_profile_s", {}).get(key, 0.0)
+            wall = row["direct_wall_s"]
+            cells.append(
+                f"{float(value) * 1e6:.0f} us ({(float(value) / wall * 100.0 if wall else 0):.1f}%)"
+            )
+        print("| " + label + " | " + " | ".join(cells) + " |")
+    print(
+        "| profile counts | "
+        + " | ".join(
+            f"best={row['debug_full'].get('loop_profile_s', {}).get('best_updates', 0)}, "
+            f"safe={row['debug_full'].get('loop_profile_s', {}).get('safeguard_checks', 0)}"
+            for row in rows
+        )
+        + " |"
+    )
+    print()
     print("| instance | wall | top non-refactor/Newton component | evidence |")
     print("| --- | ---: | --- | --- |")
     for row in rows:
@@ -422,7 +474,9 @@ def main() -> int:
     parser.add_argument("--data-dir", type=Path, default=Path("/tmp/lpsuite"))
     parser.add_argument("--instances", default=",".join(DEFAULT_INSTANCES))
     parser.add_argument("--runs", type=int, default=3)
-    parser.add_argument("--out", type=Path, default=Path("experiments/ipm_other_profile_results.json"))
+    parser.add_argument(
+        "--out", type=Path, default=Path("experiments/ipm_other_profile_results.json")
+    )
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--instance", default="")
     parser.add_argument("--mode", choices=("public", "direct", "fingerprint"), default="direct")
@@ -432,7 +486,9 @@ def main() -> int:
     if args.worker:
         return worker(args)
 
-    instances = [name if name.startswith("lp_") else f"lp_{name}" for name in args.instances.split(",")]
+    instances = [
+        name if name.startswith("lp_") else f"lp_{name}" for name in args.instances.split(",")
+    ]
     rows = [instance_profile(instance, args.data_dir, args.runs) for instance in instances]
     args.out.write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n")
     write_tables(rows)

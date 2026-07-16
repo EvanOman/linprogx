@@ -412,8 +412,36 @@ static void matvec_job(void *vctx, int tid, int nthreads) {
     }
 }
 
+static Py_ssize_t matvec_serial_nnz_limit(void) {
+    static Py_ssize_t limit = -1;
+    if (limit < 0) {
+        const char *env = getenv("LINPROGX_MATVEC_SERIAL_NNZ");
+        limit = env != NULL ? (Py_ssize_t)atoll(env) : 100000;
+        if (limit < 0) {
+            limit = 0;
+        }
+    }
+    return limit;
+}
+
+static int matvec_use_serial(const ScaledOp *op) {
+    Py_ssize_t nnz = op->row_start[op->rows];
+    Py_ssize_t limit = matvec_serial_nnz_limit();
+    if (nnz > limit) {
+        return 0;
+    }
+    /* The serial path saves pool wakeup cost on tall-but-still-small
+     * operators. Other shapes keep the threaded path: wide sparse transpose
+     * matvecs can lose more to serial column walks than they save in wakeup. */
+    return op->rows >= 10000;
+}
+
 static void scaled_op_matvec(const ScaledOp *op, const double *restrict x, double *restrict out) {
     MatvecJob ctx = {op, x, out};
+    if (matvec_use_serial(op)) {
+        matvec_job(&ctx, 0, 1);
+        return;
+    }
     pool_run(matvec_job, &ctx);
 }
 
@@ -439,6 +467,10 @@ static void transpose_matvec_job(void *vctx, int tid, int nthreads) {
 
 static void scaled_op_transpose_matvec(const ScaledOp *op, const double *restrict y, double *restrict out) {
     MatvecJob ctx = {op, (const double *)y, out};
+    if (matvec_use_serial(op)) {
+        transpose_matvec_job(&ctx, 0, 1);
+        return;
+    }
     pool_run(transpose_matvec_job, &ctx);
 }
 
@@ -7166,6 +7198,21 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     g_refac_profile = (getenv("LINPROGX_REFAC_PROFILE") != NULL);
     g_refac_assemble = g_refac_uplook = g_refac_dpotrf = g_refac_copyback = 0.0;
     g_solve_tail = 0.0;
+    int loop_profile = (getenv("LINPROGX_IPM_LOOP_PROFILE") != NULL);
+    double lp_resid_matvec = 0.0;
+    double lp_resid_scan = 0.0;
+    double lp_best_gap = 0.0;
+    double lp_best_copy = 0.0;
+    double lp_exit_gate = 0.0;
+    double lp_hessian = 0.0;
+    double lp_rhs = 0.0;
+    double lp_sigma = 0.0;
+    double lp_step_ratio = 0.0;
+    double lp_mcc = 0.0;
+    double lp_mu_safeguard = 0.0;
+    double lp_update = 0.0;
+    Py_ssize_t lp_best_updates = 0;
+    Py_ssize_t lp_safeguard_checks = 0;
 
     int max_mcc = 2;
     /* 3.0 recalibrated 2026-07-09 after this session's factor cheapening
@@ -7360,11 +7407,27 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
         iterations = iter;
         /* slacks, residuals, and the barrier parameter */
+        double lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
         scaled_op_matvec(&op, x, ax);
+        if (loop_profile) {
+            double lp_now = linprogx_monotonic_seconds();
+            lp_resid_matvec += lp_now - lp_phase;
+            lp_phase = lp_now;
+        }
         for (Py_ssize_t i = 0; i < m; i++) {
             rp[i] = b[i] - ax[i];
         }
+        if (loop_profile) {
+            double lp_now = linprogx_monotonic_seconds();
+            lp_resid_scan += lp_now - lp_phase;
+            lp_phase = lp_now;
+        }
         scaled_op_transpose_matvec(&op, y, aty);
+        if (loop_profile) {
+            double lp_now = linprogx_monotonic_seconds();
+            lp_resid_matvec += lp_now - lp_phase;
+            lp_phase = lp_now;
+        }
         double mu_sum = 0.0;
         for (Py_ssize_t j = 0; j < n; j++) {
             unsigned char kind = bound_kind[j];
@@ -7391,6 +7454,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         pres = l2_norm(rp, m) / b_norm;
         raw_pres = ipm_raw_primal_residual(rp, row_scale, m);
         dres = l2_norm(rd, n) / c_norm;
+        if (loop_profile) {
+            lp_resid_scan += linprogx_monotonic_seconds() - lp_phase;
+        }
         if (debug) {
             fprintf(stderr,
                     "ipm iter=%zd mu=%.3e pres=%.3e raw=%.3e dres=%.3e ap=%.2e ad=%.2e\n",
@@ -7431,6 +7497,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 double pobj = 0.0;
                 double dobj = 0.0;
                 int certifiable = 1;
+                lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
                 for (Py_ssize_t j = 0; j < n; j++) {
                     unsigned char kind = bound_kind[j];
                     double r = c[j] - aty[j];
@@ -7464,8 +7531,16 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 } else {
                     best_gap = INFINITY;
                 }
+                if (loop_profile) {
+                    lp_best_gap += linprogx_monotonic_seconds() - lp_phase;
+                    lp_phase = linprogx_monotonic_seconds();
+                }
                 memcpy(x_best, x, (size_t)n * sizeof(double));
                 memcpy(y_best, y, (size_t)m * sizeof(double));
+                if (loop_profile) {
+                    lp_best_copy += linprogx_monotonic_seconds() - lp_phase;
+                    lp_best_updates++;
+                }
             }
         }
         if (raw_pres <= feas_tol && pres < tol && dres < tol && mu < 10.0 * tol) {
@@ -7487,6 +7562,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 double pobj = 0.0;
                 double dobj = 0.0;
                 int certifiable = 1;
+                lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
                 for (Py_ssize_t j = 0; j < n; j++) {
                     unsigned char kind = bound_kind[j];
                     double r = c[j] - aty[j];
@@ -7538,6 +7614,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                         accepted = 1;
                     }
                 }
+                if (loop_profile) {
+                    lp_exit_gate += linprogx_monotonic_seconds() - lp_phase;
+                }
                 if (accepted) {
                     break;
                 }
@@ -7553,6 +7632,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         if ((m >= 100 || n >= 100) && raw_pres > feas_tol && raw_pres <= 1e-1 &&
             pres <= 1e-6 && dres <= 5e-6) {
             double cleaned_gap = 0.0;
+            lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
             int certified = ipm_lagrangian_gap(c, b, lo, hi, bound_kind, m, n, x, y,
                                                 aty, &cleaned_gap) &&
                             cleaned_gap <= 1e-5;
@@ -7606,8 +7686,14 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                     memcpy(x_best, x, (size_t)n * sizeof(double));
                     memcpy(y_best, y, (size_t)m * sizeof(double));
                     status = "optimal";
+                    if (loop_profile) {
+                        lp_exit_gate += linprogx_monotonic_seconds() - lp_phase;
+                    }
                     break;
                 }
+            }
+            if (loop_profile) {
+                lp_exit_gate += linprogx_monotonic_seconds() - lp_phase;
             }
         }
         if ((m >= 100 || n >= 100) && raw_pres <= feas_tol &&
@@ -7619,11 +7705,15 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
              * barrier tolerances when the Lagrangian bound can already close. */
             last_cleanup_attempt = iter;
             double cleaned_gap = 0.0;
+            lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
             if (ipm_lagrangian_gap(c, b, lo, hi, bound_kind, m, n, x, y, aty,
                                    &cleaned_gap) &&
                 cleaned_gap <= 1e-5) {
                 best_gap = cleaned_gap;
                 status = "optimal";
+                if (loop_profile) {
+                    lp_exit_gate += linprogx_monotonic_seconds() - lp_phase;
+                }
                 break;
             }
             if (ipm_dual_polish(&op, chol, c, b, lo, hi, bound_kind, m, n, x, D,
@@ -7632,6 +7722,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 memcpy(aty, dx, (size_t)n * sizeof(double));
                 best_gap = cleaned_gap;
                 status = "optimal";
+                if (loop_profile) {
+                    lp_exit_gate += linprogx_monotonic_seconds() - lp_phase;
+                }
                 break;
             }
             if (last_ap < 1e-6 || last_ad < 1e-6) {
@@ -7641,8 +7734,14 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                                     &cleaned_gap)) {
                     best_gap = cleaned_gap;
                     status = "optimal";
+                    if (loop_profile) {
+                        lp_exit_gate += linprogx_monotonic_seconds() - lp_phase;
+                    }
                     break;
                 }
+            }
+            if (loop_profile) {
+                lp_exit_gate += linprogx_monotonic_seconds() - lp_phase;
             }
         }
 
@@ -7667,6 +7766,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         if (delta_it < delta_floor) {
             delta_it = delta_floor;
         }
+        lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
         for (Py_ssize_t j = 0; j < n; j++) {
             unsigned char kind = bound_kind[j];
             double h;
@@ -7687,6 +7787,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             }
             H[j] = h;
             D[j] = 1.0 / h;
+        }
+        if (loop_profile) {
+            lp_hessian += linprogx_monotonic_seconds() - lp_phase;
         }
         /* Hardened inexact Newton (LINPROGX_IPM_LAG=1, default off): skip
          * alternate refactors in the mid-phase mu window and take steps on
@@ -7728,9 +7831,13 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         t_refactor += linprogx_monotonic_seconds() - t_phase;
 
         /* affine direction */
+        lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
         for (Py_ssize_t j = 0; j < n; j++) {
             rcl[j] = (bound_kind[j] & 1) ? -sl[j] * zl[j] : 0.0;
             rcu[j] = (bound_kind[j] & 2) ? -su[j] * zu[j] : 0.0;
+        }
+        if (loop_profile) {
+            lp_rhs += linprogx_monotonic_seconds() - lp_phase;
         }
         t_phase = linprogx_monotonic_seconds();
         ipm_newton_solve(&nw, rp, rd, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
@@ -7767,6 +7874,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
 
         double ap_aff = 1.0;
         double ad_aff = 1.0;
+        lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
         for (Py_ssize_t j = 0; j < n; j++) {
             unsigned char kind = bound_kind[j];
             if ((kind & 1) && dx_a[j] < 0.0) {
@@ -7794,6 +7902,11 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 }
             }
         }
+        if (loop_profile) {
+            double lp_now = linprogx_monotonic_seconds();
+            lp_step_ratio += lp_now - lp_phase;
+            lp_phase = lp_now;
+        }
         double mu_aff_sum = 0.0;
         for (Py_ssize_t j = 0; j < n; j++) {
             unsigned char kind = bound_kind[j];
@@ -7807,9 +7920,13 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         double mu_aff = mu_aff_sum / (double)n_comp;
         double ratio = mu > 0.0 ? mu_aff / mu : 0.1;
         double sigma = ratio * ratio * ratio;
+        if (loop_profile) {
+            lp_sigma += linprogx_monotonic_seconds() - lp_phase;
+        }
 
         /* corrector */
         double coupling = ap_aff * ad_aff;
+        lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
         for (Py_ssize_t j = 0; j < n; j++) {
             unsigned char kind = bound_kind[j];
             rcl[j] = (kind & 1)
@@ -7818,6 +7935,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             rcu[j] = (kind & 2)
                 ? sigma * mu - su[j] * zu[j] + coupling * dx_a[j] * dzu_a[j]
                 : 0.0;
+        }
+        if (loop_profile) {
+            lp_rhs += linprogx_monotonic_seconds() - lp_phase;
         }
         if (debug) {
             struct timespec ts0, ts1;
@@ -7832,6 +7952,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
 
         double ap = 1.0;
         double ad = 1.0;
+        lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
         for (Py_ssize_t j = 0; j < n; j++) {
             unsigned char kind = bound_kind[j];
             if ((kind & 1) && dx[j] < 0.0) {
@@ -7859,6 +7980,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 }
             }
         }
+        if (loop_profile) {
+            lp_step_ratio += linprogx_monotonic_seconds() - lp_phase;
+        }
         /* Gondzio multiple centrality correctors: extend the trial step,
          * project the trial complementarity products back into the
          * [beta_min, beta_max] * sigma * mu hypercube, and add the pure
@@ -7869,6 +7993,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
          * deterministic structure-based budget computed before the loop. */
         Py_ssize_t mcc_before = mcc_accepted;
         for (int mcc = 0; mcc < mcc_budget; mcc++) {
+            lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
             if (ap >= 0.9 && ad >= 0.9) {
                 break;
             }
@@ -7899,6 +8024,10 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                 rcl[j] = tl;
                 rcu[j] = tu;
             }
+            if (loop_profile) {
+                lp_mcc += linprogx_monotonic_seconds() - lp_phase;
+                lp_phase = linprogx_monotonic_seconds();
+            }
             if (debug) {
                 struct timespec ts0, ts1;
                 clock_gettime(CLOCK_MONOTONIC, &ts0);
@@ -7908,6 +8037,10 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                             1e-9 * (double)(ts1.tv_nsec - ts0.tv_nsec);
             } else {
                 ipm_newton_solve(&nw, zero_m, zero_n, rcl, rcu, dy_a, dx_a, dzl_a, dzu_a);
+            }
+            if (loop_profile) {
+                lp_mcc += linprogx_monotonic_seconds() - lp_phase;
+                lp_phase = linprogx_monotonic_seconds();
             }
             double ap_c = 1.0;
             double ad_c = 1.0;
@@ -7962,6 +8095,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                     need = headroom_gain;
                 }
                 if (ap_c < ap || ad_c < ad || ap_c + ad_c < ap + ad + need) {
+                    if (loop_profile) {
+                        lp_mcc += linprogx_monotonic_seconds() - lp_phase;
+                    }
                     break;
                 }
             }
@@ -7976,6 +8112,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             ap = ap_c;
             ad = ad_c;
             mcc_accepted++;
+            if (loop_profile) {
+                lp_mcc += linprogx_monotonic_seconds() - lp_phase;
+            }
         }
 
         /* Trajectory trace (LINPROGX_IPM_TRACE=1): one line per iteration
@@ -8025,6 +8164,10 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
          * Two global constants (1e-7 window, 10x blowup); no per-problem
          * tuning; deterministic arithmetic only. */
         if (mu < 1e-7) {
+            lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
+            if (loop_profile) {
+                lp_safeguard_checks++;
+            }
             double pre_mu = mu;
             int halvings = 0;
             double post_mu;
@@ -8058,6 +8201,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                             "ap=%.3e ad=%.3e\n",
                             (Py_ssize_t)iter, pre_mu, post_mu, ap, ad);
                 }
+                if (loop_profile) {
+                    lp_mu_safeguard += linprogx_monotonic_seconds() - lp_phase;
+                }
                 break;
             }
             if (halvings > 0) {
@@ -8069,9 +8215,13 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
                             (Py_ssize_t)iter, halvings, pre_mu, post_mu, ap, ad);
                 }
             }
+            if (loop_profile) {
+                lp_mu_safeguard += linprogx_monotonic_seconds() - lp_phase;
+            }
         }
         last_ap = ap;
         last_ad = ad;
+        lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
         for (Py_ssize_t j = 0; j < n; j++) {
             if (bound_kind[j] == 4) {
                 continue;
@@ -8086,6 +8236,9 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         }
         for (Py_ssize_t i = 0; i < m; i++) {
             y[i] += ad * dy[i];
+        }
+        if (loop_profile) {
+            lp_update += linprogx_monotonic_seconds() - lp_phase;
         }
     }
     /* On non-optimal exit, fall back to the best iterate seen: late Newton
@@ -8230,6 +8383,18 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         fprintf(stderr, "ipm exit: status=%s best_gap=%.3e best_pres=%.3e "
                 "best_raw=%.3e best_dres=%.3e best_mu=%.3e\n",
                 status, best_gap, best_pres, best_raw_pres, best_dres, best_mu);
+    }
+    if (loop_profile) {
+        fprintf(stderr,
+                "ipm loop profile: iterations=%zd resid_matvec=%.6f "
+                "resid_scan=%.6f best_gap=%.6f best_copy=%.6f "
+                "exit_gate=%.6f hessian=%.6f rhs=%.6f sigma=%.6f "
+                "step_ratio=%.6f mcc=%.6f mu_safeguard=%.6f update=%.6f "
+                "best_updates=%zd safeguard_checks=%zd\n",
+                iterations, lp_resid_matvec, lp_resid_scan, lp_best_gap,
+                lp_best_copy, lp_exit_gate, lp_hessian, lp_rhs, lp_sigma,
+                lp_step_ratio, lp_mcc, lp_mu_safeguard, lp_update,
+                lp_best_updates, lp_safeguard_checks);
     }
     if (g_refac_profile) {
         fprintf(stderr, "refac phases: assemble=%.3f uplook=%.3f "
