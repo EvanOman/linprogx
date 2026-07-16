@@ -1,0 +1,160 @@
+{
+  "ref": "82cd31d060d25a020a63aecee1b0bb8f3fcabbe4",
+  "mode": "paired",
+  "use_snapshot": true,
+  "machine_info": {
+    "cpu_model": "unknown",
+    "cpu_count": 20,
+    "mem_total_kb": 924076164,
+    "loadavg": "0.00 0.00 0.00 0/0 0",
+    "modal_region": "us-west2",
+    "modal_cloud": "CLOUD_PROVIDER_GCP",
+    "modal_task_id": "ta-01KXMS97VPP177DY60VZH2PXQR"
+  },
+  "load_checks": {
+    "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+    "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+  },
+  "paired": {
+    "lp_cre_d": {
+      "pairs": 9,
+      "lx": {
+        "median": 1.573110088,
+        "min": 1.4063068530000038,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 1.273953860999999,
+        "min": 1.2210557149999985,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.2348250090981916,
+      "ratio_min": 1.1517139109414065,
+      "verdict": "highs_faster"
+    },
+    "lp_maros_r7": {
+      "pairs": 9,
+      "lx": {
+        "median": 0.6490557340000009,
+        "min": 0.6224761439999895,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.8854998599999959,
+        "min": 0.8691731189999956,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 9,
+      "ratio_median": 0.7329823112563834,
+      "ratio_min": 0.7161704962944128,
+      "verdict": "lx_faster"
+    },
+    "lp_woodw": {
+      "pairs": 9,
+      "lx": {
+        "median": 0.16885854000000222,
+        "min": 0.14808543200000202,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.1652632310000115,
+        "min": 0.1537993809999989,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 6,
+      "ratio_median": 1.0217550448350514,
+      "ratio_min": 0.9628480364300236,
+      "verdict": "highs_faster"
+    },
+    "lp_80bau3b": {
+      "pairs": 9,
+      "lx": {
+        "median": 0.34019251499999825,
+        "min": 0.2933857289999935,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.2776577129999964,
+        "min": 0.2646083820000058,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.2252226359006373,
+      "ratio_min": 1.108754480045107,
+      "verdict": "highs_faster"
+    },
+    "lp_cre_a": {
+      "pairs": 9,
+      "lx": {
+        "median": 0.15081525900001225,
+        "min": 0.1433476229999826,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.168254931000007,
+        "min": 0.15795087999998714,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 6,
+      "ratio_median": 0.8963497123303089,
+      "ratio_min": 0.9075455799929337,
+      "verdict": "lx_faster"
+    },
+    "lp_degen3": {
+      "pairs": 9,
+      "lx": {
+        "median": 0.24396447399999488,
+        "min": 0.23172489500001348,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.24567828499999678,
+        "min": 0.2383029840000006,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 4,
+      "ratio_median": 0.9930241657295763,
+      "ratio_min": 0.9723961114981795,
+      "verdict": "lx_faster"
+    },
+    "lp_stocfor3": {
+      "pairs": 9,
+      "lx": {
+        "median": 0.6512772009999992,
+        "min": 0.6290106860000151,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.7625265899999931,
+        "min": 0.7113164840000081,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 9,
+      "ratio_median": 0.8541042496629594,
+      "ratio_min": 0.8842908890046303,
+      "verdict": "lx_faster"
+    }
+  }
+}

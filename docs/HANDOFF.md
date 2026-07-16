@@ -1653,3 +1653,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   The parity trio's fate rides on re-certification + the native-V2
   presolve port (NOW COMMISSIONED: cre_d pass cost ~0.4s of 2.15s
   wall = its clearest single lever; cre_b/maros/greenbea share it).
+
+- POST-NATIVE-PORT PAIRED CERTIFICATION (2026-07-16, us-west, 9
+  pairs): THREE MORE FLIPS — maros_r7 WIN 9/9 (0.733), stocfor3 WIN
+  9/9 (0.854), cre_a WIN 6/9 (0.896). At parity: degen3 4/9 (0.993),
+  woodw 6/9 wins at ratio 1.022 (was 1.60 — the native port's
+  biggest mover). Narrowed: cre_d 1.235 (0/9), 80bau3b 1.225 (0/9).
+  MEASUREMENT DOCTRINE UPDATE: the same-region single-shot suite
+  contradicts certified paired verdicts (osa cells 1.38 vs 9/9-paired
+  0.79-0.93; pds_20 0.81 vs 1.36 across two us-west runs) — pinned
+  regions still mix host generations; SINGLE-SHOT IS NOT
+  SCOREBOARD-GRADE at sub-40% margins. Paired-only board from here.
+  PAIRED-CERTIFIED TALLY (paired verdicts + coverage): ~17W with
+  degen3/woodw at coin-flip parity and greenbea/pds_10/pds_20/cre_d/
+  80bau3b the remaining paired losses (pds pair needs paired
+  re-measurement — host bandwidth sensitivity).
