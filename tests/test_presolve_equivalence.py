@@ -8,6 +8,7 @@ arithmetic, same reductions, same order).
 
 from __future__ import annotations
 
+import os
 import random
 from pathlib import Path
 
@@ -31,7 +32,7 @@ from linprogx.presolve import (
     presolve_eq_box,
     presolve_matrix,
 )
-from linprogx.sparse import SparseSolver, csr_matrix
+from linprogx.sparse import SparseSolver, csr_matrix, from_scipy_sparse
 from linprogx.types import Status
 
 INF = float("inf")
@@ -76,6 +77,11 @@ def _assert_results_identical(
         assert c_result is None, f"Python returned None but C did not{msg}"
         return
     assert c_result is not None, f"Python returned a result but C returned None{msg}"
+
+    if c_result._matrix is not None and not c_result.indptr:
+        c_result.indptr, c_result.indices, c_result.data = c_result._matrix.to_components()
+    if py_result._matrix is not None and not py_result.indptr:
+        py_result.indptr, py_result.indices, py_result.data = py_result._matrix.to_components()
 
     assert c_result.rows == py_result.rows, f"rows mismatch{msg}"
     assert c_result.cols == py_result.cols, f"cols mismatch{msg}"
@@ -129,6 +135,15 @@ def _assert_results_identical(
             assert cr.kept_lo == pr.kept_lo, f"record {k} kept_lo mismatch{msg}"
             assert cr.kept_hi == pr.kept_hi, f"record {k} kept_hi mismatch{msg}"
 
+    samples = [
+        [0.0] * c_result.cols,
+        [min(max(0.25 * (j + 1), c_result.lo[j]), c_result.hi[j]) for j in range(c_result.cols)],
+    ]
+    for sample_id, x_reduced in enumerate(samples):
+        assert postsolve_x(x_reduced, c_result) == postsolve_x(x_reduced, py_result), (
+            f"postsolve_x mismatch for sample {sample_id}{msg}"
+        )
+
 
 def _run_both(
     rows: int,
@@ -172,6 +187,45 @@ def _run_both(
         max_fill=max_fill,
     )
     _assert_results_identical(c_result, py_result, label=label)
+
+
+def _run_matrix_native_and_python(
+    matrix,
+    b: list[float],
+    c: list[float],
+    lo: list[float],
+    hi: list[float],
+    *,
+    max_fill: int = 5,
+    label: str = "",
+) -> PresolveResult | None:
+    """Run native-enabled and native-disabled matrix routes and compare them."""
+    native = presolve_matrix(
+        matrix,
+        list(b),
+        list(c),
+        list(lo),
+        list(hi),
+        max_fill=max_fill,
+    )
+    old_native = os.environ.get("LINPROGX_PRESOLVE_V2_NATIVE")
+    os.environ["LINPROGX_PRESOLVE_V2_NATIVE"] = "0"
+    try:
+        reference = presolve_matrix(
+            matrix,
+            list(b),
+            list(c),
+            list(lo),
+            list(hi),
+            max_fill=max_fill,
+        )
+    finally:
+        if old_native is None:
+            os.environ.pop("LINPROGX_PRESOLVE_V2_NATIVE", None)
+        else:
+            os.environ["LINPROGX_PRESOLVE_V2_NATIVE"] = old_native
+    _assert_results_identical(native, reference, label=label)
+    return native
 
 
 def test_v2_python_pass_requires_eight_percent_projected_reduction() -> None:
@@ -277,6 +331,57 @@ def test_matrix_v2_uses_direct_high_yield_path_and_postsolves_exactly(
         )
         <= 1e-12
     )
+
+
+def test_matrix_v2_high_yield_uses_native_reducer_and_matches_python(
+    v2_enabled: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("LINPROGX_PRESOLVE_V2_NATIVE", raising=False)
+    matrix = csr_matrix(
+        3,
+        6,
+        [0, 3, 5, 8],
+        [0, 1, 3, 1, 2, 3, 4, 5],
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    )
+
+    reduction = _run_matrix_native_and_python(
+        matrix,
+        [6.0, 3.0, 7.0],
+        [10.0, 5.0, 1.0, 2.0, 3.0, 4.0],
+        [0.0, 1.0, 1.0, 2.0, 0.0, 0.0],
+        [INF, 2.0, 2.0, 3.0, 10.0, 10.0],
+        label="high-yield-native",
+    )
+
+    assert reduction is not None
+    assert reduction._matrix is not None
+    assert reduction._reduction_counts["column_singletons"] == 1
+    assert reduction._reduction_counts["doubletons"] == 1
+
+
+def test_matrix_v2_native_can_be_disabled(
+    v2_enabled: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LINPROGX_PRESOLVE_V2_NATIVE", "0")
+    matrix = csr_matrix(
+        3,
+        6,
+        [0, 3, 5, 8],
+        [0, 1, 3, 1, 2, 3, 4, 5],
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    )
+
+    reduction = presolve_matrix(
+        matrix,
+        [6.0, 3.0, 7.0],
+        [10.0, 5.0, 1.0, 2.0, 3.0, 4.0],
+        [0.0, 1.0, 1.0, 2.0, 0.0, 0.0],
+        [INF, 2.0, 2.0, 3.0, 10.0, 10.0],
+    )
+
+    assert reduction is not None
+    assert reduction._matrix is None
 
 
 def test_implied_free_column_singletons_chain_and_postsolve_exactly(v2_enabled: None) -> None:
@@ -514,6 +619,46 @@ def test_random_small_implied_free_reductions_match_scipy_linprog(v2_enabled: No
         )
 
 
+def test_matrix_v2_random_equivalence_against_python(v2_enabled: None) -> None:
+    rng = random.Random(20260716)
+    for case in range(16):
+        rows = 4 + case % 4
+        cols = 7 + case % 5
+        indptr = [0]
+        indices: list[int] = []
+        data: list[float] = []
+        for i in range(rows):
+            if i % 3 == 0 and cols >= 4:
+                row_cols = [0, 1 + (i % (cols - 1)), cols - 1]
+            elif i % 3 == 1:
+                row_cols = sorted(rng.sample(range(cols), k=min(cols, 2)))
+            else:
+                row_cols = sorted(rng.sample(range(cols), k=min(cols, 4)))
+            for j in row_cols:
+                indices.append(j)
+                data.append(rng.choice([-1.0, 1.0]) * rng.randint(1, 3))
+            indptr.append(len(indices))
+        lo = [0.0] * cols
+        hi = [10.0] * cols
+        lo[0] = 0.0
+        hi[0] = INF
+        if cols > 3:
+            lo[2] = 1.0
+            hi[2] = 1.0
+        c_vec = [rng.uniform(-2.0, 2.0) for _ in range(cols)]
+        b_vec = [rng.uniform(-5.0, 5.0) for _ in range(rows)]
+        matrix = csr_matrix(rows, cols, indptr, indices, data)
+
+        _run_matrix_native_and_python(
+            matrix,
+            b_vec,
+            c_vec,
+            lo,
+            hi,
+            label=f"random-native-{case}",
+        )
+
+
 # ---------------------------------------------------------------------------
 # Fixture test: lp_cre_a.mat
 # ---------------------------------------------------------------------------
@@ -536,6 +681,56 @@ def test_cre_a_fixture_equivalence() -> None:
     data = A.data.tolist()
 
     _run_both(rows, cols, indptr, indices, data, b, c_vec, lo, hi, label="cre_a")
+
+
+@pytest.mark.skipif(not Path("/tmp/lpsuite").exists(), reason="/tmp/lpsuite fixtures unavailable")
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "lp_80bau3b",
+        "lp_cre_a",
+        "lp_cre_b",
+        "lp_cre_d",
+        "lp_d2q06c",
+        "lp_degen3",
+        "lp_fit2p",
+        "lp_greenbea",
+        "lp_ken_07",
+        "lp_ken_11",
+        "lp_ken_13",
+        "lp_ken_18",
+        "lp_maros_r7",
+        "lp_osa_14",
+        "lp_osa_30",
+        "lp_osa_60",
+        "lp_pds_10",
+        "lp_pds_20",
+        "lp_pilot87",
+        "lp_qap12",
+        "lp_qap15",
+        "lp_stocfor3",
+        "lp_truss",
+        "lp_woodw",
+    ],
+)
+def test_lpnetlib_fixture_native_v2_bit_equivalence(fixture_name: str, v2_enabled: None) -> None:
+    path = Path("/tmp/lpsuite") / f"{fixture_name}.mat"
+    raw = loadmat(path)["Problem"][0, 0]
+    aux = raw["aux"][0, 0]
+    A = raw["A"].tocsr().astype(float)
+    b = raw["b"].ravel().astype(float).tolist()
+    c_vec = aux["c"].ravel().astype(float).tolist()
+    lo = aux["lo"].ravel().astype(float).tolist()
+    hi = aux["hi"].ravel().astype(float).tolist()
+
+    _run_matrix_native_and_python(
+        from_scipy_sparse(A),
+        b,
+        c_vec,
+        lo,
+        hi,
+        label=fixture_name,
+    )
 
 
 # ---------------------------------------------------------------------------

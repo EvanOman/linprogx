@@ -41,10 +41,12 @@ _V2_MIN_REDUCTION_FRACTION = 0.08
 try:
     _csparse: object = importlib.import_module("linprogx._csparse")
     _c_presolve = _csparse.presolve_eq_box  # type: ignore[attr-defined]
+    _c_presolve_v2 = _csparse.presolve_v2  # type: ignore[attr-defined]
     _c_v2_candidates = _csparse.presolve_v2_candidates  # type: ignore[attr-defined]
 except (ImportError, AttributeError):  # pragma: no cover - source tree before extension build
     _csparse = None
     _c_presolve = None
+    _c_presolve_v2 = None
     _c_v2_candidates = None
 
 _SSZ = struct.calcsize("n")  # sizeof(Py_ssize_t)
@@ -107,7 +109,7 @@ class _DuplicateColumn:
 
 
 class _LazyRecordList:
-    """Lazily materializes _FixedVar/_Doubleton from raw C tuples.
+    """Lazily materializes presolve records from raw C tuples.
 
     Defers the dataclass construction overhead to postsolve time,
     keeping the presolve call itself fast.
@@ -115,7 +117,7 @@ class _LazyRecordList:
 
     __slots__ = ("_raw",)
 
-    def __init__(self, raw: list[tuple[int, ...]]) -> None:
+    def __init__(self, raw: list[tuple[Any, ...]]) -> None:
         self._raw = raw
 
     def __len__(self) -> int:
@@ -127,6 +129,10 @@ class _LazyRecordList:
                 yield _FixedVar(rec[1], rec[2])
             elif rec[0] == 1:
                 yield _Doubleton(rec[1], rec[2], rec[3], rec[4], rec[5])
+            elif rec[0] == 2:
+                yield _ColumnSingleton(rec[1], rec[2], rec[3], tuple(rec[4]))
+            elif rec[0] == 3:
+                yield _DuplicateColumn(rec[1], rec[2], rec[3], rec[4], rec[5], rec[6])
             else:
                 raise ValueError(f"unknown presolve record tag {rec[0]}")
 
@@ -136,6 +142,10 @@ class _LazyRecordList:
                 yield _FixedVar(rec[1], rec[2])
             elif rec[0] == 1:
                 yield _Doubleton(rec[1], rec[2], rec[3], rec[4], rec[5])
+            elif rec[0] == 2:
+                yield _ColumnSingleton(rec[1], rec[2], rec[3], tuple(rec[4]))
+            elif rec[0] == 3:
+                yield _DuplicateColumn(rec[1], rec[2], rec[3], rec[4], rec[5], rec[6])
             else:
                 raise ValueError(f"unknown presolve record tag {rec[0]}")
 
@@ -179,6 +189,10 @@ class PresolveResult:
 
 def _v2_enabled() -> bool:
     return os.environ.get("LINPROGX_PRESOLVE_V2", "1") != "0"
+
+
+def _v2_native_enabled() -> bool:
+    return os.environ.get("LINPROGX_PRESOLVE_V2_NATIVE", "1") != "0"
 
 
 def _v2_worth_python_pass(
@@ -650,26 +664,56 @@ def presolve_eq_box(
 
 
 def _result_from_c(raw: tuple[Any, ...]) -> PresolveResult:
-    (
-        r_matrix,
-        r_b_b,
-        r_c_b,
-        r_lo_b,
-        r_hi_b,
-        r_offset,
-        r_removed_rows,
-        r_removed_cols,
-        r_records_raw,
-        r_active_cols_b,
-        r_original_cols,
-    ) = raw
+    if len(raw) == 12:
+        (
+            r_matrix,
+            r_b_b,
+            r_c_b,
+            r_lo_b,
+            r_hi_b,
+            r_offset,
+            r_removed_rows,
+            r_removed_cols,
+            r_records_raw,
+            r_active_cols_b,
+            r_original_cols,
+            r_counts_raw,
+        ) = raw
+    else:
+        (
+            r_matrix,
+            r_b_b,
+            r_c_b,
+            r_lo_b,
+            r_hi_b,
+            r_offset,
+            r_removed_rows,
+            r_removed_cols,
+            r_records_raw,
+            r_active_cols_b,
+            r_original_cols,
+        ) = raw
+        r_counts_raw = None
     r_shape = r_matrix.shape
     reduction_counts = _empty_reduction_counts()
-    for record in r_records_raw:
-        if record[0] == 0:
-            reduction_counts["singleton_rows"] += 1
-        elif record[0] == 1:
-            reduction_counts["doubletons"] += 1
+    if r_counts_raw is not None:
+        (
+            reduction_counts["fixed_columns"],
+            reduction_counts["empty_columns"],
+            reduction_counts["forcing_rows"],
+            reduction_counts["forcing_columns"],
+            reduction_counts["empty_rows"],
+            reduction_counts["singleton_rows"],
+            reduction_counts["column_singletons"],
+            reduction_counts["doubletons"],
+            reduction_counts["duplicate_columns"],
+        ) = r_counts_raw
+    else:
+        for record in r_records_raw:
+            if record[0] == 0:
+                reduction_counts["singleton_rows"] += 1
+            elif record[0] == 1:
+                reduction_counts["doubletons"] += 1
     return PresolveResult(
         rows=r_shape[0],
         cols=r_shape[1],
@@ -725,6 +769,16 @@ def presolve_matrix(
             )
             rows_val, cols_val = matrix.shape  # type: ignore[attr-defined]
             if _v2_worth_python_pass(candidate_rows, candidate_cols, rows_val, cols_val):
+                if _v2_native_enabled() and _c_presolve_v2 is not None:
+                    raw = _c_presolve_v2(
+                        matrix,
+                        packed_b,
+                        packed_c,
+                        packed_lo,
+                        packed_hi,
+                        max_fill,
+                    )
+                    return None if raw is None else _result_from_c(raw)
                 indptr, indices, data = matrix.to_components()  # type: ignore[attr-defined]
                 return _presolve_eq_box_python(
                     rows_val,

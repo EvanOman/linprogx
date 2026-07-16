@@ -15404,12 +15404,23 @@ typedef struct {
 
 #define PS_REC_FIXED    0
 #define PS_REC_DOUBLETON 1
+#define PS_REC_COLUMN_SINGLETON 2
+#define PS_REC_DUPLICATE_COLUMN 3
+
+typedef struct { Py_ssize_t col; double val; } PSTerm;
 
 typedef struct {
     int         type;
     Py_ssize_t  idx1, idx2;
-    double      v1, v2, v3;
+    double      v1, v2, v3, v4;
+    PSTerm     *terms;
+    Py_ssize_t  n_terms;
 } PSRec;
+
+typedef struct {
+    Py_ssize_t row;
+    double val;
+} PSDupPair;
 
 /* ---- PSRow helpers ---------------------------------------------------- */
 
@@ -15553,6 +15564,82 @@ static inline int ps_near_bound(double value, double bound) {
     return fabs(value - bound) <= PRESOLVE_BOUND_EPS * scale;
 }
 
+static inline int ps_same_bound(double lo, double hi) {
+    return isfinite(lo) && isfinite(hi) && ps_near_bound(lo, hi);
+}
+
+static inline double ps_choose_empty_column_value(
+    Py_ssize_t j, const double *c, const double *lo, const double *hi,
+    int *ok
+) {
+    *ok = 1;
+    if (c[j] > PRESOLVE_DROP_EPS) {
+        if (isfinite(lo[j])) return lo[j];
+        *ok = 0; return 0.0;
+    }
+    if (c[j] < -PRESOLVE_DROP_EPS) {
+        if (isfinite(hi[j])) return hi[j];
+        *ok = 0; return 0.0;
+    }
+    if ((!isfinite(lo[j]) || lo[j] <= 0.0) &&
+        (!isfinite(hi[j]) || hi[j] >= 0.0))
+        return 0.0;
+    if (isfinite(lo[j])) return lo[j];
+    if (isfinite(hi[j])) return hi[j];
+    return 0.0;
+}
+
+static void ps_activity_bounds(
+    const PSTerm *terms, Py_ssize_t n_terms,
+    const double *lo, const double *hi,
+    double *lower, double *upper
+) {
+    int lower_unbounded = 0, upper_unbounded = 0;
+    double lo_sum = 0.0, hi_sum = 0.0;
+    for (Py_ssize_t t = 0; t < n_terms; t++) {
+        Py_ssize_t j = terms[t].col;
+        double coef = terms[t].val;
+        if (coef >= 0.0) {
+            if (isfinite(lo[j])) lo_sum += coef * lo[j]; else lower_unbounded = 1;
+            if (isfinite(hi[j])) hi_sum += coef * hi[j]; else upper_unbounded = 1;
+        } else {
+            if (isfinite(hi[j])) lo_sum += coef * hi[j]; else lower_unbounded = 1;
+            if (isfinite(lo[j])) hi_sum += coef * lo[j]; else upper_unbounded = 1;
+        }
+    }
+    *lower = lower_unbounded ? -INFINITY : lo_sum;
+    *upper = upper_unbounded ? INFINITY : hi_sum;
+}
+
+static int ps_column_bounds_are_redundant(
+    Py_ssize_t j, double coef, double rhs,
+    const PSTerm *terms, Py_ssize_t n_terms,
+    const double *lo, const double *hi
+) {
+    if (!isfinite(lo[j]) && !isfinite(hi[j])) return 1;
+    double rest_lo, rest_hi;
+    ps_activity_bounds(terms, n_terms, lo, hi, &rest_lo, &rest_hi);
+    double implied_lo, implied_hi;
+    if (coef > 0.0) {
+        implied_lo = !isfinite(rest_hi) ? -INFINITY : (rhs - rest_hi) / coef;
+        implied_hi = !isfinite(rest_lo) ? INFINITY : (rhs - rest_lo) / coef;
+    } else {
+        implied_lo = !isfinite(rest_lo) ? -INFINITY : (rhs - rest_lo) / coef;
+        implied_hi = !isfinite(rest_hi) ? INFINITY : (rhs - rest_hi) / coef;
+    }
+    if (isfinite(lo[j])) {
+        if (!isfinite(implied_lo)) return 0;
+        if (implied_lo < lo[j] - PRESOLVE_BOUND_EPS * fmax(1.0, fmax(fabs(lo[j]), fabs(implied_lo))))
+            return 0;
+    }
+    if (isfinite(hi[j])) {
+        if (!isfinite(implied_hi)) return 0;
+        if (implied_hi > hi[j] + PRESOLVE_BOUND_EPS * fmax(1.0, fmax(fabs(hi[j]), fabs(implied_hi))))
+            return 0;
+    }
+    return 1;
+}
+
 static inline uint64_t ps_hash_mix(uint64_t hash, uint64_t value) {
     hash ^= value + UINT64_C(0x9e3779b97f4a7c15) + (hash << 6) + (hash >> 2);
     return hash;
@@ -15562,6 +15649,135 @@ static inline uint64_t ps_double_key(double value) {
     uint64_t bits = 0;
     if (value != 0.0) memcpy(&bits, &value, sizeof(bits));
     return bits;
+}
+
+static int ps_dup_pair_cmp(const void *a, const void *b) {
+    Py_ssize_t ra = ((const PSDupPair *)a)->row;
+    Py_ssize_t rb = ((const PSDupPair *)b)->row;
+    return (ra > rb) - (ra < rb);
+}
+
+static int ps_col_signature(
+    Py_ssize_t j,
+    PSRow *row_data,
+    PSColSet *col_sets,
+    const char *rem_row,
+    PSDupPair *buf,
+    Py_ssize_t *n_out,
+    uint64_t *hash_out
+) {
+    Py_ssize_t n = 0;
+    for (Py_ssize_t k = 0; k < col_sets[j].count; k++) {
+        Py_ssize_t i = col_sets[j].items[k];
+        if (rem_row[i]) continue;
+        PSEntry *entry = ps_row_find(&row_data[i], j);
+        if (!entry) continue;
+        buf[n].row = i;
+        buf[n].val = entry->val;
+        n++;
+    }
+    if (n > 1) qsort(buf, (size_t)n, sizeof(PSDupPair), ps_dup_pair_cmp);
+    uint64_t hash = ps_hash_mix(UINT64_C(0xcbf29ce484222325), (uint64_t)n);
+    for (Py_ssize_t k = 0; k < n; k++) {
+        hash = ps_hash_mix(hash, (uint64_t)buf[k].row);
+        hash = ps_hash_mix(hash, ps_double_key(buf[k].val));
+    }
+    *n_out = n;
+    *hash_out = hash;
+    return 0;
+}
+
+static int ps_signatures_equal(
+    Py_ssize_t a, Py_ssize_t b,
+    PSRow *row_data,
+    PSColSet *col_sets,
+    const char *rem_row,
+    PSDupPair *buf_a,
+    PSDupPair *buf_b
+) {
+    Py_ssize_t na = 0, nb = 0;
+    uint64_t ha = 0, hb = 0;
+    ps_col_signature(a, row_data, col_sets, rem_row, buf_a, &na, &ha);
+    ps_col_signature(b, row_data, col_sets, rem_row, buf_b, &nb, &hb);
+    if (na != nb) return 0;
+    for (Py_ssize_t k = 0; k < na; k++) {
+        if (buf_a[k].row != buf_b[k].row || buf_a[k].val != buf_b[k].val)
+            return 0;
+    }
+    return 1;
+}
+
+static int ps_rec_reserve(PSRec **recs, Py_ssize_t *cap, Py_ssize_t need) {
+    if (need <= *cap) return 0;
+    Py_ssize_t nc = *cap > 0 ? *cap : 32;
+    while (nc < need) nc *= 2;
+    PSRec *t = (PSRec *)realloc(*recs, (size_t)nc * sizeof(PSRec));
+    if (!t) return -1;
+    *recs = t;
+    *cap = nc;
+    return 0;
+}
+
+static int ps_rec_fixed(
+    PSRec **recs, Py_ssize_t *n, Py_ssize_t *cap,
+    Py_ssize_t col, double value
+) {
+    if (ps_rec_reserve(recs, cap, *n + 1) != 0) return -1;
+    PSRec *r = &(*recs)[(*n)++];
+    r->type = PS_REC_FIXED;
+    r->idx1 = col; r->idx2 = 0;
+    r->v1 = value; r->v2 = r->v3 = r->v4 = 0.0;
+    r->terms = NULL; r->n_terms = 0;
+    return 0;
+}
+
+static int ps_rec_doubleton(
+    PSRec **recs, Py_ssize_t *n, Py_ssize_t *cap,
+    Py_ssize_t eliminated, Py_ssize_t kept,
+    double coef_eliminated, double coef_kept, double rhs
+) {
+    if (ps_rec_reserve(recs, cap, *n + 1) != 0) return -1;
+    PSRec *r = &(*recs)[(*n)++];
+    r->type = PS_REC_DOUBLETON;
+    r->idx1 = eliminated; r->idx2 = kept;
+    r->v1 = coef_eliminated; r->v2 = coef_kept; r->v3 = rhs; r->v4 = 0.0;
+    r->terms = NULL; r->n_terms = 0;
+    return 0;
+}
+
+static int ps_rec_column_singleton(
+    PSRec **recs, Py_ssize_t *n, Py_ssize_t *cap,
+    Py_ssize_t eliminated, double coef_eliminated, double rhs,
+    const PSTerm *terms, Py_ssize_t n_terms
+) {
+    if (ps_rec_reserve(recs, cap, *n + 1) != 0) return -1;
+    PSTerm *copy = NULL;
+    if (n_terms > 0) {
+        copy = (PSTerm *)malloc((size_t)n_terms * sizeof(PSTerm));
+        if (!copy) return -1;
+        memcpy(copy, terms, (size_t)n_terms * sizeof(PSTerm));
+    }
+    PSRec *r = &(*recs)[(*n)++];
+    r->type = PS_REC_COLUMN_SINGLETON;
+    r->idx1 = eliminated; r->idx2 = 0;
+    r->v1 = coef_eliminated; r->v2 = rhs; r->v3 = r->v4 = 0.0;
+    r->terms = copy; r->n_terms = n_terms;
+    return 0;
+}
+
+static int ps_rec_duplicate(
+    PSRec **recs, Py_ssize_t *n, Py_ssize_t *cap,
+    Py_ssize_t removed, Py_ssize_t kept,
+    double removed_lo, double removed_hi,
+    double kept_lo, double kept_hi
+) {
+    if (ps_rec_reserve(recs, cap, *n + 1) != 0) return -1;
+    PSRec *r = &(*recs)[(*n)++];
+    r->type = PS_REC_DUPLICATE_COLUMN;
+    r->idx1 = removed; r->idx2 = kept;
+    r->v1 = removed_lo; r->v2 = removed_hi; r->v3 = kept_lo; r->v4 = kept_hi;
+    r->terms = NULL; r->n_terms = 0;
+    return 0;
 }
 
 /* Count rows and columns that the Python V2 pass can remove immediately.
@@ -15805,8 +16021,7 @@ static PyObject *csparse_presolve_v2_candidates(PyObject *self, PyObject *args) 
 
 /* ---- the main presolve function --------------------------------------- */
 
-static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
-    (void)self;
+static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
     PyObject *matrix_obj;
     const char *b_buf, *c_buf, *lo_buf, *hi_buf;
     Py_ssize_t b_len, c_len, lo_len, hi_len;
@@ -15857,6 +16072,12 @@ static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
     PSRec       *recs        = NULL;
     Py_ssize_t   recs_n = 0, recs_cap = 0;
     Py_ssize_t  *snap_buf    = NULL;   /* col_rows snapshot  */
+    Py_ssize_t  *fix_cols    = NULL;
+    double      *fix_vals    = NULL;
+    PSTerm      *term_buf    = NULL;
+    PSDupPair   *dup_buf_a   = NULL, *dup_buf_b = NULL;
+    Py_ssize_t  *dup_hash_cols = NULL;
+    uint64_t    *dup_hash_values = NULL;
     Py_ssize_t  *act_rows    = NULL;
     Py_ssize_t  *act_cols    = NULL;
     Py_ssize_t  *col_map     = NULL;
@@ -15891,7 +16112,7 @@ static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
         if (ps_row_init(&row_data[i], cap) != 0) goto oom;
         for (Py_ssize_t off = indptr[i]; off < indptr[i + 1]; off++) {
             if (fabs(data_in[off]) > PRESOLVE_DROP_EPS) {
-                if (ps_row_append(&row_data[i], indices[off], data_in[off]) != 0)
+                if (ps_row_set(&row_data[i], indices[off], data_in[off]) != 0)
                     goto oom;
             }
         }
@@ -15922,17 +16143,139 @@ static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
 
     double obj_off = 0.0;
     Py_ssize_t n_rem_rows = 0, n_rem_cols = 0;
+    Py_ssize_t count_fixed_columns = 0;
+    Py_ssize_t count_empty_columns = 0;
+    Py_ssize_t count_forcing_rows = 0;
+    Py_ssize_t count_forcing_columns = 0;
+    Py_ssize_t count_empty_rows = 0;
+    Py_ssize_t count_singleton_rows = 0;
+    Py_ssize_t count_column_singletons = 0;
+    Py_ssize_t count_doubletons = 0;
+    Py_ssize_t count_duplicate_columns = 0;
+
+    if (enable_v2) {
+        fix_cols = (Py_ssize_t *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(Py_ssize_t));
+        fix_vals = (double *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(double));
+        term_buf = (PSTerm *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(PSTerm));
+        dup_buf_a = (PSDupPair *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(PSDupPair));
+        dup_buf_b = (PSDupPair *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(PSDupPair));
+        if (!fix_cols || !fix_vals || !term_buf || !dup_buf_a || !dup_buf_b) goto oom;
+    }
 
     /* ==== fixpoint loop ================================================ */
     int changed = 1;
     while (changed) {
         changed = 0;
 
+        if (enable_v2) {
+            /* ---- V2 pass: fixed columns -------------------------------- */
+            for (Py_ssize_t j = 0; j < cols; j++) {
+                if (rem_col[j] || !ps_same_bound(lo_arr[j], hi_arr[j])) continue;
+                double value = lo_arr[j];
+                if (ps_rec_fixed(&recs, &recs_n, &recs_cap, j, value) != 0) goto oom;
+                obj_off += c_arr[j] * value;
+
+                Py_ssize_t sn = col_sets[j].count;
+                memcpy(snap_buf, col_sets[j].items, (size_t)sn * sizeof(Py_ssize_t));
+                for (Py_ssize_t s = 0; s < sn; s++) {
+                    Py_ssize_t i = snap_buf[s];
+                    if (rem_row[i]) continue;
+                    PSEntry *ep = ps_row_find(&row_data[i], j);
+                    if (!ep) continue;
+                    b_arr[i] -= ep->val * value;
+                    ps_row_delete(&row_data[i], j);
+                    ps_colset_discard(&col_sets[j], i);
+                }
+                rem_col[j] = 1; n_rem_cols++;
+                ps_colset_clear(&col_sets[j]);
+                count_fixed_columns++;
+                changed = 1;
+            }
+
+            /* ---- V2 pass: empty columns / dual fixing ------------------ */
+            for (Py_ssize_t j = 0; j < cols; j++) {
+                if (rem_col[j] || col_sets[j].count != 0) continue;
+                int ok = 0;
+                double value = ps_choose_empty_column_value(j, c_arr, lo_arr, hi_arr, &ok);
+                if (!ok) continue;
+                if (ps_rec_fixed(&recs, &recs_n, &recs_cap, j, value) != 0) goto oom;
+                obj_off += c_arr[j] * value;
+                rem_col[j] = 1; n_rem_cols++;
+                count_empty_columns++;
+                changed = 1;
+            }
+
+            /* ---- V2 pass: forcing rows --------------------------------- */
+            for (Py_ssize_t i = 0; i < rows; i++) {
+                if (rem_row[i] || row_data[i].count == 0) continue;
+                Py_ssize_t nt = 0;
+                for (Py_ssize_t k = 0; k < row_data[i].total; k++) {
+                    if (row_data[i].entries[k].col >= 0) {
+                        term_buf[nt].col = row_data[i].entries[k].col;
+                        term_buf[nt].val = row_data[i].entries[k].val;
+                        nt++;
+                    }
+                }
+                double lower, upper;
+                ps_activity_bounds(term_buf, nt, lo_arr, hi_arr, &lower, &upper);
+                int at_lower = isfinite(lower) && ps_near_bound(b_arr[i], lower);
+                int at_upper = isfinite(upper) && ps_near_bound(b_arr[i], upper);
+                if (!at_lower && !at_upper) continue;
+
+                Py_ssize_t nfix = 0;
+                int all_finite = 1;
+                for (Py_ssize_t t = 0; t < nt; t++) {
+                    Py_ssize_t j = term_buf[t].col;
+                    double coef = term_buf[t].val;
+                    if (rem_col[j]) continue;
+                    double value = at_lower
+                        ? (coef >= 0.0 ? lo_arr[j] : hi_arr[j])
+                        : (coef >= 0.0 ? hi_arr[j] : lo_arr[j]);
+                    if (!isfinite(value)) { all_finite = 0; break; }
+                    fix_cols[nfix] = j;
+                    fix_vals[nfix] = value;
+                    nfix++;
+                }
+                if (!all_finite || nfix == 0) continue;
+
+                Py_ssize_t forcing_columns = 0;
+                for (Py_ssize_t f = 0; f < nfix; f++) {
+                    Py_ssize_t j = fix_cols[f];
+                    double value = fix_vals[f];
+                    if (rem_col[j]) continue;
+                    if (ps_rec_fixed(&recs, &recs_n, &recs_cap, j, value) != 0) goto oom;
+                    obj_off += c_arr[j] * value;
+
+                    Py_ssize_t sn = col_sets[j].count;
+                    memcpy(snap_buf, col_sets[j].items, (size_t)sn * sizeof(Py_ssize_t));
+                    for (Py_ssize_t s = 0; s < sn; s++) {
+                        Py_ssize_t other = snap_buf[s];
+                        if (rem_row[other]) continue;
+                        PSEntry *ep = ps_row_find(&row_data[other], j);
+                        if (!ep) continue;
+                        b_arr[other] -= ep->val * value;
+                        ps_row_delete(&row_data[other], j);
+                        ps_colset_discard(&col_sets[j], other);
+                    }
+                    rem_col[j] = 1; n_rem_cols++;
+                    ps_colset_clear(&col_sets[j]);
+                    forcing_columns++;
+                    changed = 1;
+                }
+                count_forcing_rows++;
+                count_forcing_columns += forcing_columns;
+                if (row_data[i].count == 0 && !rem_row[i]) {
+                    rem_row[i] = 1; n_rem_rows++;
+                }
+            }
+        }
+
         /* ---- pass 1: empty rows --------------------------------------- */
         for (Py_ssize_t i = 0; i < rows; i++) {
             if (rem_row[i]) continue;
             if (row_data[i].count == 0) {
                 rem_row[i] = 1; n_rem_rows++; changed = 1;
+                count_empty_rows++;
             }
         }
 
@@ -15947,20 +16290,7 @@ static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
             if (value < lo_arr[j]) value = lo_arr[j];
             if (value > hi_arr[j]) value = hi_arr[j];
 
-            /* record */
-            if (recs_n >= recs_cap) {
-                recs_cap *= 2;
-                PSRec *t = (PSRec *)realloc(recs, (size_t)recs_cap * sizeof(PSRec));
-                if (!t) goto oom;
-                recs = t;
-            }
-            recs[recs_n].type = PS_REC_FIXED;
-            recs[recs_n].idx1 = j;
-            recs[recs_n].idx2 = 0;
-            recs[recs_n].v1   = value;
-            recs[recs_n].v2   = 0.0;
-            recs[recs_n].v3   = 0.0;
-            recs_n++;
+            if (ps_rec_fixed(&recs, &recs_n, &recs_cap, j, value) != 0) goto oom;
 
             obj_off += c_arr[j] * value;
 
@@ -15980,7 +16310,49 @@ static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
             rem_row[i] = 1; n_rem_rows++;
             rem_col[j] = 1; n_rem_cols++;
             ps_colset_clear(&col_sets[j]);
+            count_singleton_rows++;
             changed = 1;
+        }
+
+        if (enable_v2) {
+            /* ---- V2 pass: column singletons ---------------------------- */
+            for (Py_ssize_t j = 0; j < cols; j++) {
+                if (rem_col[j] || col_sets[j].count != 1) continue;
+                Py_ssize_t i = col_sets[j].items[0];
+                if (rem_row[i] || row_data[i].count <= 2) continue;
+                PSEntry *pivot_entry = ps_row_find(&row_data[i], j);
+                if (!pivot_entry || fabs(pivot_entry->val) < PRESOLVE_PIVOT_EPS) continue;
+                double coef = pivot_entry->val;
+
+                Py_ssize_t nt = 0;
+                for (Py_ssize_t k = 0; k < row_data[i].total; k++) {
+                    Py_ssize_t col = row_data[i].entries[k].col;
+                    if (col >= 0 && col != j) {
+                        term_buf[nt].col = col;
+                        term_buf[nt].val = row_data[i].entries[k].val;
+                        nt++;
+                    }
+                }
+                if (!ps_column_bounds_are_redundant(
+                        j, coef, b_arr[i], term_buf, nt, lo_arr, hi_arr))
+                    continue;
+
+                if (ps_rec_column_singleton(
+                        &recs, &recs_n, &recs_cap, j, coef, b_arr[i], term_buf, nt) != 0)
+                    goto oom;
+                obj_off += c_arr[j] * b_arr[i] / coef;
+                double cost_scale = c_arr[j] / coef;
+                for (Py_ssize_t t = 0; t < nt; t++) {
+                    Py_ssize_t k = term_buf[t].col;
+                    c_arr[k] -= cost_scale * term_buf[t].val;
+                    ps_colset_discard(&col_sets[k], i);
+                }
+                rem_row[i] = 1; n_rem_rows++;
+                rem_col[j] = 1; n_rem_cols++;
+                ps_colset_clear(&col_sets[j]);
+                count_column_singletons++;
+                changed = 1;
+            }
         }
 
         /* ---- pass 3: doubleton rows ----------------------------------- */
@@ -16030,20 +16402,8 @@ static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
             lo_arr[jq] = new_lo;
             hi_arr[jq] = new_hi;
 
-            /* record */
-            if (recs_n >= recs_cap) {
-                recs_cap *= 2;
-                PSRec *t = (PSRec *)realloc(recs, (size_t)recs_cap * sizeof(PSRec));
-                if (!t) goto oom;
-                recs = t;
-            }
-            recs[recs_n].type = PS_REC_DOUBLETON;
-            recs[recs_n].idx1 = jp;
-            recs[recs_n].idx2 = jq;
-            recs[recs_n].v1   = ap;
-            recs[recs_n].v2   = dq;
-            recs[recs_n].v3   = b_arr[i];
-            recs_n++;
+            if (ps_rec_doubleton(&recs, &recs_n, &recs_cap, jp, jq, ap, dq, b_arr[i]) != 0)
+                goto oom;
 
             obj_off    += c_arr[jp] * beta;
             c_arr[jq]  += c_arr[jp] * alpha;
@@ -16074,7 +16434,78 @@ static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
             rem_row[i]  = 1; n_rem_rows++;
             rem_col[jp] = 1; n_rem_cols++;
             ps_colset_clear(&col_sets[jp]);
+            count_doubletons++;
             changed = 1;
+        }
+
+        if (enable_v2) {
+            /* ---- V2 pass: duplicate bounded columns -------------------- */
+            size_t hash_cap = 1;
+            size_t col_count = (size_t)(cols > 0 ? cols : 1);
+            while (hash_cap < col_count * 2) hash_cap <<= 1;
+            dup_hash_cols = (Py_ssize_t *)calloc(hash_cap, sizeof(Py_ssize_t));
+            dup_hash_values = (uint64_t *)calloc(hash_cap, sizeof(uint64_t));
+            if (!dup_hash_cols || !dup_hash_values) goto oom;
+
+            for (Py_ssize_t j = 0; j < cols; j++) {
+                if (rem_col[j] || col_sets[j].count == 0 ||
+                    !isfinite(lo_arr[j]) || !isfinite(hi_arr[j]))
+                    continue;
+
+                Py_ssize_t nsig = 0;
+                uint64_t hash = 0;
+                ps_col_signature(j, row_data, col_sets, rem_row, dup_buf_a, &nsig, &hash);
+                if (nsig == 0) continue;
+                hash = ps_hash_mix(hash, ps_double_key(c_arr[j]));
+
+                size_t slot = (size_t)hash & (hash_cap - 1);
+                Py_ssize_t kept = -1;
+                while (dup_hash_cols[slot] != 0) {
+                    Py_ssize_t first = dup_hash_cols[slot] - 1;
+                    if (dup_hash_values[slot] == hash && c_arr[first] == c_arr[j] &&
+                        ps_signatures_equal(first, j, row_data, col_sets, rem_row,
+                                            dup_buf_b, dup_buf_a)) {
+                        if (rem_col[first]) {
+                            dup_hash_cols[slot] = j + 1;
+                            kept = -1;
+                        } else {
+                            kept = first;
+                        }
+                        break;
+                    }
+                    slot = (slot + 1) & (hash_cap - 1);
+                }
+                if (kept < 0) {
+                    if (dup_hash_cols[slot] == 0) {
+                        dup_hash_cols[slot] = j + 1;
+                        dup_hash_values[slot] = hash;
+                    }
+                    continue;
+                }
+                if (!isfinite(lo_arr[kept]) || !isfinite(hi_arr[kept])) continue;
+
+                if (ps_rec_duplicate(
+                        &recs, &recs_n, &recs_cap, j, kept,
+                        lo_arr[j], hi_arr[j], lo_arr[kept], hi_arr[kept]) != 0)
+                    goto oom;
+                lo_arr[kept] += lo_arr[j];
+                hi_arr[kept] += hi_arr[j];
+
+                Py_ssize_t sn = col_sets[j].count;
+                memcpy(snap_buf, col_sets[j].items, (size_t)sn * sizeof(Py_ssize_t));
+                for (Py_ssize_t s = 0; s < sn; s++) {
+                    Py_ssize_t i = snap_buf[s];
+                    if (rem_row[i]) continue;
+                    if (ps_row_pop(&row_data[i], j))
+                        ps_colset_discard(&col_sets[j], i);
+                }
+                rem_col[j] = 1; n_rem_cols++;
+                ps_colset_clear(&col_sets[j]);
+                count_duplicate_columns++;
+                changed = 1;
+            }
+            free(dup_hash_cols); dup_hash_cols = NULL;
+            free(dup_hash_values); dup_hash_values = NULL;
         }
     }
     /* ==== end fixpoint ================================================= */
@@ -16221,10 +16652,27 @@ static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
             if (recs[x].type == PS_REC_FIXED)
                 tup = Py_BuildValue("(nnd)",
                     (Py_ssize_t)0, recs[x].idx1, recs[x].v1);
-            else
+            else if (recs[x].type == PS_REC_DOUBLETON)
                 tup = Py_BuildValue("(nnnddd)",
                     (Py_ssize_t)1, recs[x].idx1, recs[x].idx2,
                     recs[x].v1, recs[x].v2, recs[x].v3);
+            else if (recs[x].type == PS_REC_COLUMN_SINGLETON) {
+                PyObject *terms = PyTuple_New(recs[x].n_terms);
+                if (!terms) goto cleanup;
+                for (Py_ssize_t t = 0; t < recs[x].n_terms; t++) {
+                    PyObject *term = Py_BuildValue("(nd)",
+                        recs[x].terms[t].col, recs[x].terms[t].val);
+                    if (!term) { Py_DECREF(terms); goto cleanup; }
+                    PyTuple_SET_ITEM(terms, t, term);
+                }
+                tup = Py_BuildValue("(nnddO)",
+                    (Py_ssize_t)2, recs[x].idx1, recs[x].v1, recs[x].v2, terms);
+                Py_DECREF(terms);
+            } else {
+                tup = Py_BuildValue("(nnndddd)",
+                    (Py_ssize_t)3, recs[x].idx1, recs[x].idx2,
+                    recs[x].v1, recs[x].v2, recs[x].v3, recs[x].v4);
+            }
             if (!tup) goto cleanup;
             PyList_SET_ITEM(py_recs, x, tup);
         }
@@ -16233,10 +16681,17 @@ static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
                                           (Py_ssize_t)(n_ac * sizeof(Py_ssize_t)));
         if (!py_ac) goto cleanup;
 
-        result = Py_BuildValue("(OOOOOdnnOOn)",
+        PyObject *py_counts = Py_BuildValue("(nnnnnnnnn)",
+            count_fixed_columns, count_empty_columns, count_forcing_rows,
+            count_forcing_columns, count_empty_rows, count_singleton_rows,
+            count_column_singletons, count_doubletons, count_duplicate_columns);
+        if (!py_counts) goto cleanup;
+
+        result = Py_BuildValue("(OOOOOdnnOOnO)",
             py_matrix, py_b, py_c, py_lo, py_hi,
             obj_off, n_rem_rows, n_rem_cols,
-            py_recs, py_ac, cols);
+            py_recs, py_ac, cols, py_counts);
+        Py_DECREF(py_counts);
     }
     goto cleanup;
 
@@ -16252,10 +16707,26 @@ cleanup:
     free(b_arr);  free(c_arr);   free(lo_arr);  free(hi_arr);
     if (row_data) { for (Py_ssize_t i = 0; i < rows; i++) ps_row_free(&row_data[i]); free(row_data); }
     if (col_sets) { for (Py_ssize_t j = 0; j < cols; j++) ps_colset_free(&col_sets[j]); free(col_sets); }
-    free(rem_row); free(rem_col); free(recs); free(snap_buf);
+    free(rem_row); free(rem_col);
+    if (recs) {
+        for (Py_ssize_t r = 0; r < recs_n; r++) free(recs[r].terms);
+        free(recs);
+    }
+    free(snap_buf); free(fix_cols); free(fix_vals); free(term_buf);
+    free(dup_buf_a); free(dup_buf_b); free(dup_hash_cols); free(dup_hash_values);
     free(act_rows); free(act_cols); free(col_map); free(sort_buf);
     free(o_indptr); free(o_indices); free(o_data); free(o_b);
     return result;
+}
+
+static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
+    (void)self;
+    return csparse_presolve_impl(args, 0);
+}
+
+static PyObject *csparse_presolve_v2(PyObject *self, PyObject *args) {
+    (void)self;
+    return csparse_presolve_impl(args, 1);
 }
 
 static PyMethodDef module_methods[] = {
@@ -16269,6 +16740,8 @@ static PyMethodDef module_methods[] = {
      "Test hook: sparse LU basis-change update. Returns (solutions, should_refactor, n_singular)."},
     {"presolve_eq_box", csparse_presolve_eq_box, METH_VARARGS,
      "C presolve for equality-plus-bounds LP (mirrors Python presolve_eq_box)."},
+    {"presolve_v2", csparse_presolve_v2, METH_VARARGS,
+     "C V2 presolve for equality-plus-bounds LP (fixed columns, forcing, column singletons, duplicates)."},
     {"presolve_v2_candidates", csparse_presolve_v2_candidates, METH_VARARGS,
      "Count immediately removable V2 rows and columns."},
     {NULL, NULL, 0, NULL}
