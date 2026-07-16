@@ -494,6 +494,35 @@ class TestResultDict:
         assert len(res["x"]) == 2
         assert len(res["y"]) == 1
 
+    def test_rate_histogram_is_env_gated(self, monkeypatch) -> None:
+        rng = np.random.RandomState(34343)
+        c, A, b, lo, hi = _random_feasible_lp(8, 18, rng)
+        A_obj = _make_csr(A)
+
+        monkeypatch.delenv("LINPROGX_DS_RATE_HIST", raising=False)
+        baseline = A_obj.solve_eq_box_dual_simplex(c, b, lo, hi)
+        assert "ds_rate_hist" not in baseline
+
+        monkeypatch.setenv("LINPROGX_DS_RATE_HIST", "1")
+        traced = A_obj.solve_eq_box_dual_simplex(c, b, lo, hi)
+        assert traced["status"] == baseline["status"]
+        assert traced["objective"] == baseline["objective"]
+        assert traced["iterations"] == baseline["iterations"]
+        assert traced["x"] == baseline["x"]
+
+        hist = traced["ds_rate_hist"]
+        assert set(hist) == {
+            "rho_nnz",
+            "alpha_nnz",
+            "ratio_candidates",
+            "support_overlap_prev",
+        }
+        for series in hist.values():
+            assert isinstance(series, list)
+            assert len(series) > 0
+            assert len(series) <= traced["iterations"]
+            assert len(series) == len(hist["rho_nnz"])
+
     def test_x_satisfies_bounds(self) -> None:
         """Optimal x must satisfy lo <= x <= hi (within tolerance)."""
         rng = np.random.RandomState(33333)

@@ -11577,6 +11577,66 @@ static int ds_bfrt_cand_cmp(const void *a, const void *b)
     return 0;
 }
 
+static PyObject *ds_build_int32_list(const int32_t *values, Py_ssize_t n)
+{
+    PyObject *list = PyList_New(n);
+    if (list == NULL) return NULL;
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *item = PyLong_FromLong((long)values[i]);
+        if (item == NULL) {
+            Py_DECREF(list);
+            return NULL;
+        }
+        PyList_SET_ITEM(list, i, item);
+    }
+    return list;
+}
+
+static PyObject *ds_build_rate_hist_dict(
+    const int32_t *rho_nnz, const int32_t *alpha_nnz,
+    const int32_t *ratio_candidates, const int32_t *support_overlap_prev,
+    Py_ssize_t n)
+{
+    PyObject *hist = PyDict_New();
+    PyObject *rho_list = NULL;
+    PyObject *alpha_list = NULL;
+    PyObject *ratio_list = NULL;
+    PyObject *overlap_list = NULL;
+    if (hist == NULL) return NULL;
+
+    rho_list = ds_build_int32_list(rho_nnz, n);
+    alpha_list = ds_build_int32_list(alpha_nnz, n);
+    ratio_list = ds_build_int32_list(ratio_candidates, n);
+    overlap_list = ds_build_int32_list(support_overlap_prev, n);
+    if (rho_list == NULL || alpha_list == NULL ||
+        ratio_list == NULL || overlap_list == NULL) {
+        Py_XDECREF(rho_list);
+        Py_XDECREF(alpha_list);
+        Py_XDECREF(ratio_list);
+        Py_XDECREF(overlap_list);
+        Py_DECREF(hist);
+        return NULL;
+    }
+
+    if (PyDict_SetItemString(hist, "rho_nnz", rho_list) != 0 ||
+        PyDict_SetItemString(hist, "alpha_nnz", alpha_list) != 0 ||
+        PyDict_SetItemString(hist, "ratio_candidates", ratio_list) != 0 ||
+        PyDict_SetItemString(hist, "support_overlap_prev", overlap_list) != 0) {
+        Py_DECREF(rho_list);
+        Py_DECREF(alpha_list);
+        Py_DECREF(ratio_list);
+        Py_DECREF(overlap_list);
+        Py_DECREF(hist);
+        return NULL;
+    }
+
+    Py_DECREF(rho_list);
+    Py_DECREF(alpha_list);
+    Py_DECREF(ratio_list);
+    Py_DECREF(overlap_list);
+    return hist;
+}
+
 static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     CSRMatrixObject *self, PyObject *args, PyObject *kwds)
 {
@@ -11709,6 +11769,15 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *scaled_csc_data = calloc((size_t)(self->nnz > 0 ? self->nnz : 1), sizeof(double));
     double *scaled_csr_data = calloc((size_t)(self->nnz > 0 ? self->nnz : 1), sizeof(double));
     double *c_orig = calloc((size_t)(n > 0 ? n : 1), sizeof(double));
+    int rate_hist_enabled = 0;
+    Py_ssize_t rate_hist_n = 0;
+    int32_t *rate_hist_rho_nnz = NULL;
+    int32_t *rate_hist_alpha_nnz = NULL;
+    int32_t *rate_hist_ratio_candidates = NULL;
+    int32_t *rate_hist_support_overlap_prev = NULL;
+    unsigned char *rate_hist_prev_alpha_support = NULL;
+    int32_t *rate_hist_prev_alpha_pattern = NULL;
+    int32_t rate_hist_prev_alpha_nnz = 0;
 
     if (c_ext == NULL || lo_ext == NULL || hi_ext == NULL ||
         x_ext == NULL || r_ext == NULL || basis_pos == NULL || bound_status == NULL ||
@@ -11727,6 +11796,30 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         (ds_ft_on && (ft_ent_idx == NULL || ft_ent_val == NULL))) {
         PyErr_NoMemory();
         goto done;
+    }
+
+    {
+        const char *env = getenv("LINPROGX_DS_RATE_HIST");
+        rate_hist_enabled = (env != NULL && atoi(env) != 0);
+        if (rate_hist_enabled) {
+            size_t hist_cap = (size_t)(max_iter > 0 ? max_iter : 1);
+            size_t support_cap = (size_t)(n_total > 0 ? n_total : 1);
+            rate_hist_rho_nnz = calloc(hist_cap, sizeof(int32_t));
+            rate_hist_alpha_nnz = calloc(hist_cap, sizeof(int32_t));
+            rate_hist_ratio_candidates = calloc(hist_cap, sizeof(int32_t));
+            rate_hist_support_overlap_prev = calloc(hist_cap, sizeof(int32_t));
+            rate_hist_prev_alpha_support = calloc(support_cap, sizeof(unsigned char));
+            rate_hist_prev_alpha_pattern = calloc(support_cap, sizeof(int32_t));
+            if (rate_hist_rho_nnz == NULL ||
+                rate_hist_alpha_nnz == NULL ||
+                rate_hist_ratio_candidates == NULL ||
+                rate_hist_support_overlap_prev == NULL ||
+                rate_hist_prev_alpha_support == NULL ||
+                rate_hist_prev_alpha_pattern == NULL) {
+                PyErr_NoMemory();
+                goto done;
+            }
+        }
     }
 
     /* Parse input arrays */
@@ -12394,6 +12487,10 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             * may only be declared from fresh state */
         for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
             iterations = iter;
+            int32_t rate_hist_cur_rho_nnz = 0;
+            int32_t rate_hist_cur_alpha_nnz = 0;
+            int32_t rate_hist_cur_ratio_candidates = 0;
+            int32_t rate_hist_cur_support_overlap_prev = 0;
             ds_t_prev = linprogx_monotonic_seconds();
             /* Cadence instrument: snapshot the solve-cost buckets and the
              * eta-chain state this pivot's BTRAN/scatter/FTRAN run against. */
@@ -12690,6 +12787,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 if (g_exact < 1e-12) g_exact = 1e-12;
                 devex_w[leaving_basis_pos] = g_exact;
             }
+            if (rate_hist_enabled) {
+                rate_hist_cur_rho_nnz = rho_nnz;
+            }
 
             DS_TICK(2);
 
@@ -12734,6 +12834,24 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                  * per-pivot qsort to make the pattern usable there was
                  * measured at +200us/pivot on greenbea (support is a large
                  * fraction of n_total) — a net loss. */
+            }
+            if (rate_hist_enabled) {
+                rate_hist_cur_alpha_nnz = alpha_nnz;
+                for (int32_t ki = 0; ki < alpha_nnz; ki++) {
+                    int32_t j = alpha_pattern[ki];
+                    if (rate_hist_prev_alpha_support[j]) {
+                        rate_hist_cur_support_overlap_prev++;
+                    }
+                }
+                for (int32_t ki = 0; ki < rate_hist_prev_alpha_nnz; ki++) {
+                    rate_hist_prev_alpha_support[rate_hist_prev_alpha_pattern[ki]] = 0;
+                }
+                rate_hist_prev_alpha_nnz = alpha_nnz;
+                for (int32_t ki = 0; ki < alpha_nnz; ki++) {
+                    int32_t j = alpha_pattern[ki];
+                    rate_hist_prev_alpha_support[j] = 1;
+                    rate_hist_prev_alpha_pattern[ki] = j;
+                }
             }
 
             DS_TICK(3);
@@ -12837,6 +12955,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     cand_j[n_admissible] = j;
                     cand_alpha[n_admissible] = alpha_j;
                     n_admissible++;
+                }
+                if (rate_hist_enabled) {
+                    rate_hist_cur_ratio_candidates = n_admissible;
                 }
 
                 if (n_admissible == 0) {
@@ -13249,6 +13370,24 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     entering_col = j;
                     entering_alpha_row = alpha_j;
                     break; /* Bland: first admissible */
+                }
+                if (rate_hist_enabled) {
+                    for (int32_t j = 0; j < n_total; j++) {
+                        if (basis_pos[j] >= 0) continue;
+                        if (bound_status[j] == DS_BOUND_FIXED) continue;
+                        double alpha_j = alpha_scratch[j];
+                        if (fabs(alpha_j) < 1e-9) continue;
+                        int admissible = 0;
+                        if (bound_status[j] == DS_BOUND_LO && leaving_sigma * alpha_j < 0.0) {
+                            admissible = 1;
+                        } else if (bound_status[j] == DS_BOUND_HI &&
+                                   leaving_sigma * alpha_j > 0.0) {
+                            admissible = 1;
+                        } else if (bound_status[j] == DS_BOUND_FREE) {
+                            admissible = 1;
+                        }
+                        if (admissible) rate_hist_cur_ratio_candidates++;
+                    }
                 }
 
                 if (entering_col < 0) {
@@ -13690,6 +13829,15 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             for (int32_t ki = 0; ki < rho_nnz; ki++)
                 rho[rho_nz_rows[ki]] = 0.0;
 
+            if (rate_hist_enabled && rate_hist_n < max_iter) {
+                rate_hist_rho_nnz[rate_hist_n] = rate_hist_cur_rho_nnz;
+                rate_hist_alpha_nnz[rate_hist_n] = rate_hist_cur_alpha_nnz;
+                rate_hist_ratio_candidates[rate_hist_n] =
+                    rate_hist_cur_ratio_candidates;
+                rate_hist_support_overlap_prev[rate_hist_n] =
+                    rate_hist_cur_support_overlap_prev;
+                rate_hist_n++;
+            }
             iterations = iter + 1;
             if (lu_stat_on) {
                 int32_t bkt = lu_stat_pos / 4;
@@ -14062,6 +14210,24 @@ build_result:
             } else {
                 PyErr_Clear();
             }
+            if (rate_hist_enabled) {
+                PyObject *hist = ds_build_rate_hist_dict(
+                    rate_hist_rho_nnz, rate_hist_alpha_nnz,
+                    rate_hist_ratio_candidates, rate_hist_support_overlap_prev,
+                    rate_hist_n);
+                if (hist == NULL) {
+                    Py_DECREF(result);
+                    result = NULL;
+                    goto done;
+                }
+                if (PyDict_SetItemString(result, "ds_rate_hist", hist) != 0) {
+                    Py_DECREF(hist);
+                    Py_DECREF(result);
+                    result = NULL;
+                    goto done;
+                }
+                Py_DECREF(hist);
+            }
         }
     }
 
@@ -14080,6 +14246,9 @@ done:
     free(ft_ent_idx); free(ft_ent_val);
     free(has_art_bound); free(lo_true); free(hi_true);
     free(ds_row_scale); free(ds_col_scale); free(scaled_csc_data); free(scaled_csr_data); free(c_orig);
+    free(rate_hist_rho_nnz); free(rate_hist_alpha_nnz);
+    free(rate_hist_ratio_candidates); free(rate_hist_support_overlap_prev);
+    free(rate_hist_prev_alpha_support); free(rate_hist_prev_alpha_pattern);
     return result;
 }
 
