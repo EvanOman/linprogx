@@ -273,8 +273,12 @@ def _run_cell(workdir: Path, fixture: Path, solver: str) -> dict[str, Any]:
     memory=8192,
     timeout=3600,
     # Scoreboard-of-record host class: margins are host-conditional
-    # (HANDOFF 2026-07-16) — certifications must run in one region.
-    region="us-west",
+    # (HANDOFF 2026-07-16) — certifications pin cloud AND region; the
+    # canonical class is AWS us-west-2 (the 2026-07-14 baseline host).
+    # "us-west" alone spans GCP us-west2/us-west4 with different
+    # memory bandwidth (osa/pilot87/pds verdicts flip across them).
+    cloud="aws",
+    region="us-west-2",
 )
 def bench(
     git_ref: str,
