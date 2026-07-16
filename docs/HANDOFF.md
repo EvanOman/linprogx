@@ -1668,3 +1668,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   degen3/woodw at coin-flip parity and greenbea/pds_10/pds_20/cre_d/
   80bau3b the remaining paired losses (pds pair needs paired
   re-measurement — host bandwidth sensitivity).
+
+- CANONICAL BOARD AT 957347b-era BUILD (2026-07-16, AWS us-west-2
+  pinned cloud+region, load 0.00, assets/pin4_chunk{1,2}.json):
+  **14W-5L-4P (+qap15 coverage = 15 wins)**. NEW FLIPS THIS WAVE:
+  cre_d WIN 8/9 (0.957 — the native-V2-port flip), degen3 WIN 9/9
+  (0.823), pds_20 WIN 9/9 (0.826), osa_30 WIN 8/9. PARITY (0.97-1.03):
+  80bau3b, stocfor3, woodw (0.996!), pilot87 (0.995). LOSSES: greenbea
+  1.69, osa_60 1.50, osa_14 1.34, pds_10 1.20, cre_a 4/7-at-0.966
+  (wins-bar miss). OSA SWING INVESTIGATED, NOT A REGRESSION: bucket
+  min-degree == heap fallback (same iters/walls), matvec gate inert,
+  presolve bit-equality held; the 0.95->1.34 movement is WITHIN-REGION
+  INSTANCE-TYPE VARIANCE (HiGHS -29%, lx +10% across two load-0
+  containers, two days apart, same region) — Modal does not expose
+  instance-type pinning. DOCTRINE: bandwidth-sensitive verdicts
+  (osa/pds/pilot87/woodw/greenbea) are host-hardware-conditional;
+  a robust all-24 claim needs medians across multiple containers per
+  certification (protocol v3, queued). The stable core (kens, qaps,
+  truss, fit2p, d2q06c, cre_b 0.62, maros 0.77, degen3, cre_d,
+  stocfor3~, cre_a~) holds across every host observed.
