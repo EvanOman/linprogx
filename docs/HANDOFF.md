@@ -1622,3 +1622,15 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   standardize on one region for the scoreboard of record. Also a
   finding in itself: PDHG's memory-bandwidth sensitivity is ~2x
   HiGHS's simplex on the same hardware swing.
+
+- SETUP FAST-PATH SHIPPED (2026-07-16, codex): bucketed min-degree
+  queue + exact preallocation + fused compaction, EXACT-OUTPUT
+  (fingerprint hook verifies perm/Lp/Li/snode identity; heap fallback
+  knob LINPROGX_MD_QUEUE). Setup: cre_d -46%, maros -31%, degen3 -11%,
+  cre_a -7%; public walls improve family-wide. The -40% degen3/cre_a
+  target MISSED — min-degree itself (25.6ms/15.1ms there) remains the
+  binding slice; a deeper min-degree unit (AMD-style approximate
+  external degree with exact-output verification impossible — would
+  change orderings, so it becomes outcome-gated) is the escalation,
+  queued. cre_a remains 4.5ms from parity (us-west); degen3 needs
+  ~55ms on the harsh host class.
