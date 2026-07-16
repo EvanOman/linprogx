@@ -1595,3 +1595,15 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   phase is 25-41% of DS wall with candidates p50 182-5k and overlap
   99.9% — informative but the reuse family is now closed both
   within-pivot (shipped) and cross-pivot (impossible).
+
+- IPM OTHER-SLICE ANATOMY (2026-07-15, codex, experiments/
+  ipm_other_profile.py): the unattributed 18-40% decomposes as
+  setup/order (degen3 26%, cre_a 21% — BOTH LARGER THAN THEIR LOSS
+  MARGINS; unit running), scaling+init (80bau3b 12%, degen3 10%),
+  loop-misc residual/gap/step bookkeeping (stocfor3 12%, woodw 11%).
+  Ruled out: MCC (budget 0 on all five), mu-safeguard (0 events), exit
+  polish (only cre_a, 1 round), tail dtrsv (disabling slower). Queued
+  after setup unit: loop-misc timers + certificate-eval windowing;
+  Ruiz pass-count probe. 15-PAIR PRECISION (Modal): pilot87 0/15,
+  stocfor3 0/15, degen3 0/15, cre_a 4/15 — the knife-edges are REAL
+  small losses, not variance; they need genuine 2-8% wins.
