@@ -1634,3 +1634,14 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   change orderings, so it becomes outcome-gated) is the escalation,
   queued. cre_a remains 4.5ms from parity (us-west); degen3 needs
   ~55ms on the harsh host class.
+
+- PINNED-REGION CERTIFICATION (2026-07-16, us-west, post setup-ship,
+  assets/modal_bench_<head>_{suite,paired}.json): **15W-9L**. FLIPS:
+  pilot87 WIN 0.809 suite / 0.855 paired 9/9 (the setup ship + fair
+  host); pds_20 WIN 0.813 (us-west PDHG-fair vs Azure-Asia harsh);
+  degen3 paired 0.994 (6/9) / suite 1.034 — AT PARITY; cre_a 1.002
+  (7/9 wins!) and stocfor3 0.992 (3/9) — AT PARITY, mixed indicators.
+  Deepened: osa_14 0.79 (9/9), cre_b 0.83 (9/9). REMAINING REAL
+  LOSSES: greenbea 1.89, woodw 1.60, cre_d 1.46, 80bau3b 1.36,
+  pds_10 1.31, maros_r7 1.19, + three parity coin-flips. Session:
+  12W -> 15W with the whole ladder under 2x.
