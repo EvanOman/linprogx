@@ -164,14 +164,13 @@ Phase-2 split for linprogx would be false precision.
 
 ## Ranked conclusion
 
-1. **Simplex-internal phase/start/step architecture — primary, 1,090 pivots
-   measured (69.7% of the original gap).** On the identical 1525×3868 LP,
-   HiGHS takes 3,309 and linprogx 4,399. Among the named candidates, explicit
-   Dual Phase 1 + Phase 2 is the leading surviving discriminator: HiGHS spends
-   1,655 / 1,633 / 21 pivots by phase, while linprogx runs one crash-seeded
-   Phase-2-only walk. This measurement localizes the deficit to the internal
-   engine but does not yet prove whether the decisive submechanism is the
-   Phase-1 exit basis or subsequent entering/ratio-step choices.
+1. **Simplex-internal step mechanics — primary, and the basis-transfer probe
+   below closes the phase/start alternative.** On the identical 1525×3868 LP,
+   HiGHS takes 3,309 and linprogx 4,399. Importing HiGHS's certified
+   Phase-1-plus-one basis and exact nonbasic statuses cuts linprogx to 3,529,
+   but HiGHS itself resumes from that basis in 1,594 pivots. The common-start
+   continuation gap is therefore 1,935 pivots. Basis quality helps, but the
+   downstream pivot path remains decisive.
 
 2. **Presolve–simplex interaction — real secondary owner, 473 pivots (30.3%),
    but not transferable.** HiGHS gains 473 when moving from our reduction to
@@ -184,57 +183,108 @@ Phase-2 split for linprogx would be false precision.
    only 101 pivots and raises wall work. A missing BFRT cannot own the 1,090;
    an implementation-quality difference remains unmeasured on the HiGHS side.
 
-4. **Exposed crash option — killed.** Numeric strategies 0–9 are
-   iteration-identical, and the log says no useful basis. A deeper built-in
-   start-basis difference is folded into rank 1, but the available crash knob
-   has no effect.
+4. **Crash / Phase-1 starting basis — killed.** Numeric crash strategies 0–9
+   are iteration-identical. More decisively, transferring HiGHS's own
+   Phase-1 exit into linprogx leaves 3,529 pivots, above the registered 3,200
+   kill line. HiGHS-optimal -> linprogx takes zero pivots, proving the transfer
+   hook itself is faithful.
 
-This is **not** an "advantage is not reproducible" closure. HiGHS remains 1,090
-pivots ahead on the same reduced LP. The greenbea pivot frontier stays open,
-but it is now a basis/phase-versus-step-mechanics question, not a leaving-rule,
-missing-bound-flip, or row-count question.
+HiGHS remains 1,090 pivots ahead on the same reduced LP, but greenbea's scoped
+**pivot-count frontier is now closed**: leaving rules, missing flips, generic
+row count, exposed crash strategies, and HiGHS-quality Phase-1 basis transfer
+all miss their gates. Further wall improvement requires cheaper pivots or a
+materially different internal step path, not a commissioned crash/Phase-1 unit.
 
-## Next falsifiable probe: two-way basis transfer
+## Two-way basis transfer — **KILLED (3,529 pivots)**
 
-**Probe.** On the same 1525×3868 LP with presolve off:
+### Extraction and mapping method
 
-1. Export linprogx's exact triangular-crash starting basis behind a throwaway
-   env-gated diagnostic and pass it to HiGHS with public `setBasis()`.
-2. Stop HiGHS at iteration 1,656: the runtime trace verifies Dual Phase 1 ends
-   at 1,655 and Phase 2 has taken exactly one pivot, while `getBasis()` reports
-   a valid basis. Feed that basis/status assignment to a throwaway linprogx
-   initial-basis hook.
-3. Record remaining pivots, flips, phase/status, objective, and residual in both
-   directions.
+HiGHS was accessed only through documented highspy basis APIs:
+`getBasis()` for extraction and `setBasis()` for the reverse transfer.
 
-**Live criterion for start/phase ownership.** Keep the hypothesis if either
-HiGHS rises by at least 600 pivots from 3,309 when forced onto linprogx's crash
-basis, or linprogx finishes from the HiGHS Phase-1-exit basis in at most 2,200
-additional pivots (near HiGHS's 1,633 Dual Phase 2 + 21 cleanup count).
+1. An uninterrupted maximum-log run established the phase boundary:
+   `DuPh1 1655; DuPh2 1633; PrPh2 21; Total 3309`.
+2. With `simplex_iteration_limit=1655`, `getBasis()` returned a valid basis
+   containing 989 structural basics and 536 basic row variables. This is the
+   basic set after the 1,655th Phase-1 pivot. Iteration-limit return semantics
+   matter: resuming from that returned useful basis performs 52 recovery
+   Phase-1 pivots, so it is reported as a boundary basis, not treated as a
+   seamless internal checkpoint.
+3. The verdict run used `simplex_iteration_limit=1656`. Its trace explicitly
+   says `DuPh1 1655; DuPh2 1; Total 1656`, so its valid basis is the Phase-1
+   exit plus exactly one Phase-2 pivot. It contains 990 structural basics and
+   535 basic row variables. Resuming HiGHS from it starts directly in Dual
+   Phase 2 and needs 1,594 iterations (1,572 Dual Phase 2 + 22 cleanup).
+4. HiGHS row-basic variables map to linprogx artificial identity columns
+   `n+i`; structural basics retain their column indices. Lower/upper/zero
+   statuses map to linprogx's nonbasic bound-status codes.
+5. linprogx gained diagnostic-only `initial_basis` and
+   `initial_bound_status` kwargs. They are rejected unless
+   `LINPROGX_DS_WARM_START=1`; final basis/status export requires
+   `LINPROGX_DS_EXPORT_BASIS=1`. The normal crash path is otherwise untouched.
 
-**Kill criterion.** Kill start/phase-basis quality as owner of the majority if
-HiGHS stays at or below 3,500 from linprogx's crash basis **and** linprogx still
-needs at least 3,000 additional pivots from the HiGHS Phase-1-exit basis. That
-would promote entering/ratio-step mechanics to the sole live explanation of
-most of the 1,090 same-LP gap; the next probe would instrument breakpoint
-distance/flip absorption per linprogx pivot rather than build another leaving
-rule.
+### Transfer results
+
+| Start / solver | Pivots | Bound flips | Artificial ejections | Wall | Original residual | Objective |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| linprogx native crash -> linprogx | 4,399 | 1,399 | 30 | 0.390s | 1.77e-7 | -72,555,248.129846 |
+| HiGHS iter-1655 boundary basis only -> linprogx | 3,648 | 143 | 632 | 0.407s | 2.38e-7 | -72,555,248.129847 |
+| **HiGHS Phase-1-plus-one basis + exact statuses -> linprogx** | **3,529** | 121 | 652 | 0.399s | 1.46e-8 | -72,555,248.129846 |
+| HiGHS optimal basis + exact statuses -> linprogx | **0** | 0 | 0 | 0.003s | 5.78e-8 | -72,555,248.129846 |
+| linprogx optimal basis + statuses -> HiGHS | **4** | n/r | n/r | 0.012s | 4.44e-8 | -72,555,248.129846 |
+
+Every solve is optimal and passes the registered 2e-5 relative objective gate;
+maximum equality residual is 2.38e-7 and maximum bound violation is 3.86e-12.
+The zero-pivot HiGHS-optimal -> linprogx result validates the full basis and
+nonbasic-status mapping. The four-pivot reverse result is the expected
+near-zero tolerance cleanup.
+
+### Registered verdict
+
+- **LIVE:** fewer than 2,600 linprogx pivots from HiGHS's Phase-1 exit.
+- **KILLED:** more than 3,200 pivots.
+- **Measured:** **3,529 pivots — KILLED**, 329 beyond the kill line and 929
+  above the live line.
+
+The transferred basis saves 870 pivots (19.8%) versus linprogx's native crash,
+but does not improve wall: 0.399s versus 0.390s in the recorded run. The basis
+makes solves denser: mean FTRAN density rises 0.241 -> 0.326 (+35.4%) and BTRAN
+density 0.428 -> 0.475 (+11.1%). Observed wall per pivot rises from 88.8us to
+113.1us (+27.4%).
+
+This also closes the wall argument. At the transferred basis's measured rate,
+even 2,836 pivots project to about 0.321s, above HiGHS's measured 0.266s on our
+reduction; 3,309 pivots project to about 0.374s. HiGHS-level pivot counts would
+still require per-pivot parity. No dual-Phase-1/crash unit is commissioned.
 
 ## Reproduction and raw artifacts
 
 - Probe: `experiments/greenbea_pivot_gap_probe.py`
+- Basis-transfer probe: `experiments/greenbea_basis_transfer_probe.py`
 - Structured results: `/tmp/greenbea-pivot-gap/results.json`
+- Basis-transfer results: `/tmp/greenbea-basis-transfer/results.json`
 - Maximum-level logs:
   `/tmp/greenbea-pivot-gap/{raw_presolve_on,raw_presolve_off,our_reduction_presolve_off,our_reduction_presolve_on}.log`
+- Basis logs:
+  `/tmp/greenbea-basis-transfer/{highs_phase1_boundary,highs_phase1_plus_one,highs_optimal_basis,highs_from_linprogx_optimal}.log`
 - Command:
 
 ```bash
 cd /home/evan/dev/linprogx-gblog
+UV_CACHE_DIR=/tmp/uv-cache uv pip install --reinstall -e . --no-build-isolation
+
 PYTHONPATH=. UV_CACHE_DIR=/tmp/uv-cache uv run python \
   experiments/greenbea_pivot_gap_probe.py
+
+LINPROGX_DS_WARM_START=1 LINPROGX_DS_EXPORT_BASIS=1 \
+  PYTHONPATH=. UV_CACHE_DIR=/tmp/uv-cache uv run python \
+  experiments/greenbea_basis_transfer_probe.py
 ```
 
 Environment: CPython 3.14.3, `highspy==1.14.0` / HiGHS 1.14.0 (git 7df0786),
 fixture `/tmp/lpsuite/lp_greenbea.mat`. No HiGHS source was read. HiGHS was
 treated strictly through highspy public model/options/info/basis APIs, runtime
-logs, and published option documentation. No solver source changes were made.
+logs, and published option documentation. The only solver-source change is the
+default-off, env-gated diagnostic basis hook described above; a no-env replay
+remains exactly 4,399 pivots / 1,399 flips, and `tests/test_dual_simplex.py`
+passes 27/27.

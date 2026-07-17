@@ -2054,6 +2054,29 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   x1.60 on-host inflation — a 20% refactor cut = ~10% wall).
   Revisit only if the refactor unit dies.
 
+- THIRTY-FIFTH SETTLED — GREENBEA PIVOT FRONTIER CLOSED (2026-07-17,
+  codex, three-stage anatomy + basis transfer;
+  experiments/greenbea_pivot_gap_2026_07_17.md +
+  greenbea_{pivot_gap,basis_transfer}_probe.py): the 1,563-pivot gap
+  decomposes 1,090 simplex-internal + 473 presolve-geometry (HiGHS
+  presolve-off on OUR reduction: 3,309). Both directions of
+  presolve-chasing are non-transferable (our DS on THEIR reduction:
+  5,222 — 823 WORSE). Our Dantzig beats their Dantzig 2.8x on
+  identical input (4,399 vs 12,279); their edge is DSE machinery
+  that our exact-DSE implementation does not reproduce (33rd).
+  Crash: no effect (all 10 HiGHS strategies = 3,309). BFRT: -101.
+  DECISIVE KILL: HiGHS's own Phase-1 basis transferred into our DS
+  (mapping validated by 0/4-pivot optimal-basis sanity) gives 3,529
+  pivots but FLAT wall (0.399 vs 0.390s) — the transferred basis
+  densifies our solves (88.8 -> 113.1 us/pivot); even 2,836 pivots
+  at that density projects 0.321s vs HiGHS 0.266s. Pivot parity
+  requires per-pivot parity and they TRADE AGAINST each other.
+  greenbea (~1.7) now has NO live scoped lever in any family:
+  presolve, leaving rules, starting basis, ratio test, crash, and
+  the per-pivot slice families are all settled. It needs an idea
+  class the campaign has not found. Residue shipped default-off:
+  the native basis-injection warm-start hook (research tooling).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,

@@ -12313,6 +12313,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     CSRMatrixObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *c_obj, *b_obj, *lo_obj, *hi_obj;
+    PyObject *initial_basis_obj = Py_None;
+    PyObject *initial_bound_status_obj = Py_None;
     Py_ssize_t max_iter_arg = 0;
     double tol = 1e-8;
     int pricing = 0; /* legacy experiment: 0 = Devex, 1 = DSE + cost perturbation */
@@ -12327,11 +12329,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                      * expanding working dual tolerance + guaranteed minimum
                      * step. 0 (default) = byte-identical legacy behavior. */
     static char *kwlist[] = {"c", "b", "lo", "hi", "max_iter", "tol", "pricing",
-                             "leaving_rule", "bfrt", "r_refresh", "expand", NULL};
+                             "leaving_rule", "bfrt", "r_refresh", "expand",
+                             "initial_basis", "initial_bound_status", NULL};
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "OOOO|ndiiiii", kwlist,
+            args, kwds, "OOOO|ndiiiiiOO", kwlist,
             &c_obj, &b_obj, &lo_obj, &hi_obj, &max_iter_arg, &tol, &pricing,
-            &leaving_rule, &bfrt, &r_refresh, &expand)) {
+            &leaving_rule, &bfrt, &r_refresh, &expand, &initial_basis_obj,
+            &initial_bound_status_obj)) {
         return NULL;
     }
     if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
@@ -12346,6 +12350,26 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     int maintain_dse_weights = (pricing == 1 || exact_dse);
     /* n_total = structural + artificial columns */
     int32_t n_total = n + m;
+    int warm_start_requested = initial_basis_obj != Py_None;
+    int warm_start_used = 0;
+    int warm_start_repairs = 0;
+    int warm_start_fallback = 0;
+    int basis_initialized = 0;
+    int8_t *warm_bound_input = NULL;
+    if (initial_bound_status_obj != Py_None && !warm_start_requested) {
+        PyErr_SetString(
+            PyExc_ValueError, "initial_bound_status requires initial_basis");
+        return NULL;
+    }
+    if (warm_start_requested) {
+        const char *warm_env = getenv("LINPROGX_DS_WARM_START");
+        if (warm_env == NULL || atoi(warm_env) != 1) {
+            PyErr_SetString(
+                PyExc_ValueError,
+                "initial_basis is diagnostic-only; set LINPROGX_DS_WARM_START=1");
+            return NULL;
+        }
+    }
     Py_ssize_t max_iter = max_iter_arg > 0 ? max_iter_arg
                           : (Py_ssize_t)(50 * (m_s + n_s) < 100000 ? 50 * (m_s + n_s) : 100000);
 
@@ -12472,6 +12496,87 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         goto done;
     }
 
+    if (warm_start_requested) {
+        PyObject *warm_seq = PySequence_Fast(
+            initial_basis_obj, "initial_basis must be a sequence");
+        if (warm_seq == NULL) goto done;
+        if (PySequence_Fast_GET_SIZE(warm_seq) != m_s) {
+            Py_DECREF(warm_seq);
+            PyErr_Format(
+                PyExc_ValueError,
+                "initial_basis must contain %zd entries", m_s);
+            goto done;
+        }
+        int8_t *seen = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int8_t));
+        if (seen == NULL) {
+            Py_DECREF(warm_seq);
+            PyErr_NoMemory();
+            goto done;
+        }
+        for (int32_t k = 0; k < m; k++) {
+            long value = PyLong_AsLong(PySequence_Fast_GET_ITEM(warm_seq, k));
+            if (PyErr_Occurred()) {
+                free(seen);
+                Py_DECREF(warm_seq);
+                goto done;
+            }
+            if (value < 0 || value >= n_total) {
+                free(seen);
+                Py_DECREF(warm_seq);
+                PyErr_Format(
+                    PyExc_ValueError,
+                    "initial_basis entry %ld is outside [0, %d)", value, n_total);
+                goto done;
+            }
+            if (seen[value]) {
+                free(seen);
+                Py_DECREF(warm_seq);
+                PyErr_Format(
+                    PyExc_ValueError,
+                    "initial_basis contains duplicate column %ld", value);
+                goto done;
+            }
+            seen[value] = 1;
+            basis[k] = (int32_t)value;
+        }
+        free(seen);
+        Py_DECREF(warm_seq);
+        warm_start_used = 1;
+    }
+    if (initial_bound_status_obj != Py_None) {
+        PyObject *status_seq = PySequence_Fast(
+            initial_bound_status_obj, "initial_bound_status must be a sequence");
+        if (status_seq == NULL) goto done;
+        if (PySequence_Fast_GET_SIZE(status_seq) != n_total) {
+            Py_DECREF(status_seq);
+            PyErr_Format(
+                PyExc_ValueError,
+                "initial_bound_status must contain %d entries", n_total);
+            goto done;
+        }
+        warm_bound_input = malloc((size_t)n_total * sizeof(int8_t));
+        if (warm_bound_input == NULL) {
+            Py_DECREF(status_seq);
+            PyErr_NoMemory();
+            goto done;
+        }
+        for (int32_t j = 0; j < n_total; j++) {
+            long value = PyLong_AsLong(PySequence_Fast_GET_ITEM(status_seq, j));
+            if (PyErr_Occurred()) {
+                Py_DECREF(status_seq);
+                goto done;
+            }
+            if (value < DS_BOUND_LO || value > DS_BOUND_BASIC) {
+                Py_DECREF(status_seq);
+                PyErr_Format(
+                    PyExc_ValueError,
+                    "initial_bound_status entry %ld is outside [0, 4]", value);
+                goto done;
+            }
+            warm_bound_input[j] = (int8_t)value;
+        }
+        Py_DECREF(status_seq);
+    }
     {
         const char *env = getenv("LINPROGX_DS_RATE_HIST");
         rate_hist_enabled = (env != NULL && atoi(env) != 0);
@@ -12678,9 +12783,10 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * 1. CRASH BASIS: greedy triangular crash + artificial fill
      * ============================================================
      * Attempt to build a nonsingular basis from structural columns.
-     * Any uncovered row gets its artificial column.
+     * Any uncovered row gets its artificial column. A diagnostic warm start
+     * supplies the complete basis directly and skips only this crash build.
      */
-    {
+    if (!warm_start_requested) {
         int8_t *row_covered = calloc((size_t)(m > 0 ? m : 1), sizeof(int8_t));
         /* Track which basis position each row is assigned to */
         int32_t *row_to_bpos = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
@@ -12822,8 +12928,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             int8_t *in_basis = calloc((size_t)n_total, sizeof(int8_t));
             if (in_basis == NULL) { PyErr_NoMemory(); goto done; }
             for (int32_t k = 0; k < m; k++) in_basis[basis[k]] = 1;
-            int repairs = 0;
-            while (lu != NULL && lu->singular_step >= 0 && repairs < max_repairs) {
+            while (lu != NULL && lu->singular_step >= 0 &&
+                   warm_start_repairs < max_repairs) {
                 int32_t bad_pos = lu->perm_col[lu->singular_step];
                 in_basis[basis[bad_pos]] = 0;
                 /* Prefer the identity column for row bad_pos; else any free
@@ -12843,13 +12949,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
                                         a_data, basis,
                                         b_indptr, b_indices, b_values);
-                repairs++;
+                warm_start_repairs++;
             }
             free(in_basis);
         }
 
         int reject_crash = (lu == NULL || lu->singular_step >= 0);
-        if (!reject_crash) {
+        if (!reject_crash && !warm_start_requested) {
             /* Post-crash conditioning guard: estimate growth from the U
              * diagonals. A crash basis that factorizes but is catastrophically
              * ill-conditioned (presolved woodw ~ kappa 1e19) leaves the dual
@@ -12871,6 +12977,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             /* Fall back to pure identity basis (all artificials) */
             lu_context_free(lu);
             lu = NULL;
+            if (warm_start_requested) warm_start_fallback = 1;
             for (int32_t i = 0; i < m; i++) {
                 basis[i] = n + i;  /* artificial for row i */
             }
@@ -12883,6 +12990,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             }
         }
         lu_build_transposes(lu);
+        basis_initialized = 1;
     }
 
     if (maintain_dse_weights) {
@@ -13030,6 +13138,26 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         } else {
             bound_status[j] = DS_BOUND_HI;
             x_ext[j] = hi_ext[j];
+        }
+    }
+    if (warm_bound_input != NULL) {
+        /* A simplex basis includes the nonbasic bound assignments. Import the
+         * HiGHS statuses exactly for the diagnostic transfer; this block is
+         * unreachable without the warm-start env gate above. */
+        for (int32_t j = 0; j < n; j++) {
+            if (basis_pos[j] >= 0 || bound_status[j] == DS_BOUND_FIXED) continue;
+            int8_t imported = warm_bound_input[j];
+            if (imported == DS_BOUND_LO && isfinite(lo_ext[j])) {
+                bound_status[j] = DS_BOUND_LO;
+                x_ext[j] = lo_ext[j];
+            } else if (imported == DS_BOUND_HI && isfinite(hi_ext[j])) {
+                bound_status[j] = DS_BOUND_HI;
+                x_ext[j] = hi_ext[j];
+            } else if (imported == DS_BOUND_FREE &&
+                       !isfinite(lo_true[j]) && !isfinite(hi_true[j])) {
+                bound_status[j] = DS_BOUND_FREE;
+                x_ext[j] = 0.0;
+            }
         }
     }
 
@@ -14965,6 +15093,48 @@ build_result:
                 }
                 Py_DECREF(hist);
             }
+            if (warm_start_requested) {
+                PyObject *warm_info = Py_BuildValue(
+                    "{s:i,s:i,s:i,s:i,s:i}",
+                    "requested", warm_start_requested,
+                    "used", warm_start_used,
+                    "singular_repairs", warm_start_repairs,
+                    "fell_back_to_identity", warm_start_fallback,
+                    "imported_bound_status", warm_bound_input != NULL);
+                if (warm_info == NULL ||
+                    PyDict_SetItemString(result, "warm_start", warm_info) != 0) {
+                    Py_XDECREF(warm_info);
+                    Py_DECREF(result);
+                    result = NULL;
+                    goto done;
+                }
+                Py_DECREF(warm_info);
+            }
+            if (basis_initialized && getenv("LINPROGX_DS_EXPORT_BASIS") != NULL) {
+                PyObject *basis_list = ds_build_int32_list(basis, m_s);
+                PyObject *status_list = PyList_New(n_total);
+                if (basis_list == NULL || status_list == NULL) {
+                    Py_XDECREF(basis_list);
+                    Py_XDECREF(status_list);
+                    Py_DECREF(result);
+                    result = NULL;
+                    goto done;
+                }
+                for (int32_t j = 0; j < n_total; j++) {
+                    PyList_SET_ITEM(
+                        status_list, j, PyLong_FromLong((long)bound_status[j]));
+                }
+                if (PyDict_SetItemString(result, "basis", basis_list) != 0 ||
+                    PyDict_SetItemString(result, "bound_status", status_list) != 0) {
+                    Py_DECREF(basis_list);
+                    Py_DECREF(status_list);
+                    Py_DECREF(result);
+                    result = NULL;
+                    goto done;
+                }
+                Py_DECREF(basis_list);
+                Py_DECREF(status_list);
+            }
         }
     }
 
@@ -14986,6 +15156,7 @@ done:
     free(rate_hist_rho_nnz); free(rate_hist_alpha_nnz);
     free(rate_hist_ratio_candidates); free(rate_hist_support_overlap_prev);
     free(rate_hist_prev_alpha_support); free(rate_hist_prev_alpha_pattern);
+    free(warm_bound_input);
     return result;
 }
 
