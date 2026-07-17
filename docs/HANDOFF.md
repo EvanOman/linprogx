@@ -1951,6 +1951,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   gap is pricing-side (HiGHS-class dual steepest edge is published
   literature — candidate future unit, paper-based only).
 
+- THIRTY-SECOND SETTLED — PYTHON AGGREGATION PASS FLOOR (2026-07-17,
+  opus worker; path-a improvements shipped default-OFF at 107360f):
+  the Python re-stage was driven 465ms -> 42ms (11x: worklist scan,
+  O(1) implied-free via cached row-activity summaries, lean agg-only
+  path, structural fill-gate) and STILL cannot net a win — 80bau3b's
+  solve-side saving is only ~9ms (IPM 47->44 at the fill-gated
+  shape 1572x10724x21565), so the pass budget is ~4ms; pure-Python
+  floor is ~6ms build + ~30ms scan. Fill-gate validated as a clean
+  global threshold: accepts ONLY 80bau3b, structurally rejects
+  greenbea (nnz would grow 23274->26683) and every sentinel.
+  ESCALATION (evidence-backed, thin margin): native _csparse
+  aggregation port must reproduce the reference accept/reject
+  decisions at <=4ms — best case ~6-7% on a 1.062 cell needing ~6%.
+  PS_REC_COLUMN_SINGLETON (tag 2) marshalling is the record
+  template. Native-port worker dispatched.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
