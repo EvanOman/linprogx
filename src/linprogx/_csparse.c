@@ -103,6 +103,14 @@ static void supernodal_call_blas_threads(double flops) {
 #include <stdlib.h>
 #include <string.h>
 
+static const size_t CHOL_DENSE_TAIL_CACHE_BYTES = 1024U * 1024U;
+
+static int chol_dense_tail_cache_sized(Py_ssize_t tail_len) {
+    return tail_len > 0 &&
+           (size_t)tail_len <=
+               CHOL_DENSE_TAIL_CACHE_BYTES / sizeof(double) / (size_t)tail_len;
+}
+
 static double linprogx_monotonic_seconds(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -3184,6 +3192,7 @@ typedef struct {
      * into the same CSC storage, so the solves are untouched. */
     int32_t tail_start;           /* first tail column; == m disables */
     int32_t tail_len;
+    int chol_sched;               /* cached LINPROGX_CHOL_SCHED gate */
     int block_gate;               /* 1 when the block up-looking kernel is
                                    * structurally predicted to pay (saveable
                                    * scatter-pair fraction >= threshold);
@@ -3794,6 +3803,10 @@ static CholContext *chol_setup(
     }
     ctx->m = m;
     ctx->ipm_slice = ipm_slice;
+    {
+        const char *env = getenv("LINPROGX_CHOL_SCHED");
+        ctx->chol_sched = env == NULL || atoi(env) != 0;
+    }
     chol_setup_profile_mark(&setup_profile, "alloc-context");
 
     /* --- dense-column detection: exclude clique-forming columns from the
@@ -4728,9 +4741,15 @@ static void tail_gemm_job(void *vctx, int tid, int nthreads) {
 
 static void tail_gemm_update(double *C, const double *A, const double *B,
                              Py_ssize_t mC, Py_ssize_t nC, Py_ssize_t kk,
-                             Py_ssize_t ld) {
+                             Py_ssize_t ld, int inline_update) {
     TailGemmJob job = {C, A, B, mC, nC, kk, ld};
-    pool_run(tail_gemm_job, &job);
+    if (inline_update) {
+        /* Small hand-factor tails do not amortize a four-worker dispatch.
+         * Each output row keeps the same p-loop and arithmetic order. */
+        tail_gemm_job(&job, 0, 1);
+    } else {
+        pool_run(tail_gemm_job, &job);
+    }
 }
 
 #if defined(__x86_64__) || defined(_M_X64)
@@ -4784,7 +4803,7 @@ static void tail_gemm_rows(double *C, const double *A, const double *B,
 #if defined(__x86_64__) || defined(_M_X64)
 __attribute__((target("avx2,fma")))
 #endif
-static void tail_dense_chol(double *M, Py_ssize_t t) {
+static void tail_dense_chol(double *M, Py_ssize_t t, int inline_update) {
     for (Py_ssize_t c0 = 0; c0 < t; c0 += TAIL_NB) {
         Py_ssize_t nb = t - c0 < TAIL_NB ? t - c0 : TAIL_NB;
         for (Py_ssize_t i = c0; i < c0 + nb; i++) {
@@ -4818,7 +4837,7 @@ static void tail_dense_chol(double *M, Py_ssize_t t) {
         }
         Py_ssize_t rem = t - (c0 + nb);
         tail_gemm_update(&M[(c0 + nb) * t + (c0 + nb)], &M[(c0 + nb) * t + c0],
-                         &M[(c0 + nb) * t + c0], rem, rem, nb, t);
+                         &M[(c0 + nb) * t + c0], rem, rem, nb, t, inline_update);
     }
 }
 
@@ -4837,7 +4856,7 @@ static void supernode_diag_chol(double *M, Py_ssize_t w) {
         }
     }
 #endif
-    tail_dense_chol(M, w);
+    tail_dense_chol(M, w, 0);
 }
 
 static void chol_assemble_normal(
@@ -5754,7 +5773,11 @@ static void chol_refactor(
          * the hand kernel's per-pivot floor, so degenerate blocks (the
          * cre family) stay certifiable on the BLAS path. */
         if (g_tail_use_blas && tlen >= tail_blas_min()) {
-            ensure_blas_threads();
+            if (ctx->chol_sched && chol_dense_tail_cache_sized(tlen)) {
+                set_blas_threads(1);
+            } else {
+                ensure_blas_threads();
+            }
             int blas_n = (int)tlen;
             int blas_info = 0;
             /* dpotrf has no per-pivot floor, so on degenerate blocks it
@@ -5770,13 +5793,13 @@ static void chol_refactor(
             }
             dpotrf_("U", &blas_n, T, &blas_n, &blas_info);
             if (blas_info != 0) {
-                tail_dense_chol(T, tlen);
+                tail_dense_chol(T, tlen, 0);
             }
         } else {
-            tail_dense_chol(T, tlen);
+            tail_dense_chol(T, tlen, 0);
         }
 #else
-        tail_dense_chol(T, tlen);
+        tail_dense_chol(T, tlen, 0);
 #endif
         if (g_refac_profile) {
             double now = linprogx_monotonic_seconds();
