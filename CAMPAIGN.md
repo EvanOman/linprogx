@@ -20,10 +20,12 @@ Where the two axes stand:
   certified optimality.
 - **Runtime: aggregate EXCEEDED, per-instance majority WON.** The suite total and
   geometric-mean time ratio have favored linprogx since early in the campaign; the
-  paired head-to-head is now **16W-2P-6L**, including the `qap15` coverage win,
-  on the 2026-07-16 AWS `us-west-2` protocol-v3 board. The hard-loss ladder has
-  collapsed below 1.7×, with two genuine coin flips at parity (see
-  [Current certified scoreboard](#current-certified-scoreboard)).
+  paired head-to-head is now **20W-0P-4L**, including the `qap15` coverage win,
+  on the 2026-07-17 AWS `us-west-2` protocol-v3 census-wave board. A loss census
+  plus two presolve ships (H0, H1) flipped four cells off the prior 16W-2P-6L
+  board and closed the parity column entirely; the four remaining losses are
+  greenbea 1.69, pds_10 1.26–1.57 (host-dependent), woodw 1.20, and 80bau3b 1.062
+  (see [Current certified scoreboard](#current-certified-scoreboard)).
 
 ## The arc
 
@@ -31,7 +33,9 @@ The campaign narrative (fully dated in `docs/HANDOFF.md`) runs from a **14-10**
 paired head-to-head at the session-start baseline (`a1a355d`, 2026-07-04) through
 twenty substantive ship commits to presolve V2 shipping on 2026-07-14, followed
 by the setup fast path, native presolve port, and protocol-v3 certification wave
-on 2026-07-15 and 2026-07-16. The through-line:
+on 2026-07-15 and 2026-07-16, and finally a loss-census-driven presolve wave
+(H0's O(nnz) row-build fix and H1's fixpoint re-stage) that flipped four cells to
+a **20W-0P-4L** board on 2026-07-17. The through-line:
 the IPM factor path, dual-simplex LU path, presolve layer, and measurement
 protocol were each tightened under paired certification, closing whole classes
 of hypotheses along the way. The final pre-V2 ships came out of a joint
@@ -260,22 +264,106 @@ parity to **1.198** (2/21). Their pin4 results were host luck. `cre_a` at
 **1.002** and `stocfor3` at **0.999**, both with 12/21 wins, are the two true
 coin flips. The resulting board of record is **16W-2P-6L**.
 
+### The census wave: four flips to 20W-0P-4L
+
+With the pivoting and IPM-factor levers exhausted, the endgame turned to a
+**loss census** — an eight-cell phase attribution of every HiGHS-vs-linprogx
+loss, decomposing each into its presolve / factor / iteration / route slices and
+ranking six falsifiable hypotheses by projected work saved. The census did not
+propose new algorithms; it read where the wall actually went. Its buried lede:
+current presolve on the two `osa` instances yielded **zero reductions** yet cost
+58% and 82% of the public wall. That is not a tuning knob — it is a bug smell.
+
+**H0 — the quadratic presolve row-build war story.** The zero-yield osa presolve
+overhead was an accidental **O(degree²)** loop. The classic presolve row build
+called a row-set helper (`ps_row_set` → linear `ps_row_find`) once per nonzero,
+so each dense border row re-scanned its own growing set. On osa's border rows
+(degree 38k and 173k) that detonated. The signature was unmistakably quadratic:
+from the two degrees the predicted cost ratio was **20.45**, and the measured
+ratio was **20.9** — a quadratic fingerprint matched to two significant figures.
+A generation-stamp dedup makes the build **O(nnz)**: presolve wall `osa_14`
+1050 ms → 9 ms (−98.3%), `osa_60` 21,916 ms → 66 ms (−99.5%), with
+**bit-identical reduced problems on all 24 fixtures** (fingerprinted, and
+independently re-verified). It is strictly better than a skip-gate because it
+also cheapens presolve wherever it fires. Shipped as `d727389`.
+
+**H1 — the fixpoint re-stage and its acceptance-gate lesson.** The census also
+found that re-running the semantic V2 gate after the classic cascade reaches a
+**second fixpoint** with measured gains. H1 composes that: a classic pass making
+≥2% progress triggers a second V2 fixpoint on the rebuilt reduced problem;
+second reductions under 2% of the reduced shape are **discarded** (byte-identical
+off-path). Iterations drop deterministically — `cre_a` 36 → 34, `80bau3b`
+62 → 47 — and `stocfor3` holds its iteration count at −12% nnz. The lesson is in
+the gate itself: naive re-staging **regressed** `pds_10` −41% (PDHG 8576 → 10688
+iters) and `d2q06c` −34% via conditioning perturbation from tiny reductions —
+**the acceptance gate is load-bearing, not hygiene**. An in-C single-call variant
+reached an inferior order-dependent fixpoint (`cre_a` 36 → 38) and was reverted:
+compose-rebuild-then-rerun is the correct shape. 57 new characterization tests.
+Shipped as `928399c`.
+
+**The four flips.** The H0+H1 certification wave (v3, three us-west-2 hosts ×
+seven pairs, at `928399c`,
+`assets/modal_bench_928399cf5fea_paired_hosts3.json`) flipped four cells off the
+prior board:
+
+- `osa_60` **1.29 → 0.280** [0.253, 0.283], 21/21 — the quadratic-build fix
+  makes linprogx **3.6× faster than HiGHS**.
+- `osa_14` **1.42 → 0.912** [0.819, 1.018], 17/21.
+- `cre_a` **1.002 → 0.939** [0.917, 0.948], 18/21 — H1's 36 → 34 iterations
+  lands the old coin flip.
+- `stocfor3` **0.999 → 0.962** [0.935, 0.973], 17/21.
+
+`80bau3b` narrowed but did not flip: **1.062** [0.951, 1.063], 7/21 — H1's +26%
+local gain shrank to ~11% on-host because the bandwidth-heavy refactor slice
+damps presolve gains there. The sentinels stayed clean: `greenbea` 1.69
+unchanged, and `pds_10` printed 1.569 vs a prior 1.258 but with **8576
+iterations in every pair of both waves** and flat HiGHS walls — a pure
+host-hardware swing on the PDHG side, not a regression. The parity column is now
+empty: **20W-0P-4L**.
+
+**Two architectural kills scoped the endgame.** The census's remaining big-loss
+hypotheses both died at the same boundary. `pds_10`'s 38,852 degree-2 unit
+columns contain **zero free columns** (31,999 are `[0,inf)` arcs, 6,853
+capacitated); exact contraction in the eq-box form is limited to the 1,342 with
+a provably redundant bound (−3.2% work vs a 25% gate). The census's projected
+−30.5% was HiGHS's *realized* shape, reachable only because a contracted
+capacitated arc becomes a **ranged row** — a constraint form the SparseSolver /
+PDHG architecture cannot express. `greenbea` hits the same wall from the other
+side: it is already at a **bound-propagation fixpoint**, so eliminating all 338
+bounded singletons yields only 10 redundant rows (against a ~574–1000 bar), zero
+tightenings, zero fixings, and the eq-box relabel makes Dantzig *worse*
+(+73% pivots). HiGHS's 574-row greenbea reduction therefore does **not** come
+from bounded-singleton elimination; the cause is unknown and under measurement
+(a presolve-log rule-count diff). Ranged-row support end-to-end is the single
+structural unit behind both remaining big losses — an architecture project, not
+a presolve probe, if the ceiling is judged worth it.
+
 ## Current certified scoreboard
 
 The **certified** standing uses the protocol-v3 median-of-hosts method in
 `docs/HANDOFF.md` and the Modal artifacts replayed into `assets/campaign.db`;
 the single-shot replay table below is narrative-grade only. The board of record
-combines the stable prior cells with the two 2026-07-16 AWS `us-west-2` v3
-certifications (three hosts × seven pairs):
+combines the stable prior cells with the 2026-07-17 AWS `us-west-2` census-wave
+certification (three hosts × seven pairs), which re-certifies the seven instances
+the H0+H1 presolve ships touched over the two prior v3 certifications:
 
-- **V3 board of record: 16W-2P-6L**, including `qap15` as a coverage win.
-- **Confirmed wins:** `pilot87` 0.826 (21/21) and `pds_20` 0.824 (20/21).
-- **True coin flips:** `cre_a` 1.002 (12/21) and `stocfor3` 0.999 (12/21).
-- **Losses:** `greenbea` 1.69, `osa_14` 1.42, `osa_60` 1.29, `pds_10` 1.26,
-  `woodw` 1.20, and `80bau3b` 1.20.
+- **Census-wave board of record: 20W-0P-4L**, including `qap15` as a coverage win.
+- **Four flips off the prior 16W-2P-6L board:** `osa_60` 1.29 → **0.280**
+  (21/21), `osa_14` 1.42 → **0.912** (17/21), `cre_a` 1.002 → **0.939**
+  (18/21), and `stocfor3` 0.999 → **0.962** (17/21). The parity column is empty.
+- **Carried-over wins:** `pilot87` 0.826 (21/21) and `pds_20` 0.824 (20/21),
+  plus the stable structural-win core (qap12, ken_18, maros_r7, cre_b, cre_d, …).
+- **Losses (4):** `greenbea` 1.69, `pds_10` 1.26–1.57 (host-dependent PDHG
+  swing; 8576 iterations in every pair of both waves), `woodw` 1.20, and
+  `80bau3b` 1.062.
+- **Backfill pending:** the per-commit replay trajectory in `assets/campaign.db`
+  does not yet include rows for the two ship commits `d727389` (H0) and
+  `928399c` (H1); the census-wave board is certified from the Modal artifact,
+  and the single-shot trajectory table below still ends at `82cd31d`.
 
-The v3 board supersedes the single-host pin4 board. The important certification
-waypoints since presolve V2 shipped:
+The census-wave board supersedes the 16W-2P-6L v3 board, which in turn
+superseded the single-host pin4 board. The important certification waypoints
+since presolve V2 shipped:
 
 - **Clean-box certification at `1f4351d` (2026-07-14, AWS `us-west-2`,
   `assets/modal_bench_1f4351dcfa96_{suite,paired}.json`):** 13W-11L; geomean
@@ -317,6 +405,12 @@ waypoints since presolve V2 shipped:
   `assets/modal_bench_bda057900a4d_envab_hosts3.json`):** `greenbea` improved
   only 1.8% on the scoring host class, below the 5% ship bar. The artifact is
   stored as envab metadata and A/B evidence, not as linprogx/HiGHS paired rows.
+- **H0+H1 census-wave certification (`928399c`, 2026-07-17, AWS `us-west-2`,
+  `assets/modal_bench_928399cf5fea_paired_hosts3.json`):** the four flips —
+  `osa_60` 0.280 (21/21), `osa_14` 0.912 (17/21), `cre_a` 0.939 (18/21),
+  `stocfor3` 0.962 (17/21) — took the board to **20W-0P-4L**. `80bau3b` narrowed
+  to 1.062 (7/21) without flipping; `greenbea` 1.69 and `pds_10` (host-dependent
+  PDHG swing) held as the remaining structural losses alongside `woodw` 1.20.
 
 ## Headline per-instance trajectories
 
