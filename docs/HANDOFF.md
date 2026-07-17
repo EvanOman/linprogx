@@ -1856,6 +1856,28 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   (osa pair + knife-edge trio + pds_10/greenbea sentinels) RUNNING
   at 928399c.
 
+- H0+H1 CERTIFICATION WAVE — FOUR FLIPS (2026-07-17, v3 3 hosts x 7
+  pairs, us-west-2, at 928399c,
+  assets/modal_bench_928399cf5fea_paired_hosts3.json): **osa_60 WIN
+  0.280** [0.253,0.283] 21/21 (was 1.29 — the quadratic-build fix
+  makes us 3.6x faster than HiGHS); **osa_14 WIN 0.912** [0.819,
+  1.018] 17/21 (was 1.42); **cre_a WIN 0.939** [0.917,0.948] 18/21
+  (H1's 36->34 iters lands the 1.002 coin flip); **stocfor3 WIN
+  0.962** [0.935,0.973] 17/21. 80bau3b NARROWED, not flipped: 1.062
+  [0.951,1.063] 7/21 (H1's +26% local shrank to ~11% on-host — the
+  bandwidth-heavy refactor slice damps presolve gains there).
+  SENTINELS CLEAN: greenbea 1.690 unchanged; pds_10 printed 1.569
+  vs prior 1.258 but ITERATIONS ARE 8576 IN EVERY PAIR OF BOTH
+  WAVES and HiGHS walls were flat — pure host-hardware swing on the
+  PDHG side (documented pattern), not regression. **V3 BOARD OF
+  RECORD: 20W-0P-4L** (losses: greenbea 1.69, pds_10 1.26-1.57
+  host-dependent, woodw 1.20, 80bau3b 1.06). Remaining levers:
+  greenbea H4 ranged-row singletons (ceiling 35-45%), pds_10 H5
+  degree-2 network contraction (~25%), 80bau3b needs ~6% (census
+  levers partially spent; bandwidth-lean IPM work or further
+  presolve depth), woodw unqueued (local IPM near-parity; on-host
+  bandwidth gap).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
