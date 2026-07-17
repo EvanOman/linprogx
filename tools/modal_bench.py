@@ -70,6 +70,11 @@ USAGE
       --instances lp_osa_14,lp_osa_60,lp_pds_10,lp_pds_20,lp_pilot87,lp_woodw,lp_greenbea \
       --pairs 7 --hosts 3
 
+  # protocol v3: on-host environment A/B, concurrently across 3 hosts
+  uvx modal run tools/modal_bench.py --action bench --mode envab --ref <sha> \
+      --instances lp_greenbea --pairs 7 --hosts 3 \
+      --env-a "" --env-b "LINPROGX_DS_FT_DENSE_U=1"
+
 The local entrypoint prints the JSON blob to stdout and saves it to
 /tmp/modal_bench_<ref>_<mode>.json locally.
 """
@@ -165,6 +170,26 @@ def _norm(inst: str) -> str:
     return inst if inst.startswith("lp_") else f"lp_{inst}"
 
 
+def _parse_env_overrides(spec: str) -> dict[str, str]:
+    """Parse a comma-separated K=V list; an empty string means no overrides."""
+    if not spec:
+        return {}
+
+    overrides: dict[str, str] = {}
+    for assignment in spec.split(","):
+        assignment = assignment.strip()
+        if not assignment or "=" not in assignment:
+            raise ValueError(f"invalid environment override {assignment!r}; expected K=V")
+        key, value = assignment.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError("environment override key must not be empty")
+        if key in overrides:
+            raise ValueError(f"duplicate environment override key {key!r}")
+        overrides[key] = value
+    return overrides
+
+
 def _machine_info() -> dict[str, Any]:
     model = "unknown"
     ncpu = 0
@@ -232,10 +257,18 @@ def _prepare_source(git_ref: str, use_snapshot: bool) -> Path:
     return workdir
 
 
-def _run_cell(workdir: Path, fixture: Path, solver: str) -> dict[str, Any]:
+def _run_cell(
+    workdir: Path,
+    fixture: Path,
+    solver: str,
+    env_overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Run one (instance, solver) worker in an isolated subprocess."""
     started = time.perf_counter()
     row: dict[str, Any] = {"solver": solver}
+    worker_env = {**os.environ, "PYTHONPATH": "."}
+    if solver == "linprogx" and env_overrides:
+        worker_env.update(env_overrides)
     try:
         proc = subprocess.run(
             [
@@ -251,7 +284,7 @@ def _run_cell(workdir: Path, fixture: Path, solver: str) -> dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=CELL_TIMEOUT,
-            env={**os.environ, "PYTHONPATH": "."},
+            env=worker_env,
         )
         if proc.returncode == 0 and proc.stdout.strip():
             row.update(json.loads(proc.stdout.strip().splitlines()[-1]))
@@ -274,11 +307,7 @@ def aggregate_protocol_v3_hosts(host_results: list[dict[str, Any]]) -> dict[str,
         raise ValueError("host_results must not be empty")
 
     instances = sorted(
-        {
-            inst
-            for host_result in host_results
-            for inst in host_result.get("paired", {}).keys()
-        }
+        {inst for host_result in host_results for inst in host_result.get("paired", {}).keys()}
     )
     paired: dict[str, Any] = {}
 
@@ -345,6 +374,79 @@ def aggregate_protocol_v3_hosts(host_results: list[dict[str, Any]]) -> dict[str,
     }
 
 
+def aggregate_envab_v3_hosts(host_results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate independent env-A/B host results without changing paired v3."""
+    if not host_results:
+        raise ValueError("host_results must not be empty")
+
+    instances = sorted(
+        {inst for host_result in host_results for inst in host_result.get("envab", {}).keys()}
+    )
+    envab: dict[str, Any] = {}
+
+    for inst in instances:
+        per_host: list[dict[str, Any]] = []
+        ratios: list[float] = []
+        wins: list[int] = []
+        pairs_by_host: list[int] = []
+
+        for idx, host_result in enumerate(host_results):
+            entry = host_result.get("envab", {}).get(inst)
+            if entry is None:
+                continue
+
+            ratio = entry.get("ratio_median")
+            if ratio is not None:
+                ratios.append(float(ratio))
+
+            lx_b_wins = entry.get("lxB_wins")
+            if lx_b_wins is not None:
+                wins.append(int(lx_b_wins))
+
+            pairs = entry.get("pairs")
+            if pairs is not None:
+                pairs_by_host.append(int(pairs))
+
+            per_host.append(
+                {
+                    "host_index": host_result.get("host_index", idx),
+                    "machine_info": host_result.get("machine_info"),
+                    "load_checks": host_result.get("load_checks"),
+                    "pairs": pairs,
+                    "lxA": entry.get("lxA"),
+                    "lxB": entry.get("lxB"),
+                    "lxB_wins": lx_b_wins,
+                    "ratio_median": ratio,
+                    "ratio_min": entry.get("ratio_min"),
+                    "verdict": entry.get("verdict"),
+                }
+            )
+
+        ratio_median = statistics.median(ratios) if ratios else None
+        verdict = None
+        if ratio_median is not None:
+            verdict = "lxB_faster" if ratio_median < 1.0 else "lxA_faster"
+
+        envab[inst] = {
+            "hosts_observed": len(per_host),
+            "hosts_with_ratio": len(ratios),
+            "ratio_median_of_hosts": ratio_median,
+            "ratio_min_host": min(ratios) if ratios else None,
+            "ratio_max_host": max(ratios) if ratios else None,
+            "lxB_wins_by_host": wins,
+            "lxB_wins_total": sum(wins),
+            "pairs_by_host": pairs_by_host,
+            "verdict": verdict,
+            "per_host": per_host,
+        }
+
+    return {
+        "protocol": "v3",
+        "hosts": len(host_results),
+        "envab": envab,
+    }
+
+
 # --------------------------------------------------------------------------
 # Remote function
 # --------------------------------------------------------------------------
@@ -369,6 +471,8 @@ def bench(
     mode: str = "suite",
     use_snapshot: bool = True,
     include_raw_pairs: bool = False,
+    env_a: dict[str, str] | None = None,
+    env_b: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build linprogx at git_ref and benchmark on a clean CPU container.
 
@@ -376,6 +480,8 @@ def bench(
                    experiments/suite_bench.py output shape.
     mode="paired": interleaved lx/HiGHS pairs per instance (pairs repeats);
                    report median/min/wins per side + ratios + verdict.
+    mode="envab":  interleaved linprogx A/B pairs with per-arm environment
+                   overrides; report B/A ratios and B wins.
     """
     info_start = _machine_info()
     workdir = _prepare_source(git_ref, use_snapshot)
@@ -487,6 +593,80 @@ def bench(
                 flush=True,
             )
         out["paired"] = paired
+    elif mode == "envab":
+        env_a = env_a or {}
+        env_b = env_b or {}
+        out["env_a"] = env_a
+        out["env_b"] = env_b
+        envab: dict[str, Any] = {}
+        for inst in insts:
+            fixture = Path(FIXTURES_DIR) / f"{inst}.mat"
+            a_secs: list[float] = []
+            b_secs: list[float] = []
+            pair_results: list[dict[str, Any]] = []
+            lx_b_wins = 0
+            a_status = b_status = "optimal"
+            a_backend = b_backend = None
+            for pair_index in range(pairs):
+                # Interleaved on one host: arm A then arm B, back to back.
+                lx_a = _run_cell(workdir, fixture, "linprogx", env_a)
+                lx_b = _run_cell(workdir, fixture, "linprogx", env_b)
+                if lx_a.get("status") == "optimal":
+                    a_secs.append(float(lx_a["seconds"]))
+                    a_backend = lx_a.get("backend")
+                else:
+                    a_status = lx_a.get("status", "err")
+                if lx_b.get("status") == "optimal":
+                    b_secs.append(float(lx_b["seconds"]))
+                    b_backend = lx_b.get("backend")
+                else:
+                    b_status = lx_b.get("status", "err")
+                both_optimal = lx_a.get("status") == "optimal" and lx_b.get("status") == "optimal"
+                b_won = both_optimal and float(lx_b["seconds"]) < float(lx_a["seconds"])
+                if b_won:
+                    lx_b_wins += 1
+                if include_raw_pairs:
+                    pair_results.append(
+                        {
+                            "pair": pair_index + 1,
+                            "lxA": lx_a,
+                            "lxB": lx_b,
+                            "lxB_won": b_won,
+                        }
+                    )
+
+            def _stat(xs: list[float]) -> dict[str, Any]:
+                if not xs:
+                    return {"median": None, "min": None, "n": 0}
+                return {"median": statistics.median(xs), "min": min(xs), "n": len(xs)}
+
+            a_st = _stat(a_secs)
+            b_st = _stat(b_secs)
+            ratio_median = (
+                b_st["median"] / a_st["median"] if b_st["median"] and a_st["median"] else None
+            )
+            ratio_min = b_st["min"] / a_st["min"] if b_st["min"] and a_st["min"] else None
+            verdict = None
+            if ratio_median is not None:
+                verdict = "lxB_faster" if ratio_median < 1.0 else "lxA_faster"
+            entry = {
+                "pairs": pairs,
+                "lxA": {**a_st, "status": a_status, "backend": a_backend},
+                "lxB": {**b_st, "status": b_status, "backend": b_backend},
+                "lxB_wins": lx_b_wins,
+                "ratio_median": ratio_median,
+                "ratio_min": ratio_min,
+                "verdict": verdict,
+            }
+            if include_raw_pairs:
+                entry["pair_results"] = pair_results
+            envab[inst] = entry
+            print(
+                f"{inst:>14}: A med {a_st['median']} B med {b_st['median']} "
+                f"B/A {ratio_median} B wins {lx_b_wins}/{pairs} -> {verdict}",
+                flush=True,
+            )
+        out["envab"] = envab
     else:
         raise ValueError(f"unknown mode {mode!r}")
 
@@ -518,6 +698,8 @@ def main(
     instances: str = "",
     pairs: int = 7,
     hosts: int = 1,
+    env_a: str = "",
+    env_b: str = "",
     use_snapshot: bool = True,
     worktree: str = "/home/evan/dev/linprogx-perf-worktree",
     local_fixtures: str = "/tmp/lpsuite",
@@ -566,20 +748,45 @@ def main(
             raise SystemExit("--ref required for bench")
         if hosts < 1:
             raise SystemExit("--hosts must be >= 1")
-        if hosts > 1 and mode != "paired":
+        if hosts > 1 and mode not in {"paired", "envab"}:
             raise SystemExit("--hosts > 1 is only supported for --mode paired")
+        if mode == "envab":
+            try:
+                env_a_overrides = _parse_env_overrides(env_a)
+                env_b_overrides = _parse_env_overrides(env_b)
+            except ValueError as exc:
+                raise SystemExit(str(exc)) from exc
+        else:
+            env_a_overrides = env_b_overrides = {}
         inst_list = [s for s in (i.strip() for i in instances.split(",")) if s] or None
         short = ref[:12]
         if hosts > 1:
-            calls = [
-                (ref, inst_list, pairs, mode, use_snapshot, True)
-                for _ in range(hosts)
-            ]
+            if mode == "envab":
+                calls = [
+                    (
+                        ref,
+                        inst_list,
+                        pairs,
+                        mode,
+                        use_snapshot,
+                        True,
+                        env_a_overrides,
+                        env_b_overrides,
+                    )
+                    for _ in range(hosts)
+                ]
+            else:
+                calls = [(ref, inst_list, pairs, mode, use_snapshot, True) for _ in range(hosts)]
             host_results: list[dict[str, Any]] = []
             for idx, host_result in enumerate(bench.starmap(calls)):
                 host_result["host_index"] = idx
                 host_results.append(host_result)
 
+            v3 = (
+                aggregate_envab_v3_hosts(host_results)
+                if mode == "envab"
+                else aggregate_protocol_v3_hosts(host_results)
+            )
             result = {
                 "ref": ref,
                 "mode": mode,
@@ -589,8 +796,11 @@ def main(
                 "use_snapshot": use_snapshot,
                 "instances": [_norm(i) for i in inst_list] if inst_list else CERTIFIED_SET,
                 "host_results": host_results,
-                "v3": aggregate_protocol_v3_hosts(host_results),
+                "v3": v3,
             }
+            if mode == "envab":
+                result["env_a"] = env_a_overrides
+                result["env_b"] = env_b_overrides
             blob = json.dumps(result, indent=2, default=str)
             print(blob)
             outp = Path(f"/tmp/modal_bench_{short}_{mode}_hosts{hosts}.json")
@@ -598,13 +808,17 @@ def main(
             print(f"\n[saved] {outp}", file=__import__("sys").stderr)
             return
 
-        result = bench.remote(
-            git_ref=ref,
-            instances=inst_list,
-            pairs=pairs,
-            mode=mode,
-            use_snapshot=use_snapshot,
-        )
+        bench_kwargs = {
+            "git_ref": ref,
+            "instances": inst_list,
+            "pairs": pairs,
+            "mode": mode,
+            "use_snapshot": use_snapshot,
+        }
+        if mode == "envab":
+            bench_kwargs["env_a"] = env_a_overrides
+            bench_kwargs["env_b"] = env_b_overrides
+        result = bench.remote(**bench_kwargs)
         blob = json.dumps(result, indent=2, default=str)
         print(blob)
         outp = Path(f"/tmp/modal_bench_{short}_{mode}.json")
