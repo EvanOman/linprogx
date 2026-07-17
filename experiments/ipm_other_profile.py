@@ -142,7 +142,7 @@ def run_direct(data: dict[str, Any], *, max_iter: int, debug: bool) -> dict[str,
         feas_tol=2e-5,
     )
     wall = time.perf_counter() - t0
-    return {
+    out = {
         "wall_s": wall,
         "status": result["status"],
         "iterations": int(result["iterations"]),
@@ -152,6 +152,9 @@ def run_direct(data: dict[str, Any], *, max_iter: int, debug: bool) -> dict[str,
         "reduced_shape": prep["reduced_shape"],
         "reduced_nnz": prep["reduced_nnz"],
     }
+    if "ipm_slice_us" in result:
+        out["ipm_slice_us"] = result["ipm_slice_us"]
+    return out
 
 
 def run_fingerprint(data: dict[str, Any]) -> dict[str, Any]:

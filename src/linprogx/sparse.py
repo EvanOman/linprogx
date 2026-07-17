@@ -93,6 +93,7 @@ class SparseSolveResult:
     solution: Solution
     backend: str
     seconds: float
+    ipm_slice_us: dict[str, float] | None = None
 
 
 @dataclass
@@ -149,15 +150,18 @@ class SparseSolver:
         self.check_interval = check_interval
         self.presolve = presolve
         self.threads = threads
+        self._last_ipm_slice_us: dict[str, float] | None = None
 
     def solve(self, problem: SparseLPProblem) -> SparseSolveResult:
         start = time.perf_counter()
+        self._last_ipm_slice_us = None
         if self.algorithm in ("pdhg", "ipm", "dual_simplex", "auto"):
             solution, backend = self._solve_eq_box(problem, self.algorithm)
         else:
             solution = self._solve(problem)
             backend = "native-sparse-simplex"
-        return SparseSolveResult(solution, backend, time.perf_counter() - start)
+        ipm_slice_us = self._last_ipm_slice_us if backend == "native-c-sparse-ipm" else None
+        return SparseSolveResult(solution, backend, time.perf_counter() - start, ipm_slice_us)
 
     def _solve_eq_box(self, problem: SparseLPProblem, algorithm: str) -> tuple[Solution, str]:
         backend = f"native-c-sparse-{algorithm}"
@@ -269,6 +273,11 @@ class SparseSolver:
                 threads=0 if self.threads is None else self.threads,
                 feas_tol=self.eps,
             )
+            raw_slice = result.get("ipm_slice_us")
+            if isinstance(raw_slice, dict):
+                self._last_ipm_slice_us = {
+                    str(key): float(value) for key, value in raw_slice.items()
+                }
             if result["status"] == "optimal":
                 candidate_x = [float(value) for value in result["x"]]
                 if reduction is not None:
@@ -314,6 +323,11 @@ class SparseSolver:
                         feas_tol=self.eps,
                     )
                     if retry_result["status"] == "optimal":
+                        retry_slice = retry_result.get("ipm_slice_us")
+                        if isinstance(retry_slice, dict):
+                            self._last_ipm_slice_us = {
+                                str(key): float(value) for key, value in retry_slice.items()
+                            }
                         is_raw = rmatrix is problem.A_eq and reduction is not None
                         rx = [float(value) for value in retry_result["x"]]
                         if is_raw:

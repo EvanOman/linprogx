@@ -71,7 +71,7 @@ def solve_linprogx(data: dict[str, Any]) -> dict[str, Any]:
     seconds = time.perf_counter() - start
     x = np.array(result.solution.x, dtype=float)
     residual = float(np.max(np.abs(data["A_scipy"] @ x - data["b"])))
-    return {
+    row: dict[str, Any] = {
         "status": result.solution.status.value,
         "objective": result.solution.objective_value,
         "seconds": seconds,
@@ -79,6 +79,9 @@ def solve_linprogx(data: dict[str, Any]) -> dict[str, Any]:
         "backend": result.backend.rsplit("-", 1)[-1],
         "iterations": result.solution.iterations,
     }
+    if result.ipm_slice_us is not None:
+        row["ipm_slice_us"] = result.ipm_slice_us
+    return row
 
 
 def solve_highs(data: dict[str, Any]) -> dict[str, Any]:

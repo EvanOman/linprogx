@@ -178,6 +178,47 @@ static int fill_double_array(PyObject *source, Py_ssize_t expected, double *targ
     return 0;
 }
 
+enum {
+    IPM_SLICE_SETUP_ORDER = 0,
+    IPM_SLICE_SYMBOLIC = 1,
+    IPM_SLICE_REFACTOR = 2,
+    IPM_SLICE_TRIANGULAR_SOLVES = 3,
+    IPM_SLICE_MATVECS_RESIDUALS = 4,
+    IPM_SLICE_OTHER = 5,
+    IPM_SLICE_COUNT = 6,
+};
+
+typedef struct {
+    double seconds[IPM_SLICE_COUNT];
+    double phase_started;
+    int phase;
+} IpmSliceProfile;
+
+static inline void ipm_slice_switch(IpmSliceProfile *profile, int phase) {
+    if (profile == NULL || profile->phase == phase) {
+        return;
+    }
+    double now = linprogx_monotonic_seconds();
+    profile->seconds[profile->phase] += now - profile->phase_started;
+    profile->phase = phase;
+    profile->phase_started = now;
+}
+
+static inline int ipm_slice_enter(IpmSliceProfile *profile, int phase) {
+    if (profile == NULL) {
+        return -1;
+    }
+    int previous = profile->phase;
+    ipm_slice_switch(profile, phase);
+    return previous;
+}
+
+static inline void ipm_slice_leave(IpmSliceProfile *profile, int previous) {
+    if (previous >= 0) {
+        ipm_slice_switch(profile, previous);
+    }
+}
+
 /* Scaled operator with 32-bit inner indices: the PDHG hot loops are memory
  * bound, so halving index traffic measurably speeds up every matvec. */
 typedef struct {
@@ -189,6 +230,7 @@ typedef struct {
     const Py_ssize_t *col_start;
     const int32_t *row_index;
     const double *csc_data;
+    IpmSliceProfile *ipm_slice;
 } ScaledOp;
 
 /* ---- lightweight persistent thread pool -------------------------------
@@ -437,12 +479,15 @@ static int matvec_use_serial(const ScaledOp *op) {
 }
 
 static void scaled_op_matvec(const ScaledOp *op, const double *restrict x, double *restrict out) {
+    int slice_previous = ipm_slice_enter(op->ipm_slice, IPM_SLICE_MATVECS_RESIDUALS);
     MatvecJob ctx = {op, x, out};
     if (matvec_use_serial(op)) {
         matvec_job(&ctx, 0, 1);
+        ipm_slice_leave(op->ipm_slice, slice_previous);
         return;
     }
     pool_run(matvec_job, &ctx);
+    ipm_slice_leave(op->ipm_slice, slice_previous);
 }
 
 static void transpose_matvec_job(void *vctx, int tid, int nthreads) {
@@ -466,12 +511,15 @@ static void transpose_matvec_job(void *vctx, int tid, int nthreads) {
 }
 
 static void scaled_op_transpose_matvec(const ScaledOp *op, const double *restrict y, double *restrict out) {
+    int slice_previous = ipm_slice_enter(op->ipm_slice, IPM_SLICE_MATVECS_RESIDUALS);
     MatvecJob ctx = {op, (const double *)y, out};
     if (matvec_use_serial(op)) {
         transpose_matvec_job(&ctx, 0, 1);
+        ipm_slice_leave(op->ipm_slice, slice_previous);
         return;
     }
     pool_run(transpose_matvec_job, &ctx);
+    ipm_slice_leave(op->ipm_slice, slice_previous);
 }
 
 static void transpose_matvec_accum_x_job(void *vctx, int tid, int nthreads) {
@@ -1508,6 +1556,7 @@ static PyObject *CSRMatrix_solve_eq_box_pdhg(CSRMatrixObject *self, PyObject *ar
         self->csc_indptr,
         op_row_index,
         operator_csc_data,
+        NULL,
     };
 
     if (pdhg_profile) {
@@ -3178,6 +3227,7 @@ typedef struct {
     double *snode_update_a;
     double *snode_update_b;
     double *snode_update_c;
+    IpmSliceProfile *ipm_slice;
 } CholContext;
 
 typedef struct SNodeUpdate {
@@ -3664,10 +3714,13 @@ static int chol_ensure_supernode_symbolic(CholContext *ctx) {
     }
     int debug = getenv("LINPROGX_CHOL_DEBUG") != NULL;
     double t0 = debug ? linprogx_monotonic_seconds() : 0.0;
+    int slice_previous = ipm_slice_enter(ctx->ipm_slice, IPM_SLICE_SYMBOLIC);
     if (chol_build_supernode_symbolic(ctx) != 0) {
+        ipm_slice_leave(ctx->ipm_slice, slice_previous);
         ctx->snode_symbolic_ready = -1;
         return -1;
     }
+    ipm_slice_leave(ctx->ipm_slice, slice_previous);
     if (debug) {
         fprintf(stderr, "snode symbolic build: %.4fs (ns=%d updates=%zd)\n",
                 linprogx_monotonic_seconds() - t0, ctx->n_snodes,
@@ -3712,7 +3765,8 @@ static void chol_setup_profile_total(CholSetupProfile *profile) {
 }
 
 static CholContext *chol_setup(
-    CSRMatrixObject *A, double factor_flops_cap, int64_t md_ops_cap, int *too_dense) {
+    CSRMatrixObject *A, double factor_flops_cap, int64_t md_ops_cap, int *too_dense,
+    IpmSliceProfile *ipm_slice) {
     int debug_setup = getenv("LINPROGX_CHOL_DEBUG") != NULL;
     int profile_setup = getenv("LINPROGX_CHOL_SETUP_PROFILE") != NULL;
     double t_phase = debug_setup ? setup_clock() : 0.0;
@@ -3739,6 +3793,7 @@ static CholContext *chol_setup(
         return NULL;
     }
     ctx->m = m;
+    ctx->ipm_slice = ipm_slice;
     chol_setup_profile_mark(&setup_profile, "alloc-context");
 
     /* --- dense-column detection: exclude clique-forming columns from the
@@ -4078,6 +4133,8 @@ static CholContext *chol_setup(
     }
     chol_setup_profile_mark(&setup_profile, "assembly-map");
     SETUP_MARK("assembly-map");
+
+    ipm_slice_switch(ipm_slice, IPM_SLICE_SYMBOLIC);
 
     /* --- elimination tree (Liu's algorithm with path compression) --- */
     ctx->parent = calloc((size_t)m, sizeof(int32_t));
@@ -5746,11 +5803,13 @@ static void chol_refactor(
 static void chol_refactor_mode(
     CholContext *ctx, CSRMatrixObject *A, const double *csc_values,
     const double *D, double delta, int use_supernodal) {
+    int slice_previous = ipm_slice_enter(ctx->ipm_slice, IPM_SLICE_REFACTOR);
     if (use_supernodal && chol_ensure_supernode_symbolic(ctx) == 0) {
         chol_refactor_supernodal(ctx, A, csc_values, D, delta);
     } else {
         chol_refactor(ctx, A, csc_values, D, delta);
     }
+    ipm_slice_leave(ctx->ipm_slice, slice_previous);
 }
 
 static int chol_auto_supernodal(const CholContext *ctx) {
@@ -5820,6 +5879,7 @@ static int chol_auto_supernodal(const CholContext *ctx) {
 
 /* y = (A D A' + delta I) x using the assembled (permuted) matrix. */
 static void chol_matvec(const CholContext *ctx, const double *x, double *out) {
+    int slice_previous = ipm_slice_enter(ctx->ipm_slice, IPM_SLICE_MATVECS_RESIDUALS);
     int32_t m = ctx->m;
     for (int32_t k = 0; k < m; k++) {
         double total = 0.0;
@@ -5838,6 +5898,7 @@ static void chol_matvec(const CholContext *ctx, const double *x, double *out) {
             out[i] += u[i] * total;
         }
     }
+    ipm_slice_leave(ctx->ipm_slice, slice_previous);
 }
 
 /* Solve with the SPARSE part of the factor only (no dense correction). */
@@ -5959,9 +6020,14 @@ static void dense_chol_solve(const double *M, Py_ssize_t k, double *rhs) {
  * Sherman-Morrison-Woodbury: x = t - W (I + U'W)^-1 U' t with t the
  * sparse-part solve. */
 static void chol_solve(CholContext *ctx, const double *rhs, double *out) {
+    int slice_previous = -1;
+    if (ctx->ipm_slice == NULL || ctx->ipm_slice->phase != IPM_SLICE_REFACTOR) {
+        slice_previous = ipm_slice_enter(ctx->ipm_slice, IPM_SLICE_TRIANGULAR_SOLVES);
+    }
     chol_solve_sparse(ctx, rhs, out);
     Py_ssize_t kd = ctx->n_dense;
     if (kd == 0) {
+        ipm_slice_leave(ctx->ipm_slice, slice_previous);
         return;
     }
     int32_t m = ctx->m;
@@ -5981,6 +6047,7 @@ static void chol_solve(CholContext *ctx, const double *rhs, double *out) {
             out[i] -= w[i] * scale;
         }
     }
+    ipm_slice_leave(ctx->ipm_slice, slice_previous);
 }
 
 static uint64_t hash_bytes_fnv1a(const void *data, size_t nbytes) {
@@ -6002,7 +6069,7 @@ static PyObject *CSRMatrix_cholesky_symbolic_fingerprint(CSRMatrixObject *self, 
         return NULL;
     }
     int too_dense = 0;
-    CholContext *ctx = chol_setup(self, 0.0, 1000000000000LL, &too_dense);
+    CholContext *ctx = chol_setup(self, 0.0, 1000000000000LL, &too_dense, NULL);
     if (ctx == NULL) {
         PyErr_SetString(PyExc_RuntimeError, "chol_setup failed");
         return NULL;
@@ -6036,7 +6103,7 @@ static PyObject *CSRMatrix_supernode_sizes(CSRMatrixObject *self, PyObject *args
         return NULL;
     }
     int too_dense = 0;
-    CholContext *ctx = chol_setup(self, 0.0, 1000000000000LL, &too_dense);
+    CholContext *ctx = chol_setup(self, 0.0, 1000000000000LL, &too_dense, NULL);
     if (ctx == NULL) {
         PyErr_SetString(PyExc_RuntimeError, "chol_setup failed");
         return NULL;
@@ -6077,7 +6144,7 @@ static PyObject *CSRMatrix_supernode_symbolic_structure(CSRMatrixObject *self, P
         return NULL;
     }
     int too_dense = 0;
-    CholContext *ctx = chol_setup(self, 0.0, 1000000000000LL, &too_dense);
+    CholContext *ctx = chol_setup(self, 0.0, 1000000000000LL, &too_dense, NULL);
     if (ctx == NULL) {
         PyErr_SetString(PyExc_RuntimeError, "chol_setup failed");
         return NULL;
@@ -6193,7 +6260,7 @@ static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObjec
     }
     CholContext *ctx;
     Py_BEGIN_ALLOW_THREADS
-    ctx = chol_setup(self, 0.0, 0, NULL);
+    ctx = chol_setup(self, 0.0, 0, NULL, NULL);
     if (ctx != NULL) {
         chol_refactor_mode(ctx, self, self->csc_data, d, delta, use_supernodal);
         chol_solve(ctx, rhs, out);
@@ -6951,6 +7018,13 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     Py_ssize_t n = self->cols;
     Py_ssize_t nnz = self->nnz;
 
+    IpmSliceProfile ipm_slice_storage = {{0.0}, 0.0, IPM_SLICE_SETUP_ORDER};
+    IpmSliceProfile *ipm_slice = NULL;
+    if (getenv("LINPROGX_IPM_SLICE") != NULL) {
+        ipm_slice_storage.phase_started = linprogx_monotonic_seconds();
+        ipm_slice = &ipm_slice_storage;
+    }
+
     PyObject *result = NULL;
     CholContext *chol = NULL;
     double *c = NULL, *b = NULL, *lo = NULL, *hi = NULL;
@@ -7085,7 +7159,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     }
     ScaledOp op = {
         m, n, self->indptr, op_col_index, csr_vals,
-        self->csc_indptr, op_row_index, csc_vals,
+        self->csc_indptr, op_row_index, csc_vals, ipm_slice,
     };
 
     /* scaled problem data: b_s = R b, c_s = S c / c_scale, bounds / S */
@@ -7171,7 +7245,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         }
     }
     g_tail_use_blas = use_blas;
-    chol = chol_setup(self, 7e8, md_budget, &factor_too_dense);
+    chol = chol_setup(self, 7e8, md_budget, &factor_too_dense, ipm_slice);
     if (chol == NULL) {
         if (factor_too_dense) {
             /* The factor would be too expensive per iteration; report a
@@ -7194,6 +7268,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     }
     int refactor_supernodal =
         use_supernodal < 0 ? chol_auto_supernodal(chol) : use_supernodal;
+    ipm_slice_switch(ipm_slice, IPM_SLICE_OTHER);
 
     g_refac_profile = (getenv("LINPROGX_REFAC_PROFILE") != NULL);
     g_refac_assemble = g_refac_uplook = g_refac_dpotrf = g_refac_copyback = 0.0;
@@ -7407,6 +7482,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
     for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
         iterations = iter;
         /* slacks, residuals, and the barrier parameter */
+        int slice_previous = ipm_slice_enter(ipm_slice, IPM_SLICE_MATVECS_RESIDUALS);
         double lp_phase = loop_profile ? linprogx_monotonic_seconds() : 0.0;
         scaled_op_matvec(&op, x, ax);
         if (loop_profile) {
@@ -7454,6 +7530,7 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
         pres = l2_norm(rp, m) / b_norm;
         raw_pres = ipm_raw_primal_residual(rp, row_scale, m);
         dres = l2_norm(rd, n) / c_norm;
+        ipm_slice_leave(ipm_slice, slice_previous);
         if (loop_profile) {
             lp_resid_scan += linprogx_monotonic_seconds() - lp_phase;
         }
@@ -8523,6 +8600,25 @@ done:
     free(x_best);
     free(y_best);
     free(bound_kind);
+    if (result != NULL && ipm_slice != NULL) {
+        ipm_slice_switch(ipm_slice, IPM_SLICE_COUNT);
+        PyObject *slice_dict = Py_BuildValue(
+            "{s:d,s:d,s:d,s:d,s:d,s:d}",
+            "setup_order", ipm_slice->seconds[IPM_SLICE_SETUP_ORDER] * 1e6,
+            "symbolic", ipm_slice->seconds[IPM_SLICE_SYMBOLIC] * 1e6,
+            "refactor", ipm_slice->seconds[IPM_SLICE_REFACTOR] * 1e6,
+            "triangular_solves", ipm_slice->seconds[IPM_SLICE_TRIANGULAR_SOLVES] * 1e6,
+            "matvecs_residuals", ipm_slice->seconds[IPM_SLICE_MATVECS_RESIDUALS] * 1e6,
+            "other", ipm_slice->seconds[IPM_SLICE_OTHER] * 1e6);
+        if (slice_dict != NULL) {
+            if (PyDict_SetItemString(result, "ipm_slice_us", slice_dict) != 0) {
+                PyErr_Clear();
+            }
+            Py_DECREF(slice_dict);
+        } else {
+            PyErr_Clear();
+        }
+    }
     return result;
 }
 

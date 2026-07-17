@@ -697,6 +697,50 @@ def test_ipm_loop_profile_is_env_gated(
     assert "mu_safeguard=" in captured.err
 
 
+def test_ipm_slice_result_is_env_gated_and_numerically_inert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matrix = from_scipy_sparse(scipy.sparse.csr_matrix([[1.0, 1.0]]))
+    args = ([1.0, 2.0], [1.0], [0.0, 0.0], [float("inf"), float("inf")])
+
+    monkeypatch.delenv("LINPROGX_IPM_SLICE", raising=False)
+    without_slice = matrix.solve_eq_box_ipm(*args, max_iter=20, tol=1e-9)
+    assert "ipm_slice_us" not in without_slice
+
+    monkeypatch.setenv("LINPROGX_IPM_SLICE", "1")
+    with_slice = matrix.solve_eq_box_ipm(*args, max_iter=20, tol=1e-9)
+    slice_us = with_slice.pop("ipm_slice_us")
+
+    assert with_slice == without_slice
+    assert set(slice_us) == {
+        "setup_order",
+        "symbolic",
+        "refactor",
+        "triangular_solves",
+        "matvecs_residuals",
+        "other",
+    }
+    assert all(value >= 0.0 for value in slice_us.values())
+    assert sum(slice_us.values()) > 0.0
+
+
+def test_sparse_solver_threads_ipm_slice_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LINPROGX_IPM_SLICE", "1")
+    result = SparseSolver(algorithm="ipm", eps=1e-9, presolve=False).solve(
+        SparseLPProblem(
+            [1.0, 2.0],
+            A_eq=csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0]),
+            b_eq=[1.0],
+            objective="min",
+            bounds=[(0.0, None), (0.0, None)],
+        )
+    )
+
+    assert result.backend == "native-c-sparse-ipm"
+    assert result.ipm_slice_us is not None
+    assert "refactor" in result.ipm_slice_us
+
+
 def test_ipm_blas_and_floored_tail_agree_on_residual() -> None:
     # the BLAS dpotrf tail and the floored hand-kernel tail factor the
     # same system; both must reach the same objective regardless of
