@@ -25,27 +25,24 @@ current era).
   dated verdicts (through the aggregation cert).
 - GOAL (user's /goal hook): beat HiGHS on ALL 24 LPnetlib instances.
 
-## Immediate queue (all scoped, none dispatched)
-1. cre_a reject-scan cost: the native aggregation scan costs ~2.75ms on
-   cre_a (a reject) — target <0.5ms or a proven a-priori discriminator
-   (fill-trajectory minima proven NON-separating; see the aggregation
-   cert entry). Flipping this restores cre_a's win margin.
-2. woodw (1.20): on-host IPM bandwidth family — local IPM is near HiGHS
-   parity; the gap is the refactor slice's memory-bandwidth behavior on
-   Modal hosts. Bandwidth-lean factorization work (blocking/layout) is
-   the family. No specific unit scoped yet — needs its own census.
-3. greenbea (~1.7): presolve frontier CLOSED (31st settled: aggregation
-   hits HiGHS's shape but our DS does MORE pivots on it — shape parity
-   is not pivot parity). The remaining gap is pricing-side: HiGHS does
-   2,836 pivots to our 4,399 on comparable shapes. Dual steepest edge
-   (Forrest-Goldfarb, published literature — papers OK, never solver
-   source) is the candidate unit. High effort.
-4. pds_10: requires ranged-row/inequality support end-to-end (29th
-   settled) — an architecture project (presolve records + kernels +
-   postsolve), ~25% ceiling. Scope only if judged worth it.
-5. Chronicle: round 4 (aggregation era, 20W-1P-3L) may already be
-   committed/published — verify gh-pages 750c859+ and the Claude
-   artifact match the board before re-publishing.
+## Immediate queue
+1. pds_10 (1.26-1.57): the ONLY loss with a scoped path — ranged-row/
+   inequality support end-to-end (29th settled): presolve records +
+   PDHG/IPM kernels + postsolve, ~25% ceiling (HiGHS's arc-contraction
+   shape). An architecture project; commission deliberately.
+2. greenbea (~1.7): NO live scoped lever (35th settled closed the
+   pivot frontier: pivot parity and per-pivot parity trade against
+   each other; presolve/leaving-rules/basis/ratio-test/crash/slice
+   families ALL settled 20th-35th). Needs a new idea class. Do not
+   re-probe settled families.
+3. cre_a (0.995 coin flip, 13/21): no engineered lever left (34th
+   settled). Optionally re-certify occasionally; it may certify on a
+   friendly wave. The a2 ship did not move its path.
+4. Supernodal sparse front (lever c of the refactor unit): needs a
+   ~57% front-time cut for a further woodw-class gate; woodw already
+   flipped, so commission only for pilot87-robustness/general value.
+5. Chronicle round 5 (21W-1P-2L) may be committed/published — verify
+   gh-pages and the Claude artifact match before re-publishing.
 
 ## Orchestration protocol (hard lessons, do not relearn)
 - Overmind mode: Fable plans/reviews; workers implement. NEVER
