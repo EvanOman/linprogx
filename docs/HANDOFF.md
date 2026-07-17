@@ -1878,6 +1878,23 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   presolve depth), woodw unqueued (local IPM near-parity; on-host
   bandwidth gap).
 
+- TWENTY-NINTH SETTLED — PDS DEGREE-2 CONTRACTION (2026-07-17, opus
+  worker, killed at the shape probe, no source touched): pds_10's
+  38,852 degree-2 unit columns contain ZERO free columns — 31,999
+  are [0,inf) arcs and 6,853 are capacitated [0,hi]. Exact
+  contraction in our eq-box form is limited to columns with a
+  provably redundant bound: 1,342 (3.5%), work proxy -3.2% vs the
+  25% gate (pds_20: 1,818 of 85,803, -2.0%). The census's projected
+  -30.5% was HiGHS's REALIZED shape, achievable only because a
+  contracted capacitated arc becomes a RANGED ROW — a constraint
+  form our SparseSolver/PDHG architecture cannot express. THE
+  ARCHITECTURAL CONVERGENCE: H4 (greenbea bounded singletons,
+  in flight) hits the same boundary — ranged-row support end-to-end
+  (presolve records + kernels + postsolve) is the single structural
+  unit behind BOTH remaining big losses. Scope it as an
+  architecture project, not a presolve probe, if the ceiling
+  (~25% pds_10, 35-45% greenbea) is judged worth it.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
