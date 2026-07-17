@@ -114,6 +114,21 @@ class _ColumnSingleton:
 
 
 @dataclass(frozen=True)
+class _Aggregation:
+    """General equality-row aggregation: a (free or implied-free) column is
+    substituted out of one equality row into that column's other rows, removing
+    both the column and the row. The k>2 generalization of doubleton
+    elimination. Postsolve mirrors ``_ColumnSingleton``: the eliminated column's
+    value is recovered from the pivot equality's residual, using ``terms`` (the
+    pivot row's other entries in the reduced column space at elimination time)."""
+
+    eliminated: int
+    coef_eliminated: float
+    rhs: float
+    terms: tuple[tuple[int, float], ...]
+
+
+@dataclass(frozen=True)
 class _DuplicateColumn:
     removed: int
     kept: int
@@ -148,6 +163,8 @@ class _LazyRecordList:
                 yield _ColumnSingleton(rec[1], rec[2], rec[3], tuple(rec[4]))
             elif rec[0] == 3:
                 yield _DuplicateColumn(rec[1], rec[2], rec[3], rec[4], rec[5], rec[6])
+            elif rec[0] == 5:
+                yield _Aggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
             else:
                 raise ValueError(f"unknown presolve record tag {rec[0]}")
 
@@ -161,6 +178,8 @@ class _LazyRecordList:
                 yield _ColumnSingleton(rec[1], rec[2], rec[3], tuple(rec[4]))
             elif rec[0] == 3:
                 yield _DuplicateColumn(rec[1], rec[2], rec[3], rec[4], rec[5], rec[6])
+            elif rec[0] == 5:
+                yield _Aggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
             else:
                 raise ValueError(f"unknown presolve record tag {rec[0]}")
 
@@ -176,6 +195,7 @@ def _empty_reduction_counts() -> dict[str, int]:
         "column_singletons": 0,
         "doubletons": 0,
         "duplicate_columns": 0,
+        "aggregations": 0,
     }
 
 
@@ -195,7 +215,10 @@ class PresolveResult:
     objective_offset: float
     removed_rows: int
     removed_cols: int
-    _records: list[_FixedVar | _Doubleton | _ColumnSingleton | _DuplicateColumn] | _LazyRecordList
+    _records: (
+        list[_FixedVar | _Doubleton | _ColumnSingleton | _DuplicateColumn | _Aggregation]
+        | _LazyRecordList
+    )
     _active_cols: list[int]
     _original_cols: int
     _reduction_counts: dict[str, int] = field(default_factory=_empty_reduction_counts)
@@ -204,6 +227,31 @@ class PresolveResult:
 
 def _v2_enabled() -> bool:
     return os.environ.get("LINPROGX_PRESOLVE_V2", "1") != "0"
+
+
+def _agg_enabled() -> bool:
+    """General equality-row aggregation (default OFF for now; the ship-time
+    default is decided separately). Set ``LINPROGX_PRESOLVE_AGG=1`` to enable."""
+    return os.environ.get("LINPROGX_PRESOLVE_AGG", "0") == "1"
+
+
+def _agg_max_fill() -> int:
+    """Cap on new nonzeros created per aggregation elimination (fill guard)."""
+    return int(os.environ.get("LINPROGX_AGG_MAX_FILL", "30"))
+
+
+def _agg_pivot_tol() -> float:
+    """Markowitz-style stability floor: the pivot coefficient must be at least
+    this fraction of the largest magnitude in its equality row."""
+    return float(os.environ.get("LINPROGX_AGG_PIVOT_TOL", "0.01"))
+
+
+def _agg_max_nnz() -> int:
+    """Size gate for the aggregation re-stage. The re-stage runs a pure-Python
+    presolve pass, so it is only attempted when the reduced problem is small
+    enough that the pass cost cannot regress a large fixture. Large sentinel
+    fixtures (pds/osa/stocfor/pds_20) stay above this and are never re-scanned."""
+    return int(os.environ.get("LINPROGX_AGG_MAX_NNZ", "50000"))
 
 
 def _v2_native_enabled() -> bool:
@@ -279,6 +327,13 @@ def _remap_record(record: Any, active_cols: list[int]) -> Any:
             record.kept_lo,
             record.kept_hi,
         )
+    if isinstance(record, _Aggregation):
+        return _Aggregation(
+            active_cols[record.eliminated],
+            record.coef_eliminated,
+            record.rhs,
+            tuple((active_cols[j], coef) for j, coef in record.terms),
+        )
     raise ValueError(f"unknown presolve record type {type(record)!r}")
 
 
@@ -324,6 +379,45 @@ def _compose_reductions(
         _reduction_counts=combined_counts,
         _matrix=second._matrix,
     )
+
+
+def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
+    """Re-stage: run a pure-Python aggregation fixpoint on the already-reduced
+    problem and compose it onto ``result`` when the extra reduction is
+    substantial. The aggregation kernel lives only in the Python reducer (the C
+    extension is untouched), so it is injected here as a composed second stage.
+
+    Two guards apply. A size gate keeps the Python pass off large fixtures whose
+    pass cost alone could regress them. A substantiality gate (the H1 pattern)
+    discards a tiny reduction that would not pay for itself and could perturb
+    downstream PDHG/IPM conditioning."""
+    if result._matrix is not None:
+        nnz = result._matrix.nnz
+    else:
+        nnz = len(result.data)
+    if nnz > _agg_max_nnz():
+        return result
+    if result._matrix is not None:
+        r_indptr, r_indices, r_data = result._matrix.to_components()
+    else:
+        r_indptr, r_indices, r_data = result.indptr, result.indices, result.data
+    second = _presolve_eq_box_python(
+        result.rows,
+        result.cols,
+        r_indptr,
+        r_indices,
+        r_data,
+        list(result.b),
+        list(result.c),
+        list(result.lo),
+        list(result.hi),
+        max_fill=max_fill,
+    )
+    if second is not None and _fixpoint_reduction_is_substantial(
+        second.removed_rows, second.removed_cols, result.rows, result.cols
+    ):
+        return _compose_reductions(result, second)
+    return result
 
 
 def _same_bound(lo_value: float, hi_value: float) -> bool:
@@ -451,11 +545,14 @@ def _presolve_eq_box_python(
         for j in row_entries[i]:
             col_rows[j].add(i)
 
-    records: list[_FixedVar | _Doubleton | _ColumnSingleton | _DuplicateColumn] = []
+    records: list[_FixedVar | _Doubleton | _ColumnSingleton | _DuplicateColumn | _Aggregation] = []
     removed_rows: set[int] = set()
     removed_cols: set[int] = set()
     objective_offset = 0.0
     v2 = _v2_enabled()
+    agg = _agg_enabled()
+    agg_max_fill = _agg_max_fill()
+    agg_pivot_tol = _agg_pivot_tol()
     reduction_counts = _empty_reduction_counts()
 
     changed = True
@@ -674,6 +771,85 @@ def _presolve_eq_box_python(
             reduction_counts["doubletons"] += 1
             changed = True
 
+        if agg:
+            for j in range(cols):
+                if j in removed_cols:
+                    continue
+                rows_j = [i for i in col_rows[j] if i not in removed_rows]
+                if not rows_j:
+                    continue
+                # Choose the pivot equality row for column j that is (a) implied
+                # free, (b) numerically safe (Markowitz row-relative floor), and
+                # (c) within the fill guard, preferring the lowest fill.
+                best: tuple[int, int, float, tuple[tuple[int, float], ...]] | None = None
+                for i in rows_j:
+                    row_i = row_entries[i]
+                    coef = row_i.get(j)
+                    if coef is None or abs(coef) < _PIVOT_EPS or len(row_i) < 2:
+                        continue
+                    row_max = max(abs(v) for v in row_i.values())
+                    if abs(coef) < agg_pivot_tol * row_max:
+                        continue
+                    terms = tuple((k, v) for k, v in row_i.items() if k != j)
+                    if not _column_bounds_are_redundant(j, coef, b[i], terms, lo, hi):
+                        continue
+                    # Fill guard: count nonzeros newly created across the other
+                    # rows of j (conservative -- cancellations are not credited).
+                    fill = 0
+                    ok = True
+                    for r in rows_j:
+                        if r == i:
+                            continue
+                        rr = row_entries[r]
+                        for k, _ in terms:
+                            if k not in rr:
+                                fill += 1
+                                if fill > agg_max_fill:
+                                    ok = False
+                                    break
+                        if not ok:
+                            break
+                    if not ok:
+                        continue
+                    if best is None or fill < best[0]:
+                        best = (fill, i, coef, terms)
+                if best is None:
+                    continue
+
+                _, i, coef, terms = best
+                records.append(_Aggregation(j, coef, b[i], terms))
+                objective_offset += c[j] * b[i] / coef
+                cost_scale = c[j] / coef
+                for k, value in terms:
+                    c[k] -= cost_scale * value
+                for r in list(col_rows[j]):
+                    if r == i or r in removed_rows:
+                        continue
+                    arj = row_entries[r].get(j)
+                    if arj is None:
+                        continue
+                    mult = arj / coef
+                    b[r] -= mult * b[i]
+                    rr = row_entries[r]
+                    for k, value in terms:
+                        merged = rr.get(k, 0.0) - mult * value
+                        if abs(merged) < _DROP_EPS:
+                            if k in rr:
+                                del rr[k]
+                                col_rows[k].discard(r)
+                        else:
+                            if k not in rr:
+                                col_rows[k].add(r)
+                            rr[k] = merged
+                    del rr[j]
+                for k, _value in terms:
+                    col_rows[k].discard(i)
+                removed_rows.add(i)
+                removed_cols.add(j)
+                col_rows[j].clear()
+                reduction_counts["aggregations"] += 1
+                changed = True
+
         if v2:
             signatures: dict[tuple[tuple[tuple[int, float], ...], float], int] = {}
             for j in range(cols):
@@ -879,6 +1055,14 @@ def presolve_matrix(
         packed_c = _pack_dbls(c)
         packed_lo = _pack_dbls(lo)
         packed_hi = _pack_dbls(hi)
+
+        def _agg(res: PresolveResult | None) -> PresolveResult | None:
+            # General equality-row aggregation lives only in the Python reducer;
+            # inject it as a composed re-stage over whatever the C path produced.
+            if res is not None and _agg_enabled():
+                return _maybe_aggregate(res, max_fill)
+            return res
+
         if _v2_enabled() and _c_v2_candidates is not None:
             candidate_rows, candidate_cols, *_ = _c_v2_candidates(
                 matrix,
@@ -898,19 +1082,21 @@ def presolve_matrix(
                         packed_hi,
                         max_fill,
                     )
-                    return None if raw is None else _result_from_c(raw)
+                    return _agg(None if raw is None else _result_from_c(raw))
                 indptr, indices, data = matrix.to_components()  # type: ignore[attr-defined]
-                return _presolve_eq_box_python(
-                    rows_val,
-                    cols_val,
-                    indptr,
-                    indices,
-                    data,
-                    b,
-                    c,
-                    lo,
-                    hi,
-                    max_fill=max_fill,
+                return _agg(
+                    _presolve_eq_box_python(
+                        rows_val,
+                        cols_val,
+                        indptr,
+                        indices,
+                        data,
+                        b,
+                        c,
+                        lo,
+                        hi,
+                        max_fill=max_fill,
+                    )
                 )
 
         # Raw opportunity gate is closed: run the classic singleton/doubleton
@@ -971,8 +1157,8 @@ def presolve_matrix(
             if second is not None and _fixpoint_reduction_is_substantial(
                 second.removed_rows, second.removed_cols, first_result.rows, first_result.cols
             ):
-                return _compose_reductions(first_result, second)
-        return first_result
+                return _agg(_compose_reductions(first_result, second))
+        return _agg(first_result)
 
     # Fallback: extract components and use Python path
     rows_val, cols_val = matrix.shape  # type: ignore[attr-defined]
@@ -994,7 +1180,7 @@ def postsolve_x(x_reduced: list[float], reduction: PresolveResult) -> list[float
             x_full[record.eliminated] = (
                 record.rhs - record.coef_kept * x_full[record.kept]
             ) / record.coef_eliminated
-        elif isinstance(record, _ColumnSingleton):
+        elif isinstance(record, (_ColumnSingleton, _Aggregation)):
             rest = sum(coef * x_full[j] for j, coef in record.terms)
             x_full[record.eliminated] = (record.rhs - rest) / record.coef_eliminated
         else:
