@@ -1910,6 +1910,25 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   NARROWS the ranged-row architecture case: it remains pds_10's
   only path (29th settled) but would not close greenbea.
 
+- GREENBEA PRESOLVE GAP IDENTIFIED — EQUALITY-ROW AGGREGATION
+  (2026-07-17, opus measurement probe, ablation-proven:
+  experiments/greenbea_presolve_diff_2026_07_17.md + probe script):
+  HiGHS 1.14.0 presolve_rule_off ablation shows ONE rule family —
+  Aggregator (rule 12) + free-col substitution (rule 8), i.e.
+  general equality-row aggregation, the k>2 generalization of our
+  doubleton — accounts for the ENTIRE presolve deficit on THREE of
+  the four remaining losses: disabling it lands HiGHS on our shapes
+  within 0-5 rows (greenbea 951->1521 vs our 1525; woodw 557->707
+  vs our 707 EXACT; 80bau3b 1537->1997 vs our 1992). We remove MORE
+  forcing rows than HiGHS (351 vs 190) — we lack the substitution
+  that consumes rows first, nothing else. Secondary (column-only):
+  dominated columns (woodw 1118c, 80bau3b 532c — we remove zero),
+  parallel row/col detection. IMPLEMENTATION SURFACE: extend
+  _presolve_eq_box_python's record machinery (_Aggregation record ~
+  _ColumnSingleton shape, fill-guarded), native port after — the
+  presolve-V2 playbook. Kill criteria: greenbea rows <1000, DS
+  pivots -20%, wall -25%, 2e-5 oracle gate. BUILD DISPATCHED.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,

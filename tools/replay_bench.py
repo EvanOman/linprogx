@@ -83,6 +83,7 @@ ARTIFACT_DATES = {
     "c344177": "2026-07-16",
     "b656ef3": "2026-07-16",
     "bda0579": "2026-07-16",
+    "928399c": "2026-07-17",
 }
 
 ARTIFACT_LABELS = {
@@ -96,6 +97,7 @@ ARTIFACT_LABELS = {
     "c344177": "protocol v3 first certification",
     "b656ef3": "v3 knife-edge certification",
     "bda0579": "dense-U on-host envab A/B",
+    "928399c": "H0+H1 census-wave certification",
 }
 
 
