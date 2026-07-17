@@ -16,21 +16,22 @@ Where the two axes stand:
 
 - **Coverage: EXCEEDED.** linprogx solves **24/24**; HiGHS solves 23 (times out on
   `qap15`) and Clarabel solves 23 (`ken_18` DualInfeasible). This is settled and
-  reproduced in the replay: every one of the 21 replayed commits solves all 24 to
+  reproduced in the replay: every one of the 23 replayed commits solves all 24 to
   certified optimality.
 - **Runtime: aggregate EXCEEDED, per-instance majority WON.** The suite total and
   geometric-mean time ratio have favored linprogx since early in the campaign; the
-  paired head-to-head is now **14W-5L-4P**, plus `qap15` coverage for **15 wins**,
-  on the 2026-07-16 AWS `us-west-2` canonical board. The hard-loss ladder has
-  collapsed below 1.7×, with four parity cells inside the 0.97–1.03 band (see
+  paired head-to-head is now **16W-2P-6L**, including the `qap15` coverage win,
+  on the 2026-07-16 AWS `us-west-2` protocol-v3 board. The hard-loss ladder has
+  collapsed below 1.7×, with two genuine coin flips at parity (see
   [Current certified scoreboard](#current-certified-scoreboard)).
 
 ## The arc
 
 The campaign narrative (fully dated in `docs/HANDOFF.md`) runs from a **14-10**
 paired head-to-head at the session-start baseline (`a1a355d`, 2026-07-04) through
-twenty substantive ship commits to presolve V2 shipping on 2026-07-14, then into
-the post-V2 certification wave on 2026-07-15 and 2026-07-16. The through-line:
+twenty substantive ship commits to presolve V2 shipping on 2026-07-14, followed
+by the setup fast path, native presolve port, and protocol-v3 certification wave
+on 2026-07-15 and 2026-07-16. The through-line:
 the IPM factor path, dual-simplex LU path, presolve layer, and measurement
 protocol were each tightened under paired certification, closing whole classes
 of hypotheses along the way. The final pre-V2 ships came out of a joint
@@ -173,6 +174,14 @@ below.
     pair closed on every IPM axis" verdict (settled-hypotheses ledger) was
     true **at fixed problem size** — presolve V2 moved the size instead. 260
     tests green; `LINPROGX_PRESOLVE_V2=0` reverts to the old path.
+21. **`26a9359` — Cholesky setup fast path.** A bucketed min-degree queue,
+    exact preallocation, and fused compaction preserve the ordering and factor
+    structure exactly. Setup fell 46% on `cre_d`, 31% on `maros_r7`, 11% on
+    `degen3`, and 7% on `cre_a`.
+22. **`82cd31d` — native presolve V2 hot path.** The native port removed the
+    Python-side reduction bottleneck. Its first same-host paired certification
+    put `maros_r7` at 0.733 (9/9), `stocfor3` at 0.854 (9/9), and `cre_a` at
+    0.896 (6/9), while `woodw` moved from a 1.60 loss to 1.022 parity.
 
 ### Settled-hypotheses ledger
 
@@ -213,25 +222,60 @@ The campaign is as much a record of what does **not** work. Permanently closed:
   post-Ruiz diagonal steps stall above tolerance and destroy the qap12 win.
   The adaptive η/ω machinery is the strength, not a stopgap; the remaining pds
   gap is program-scale or accepted.
+- **AMD-style approximate degree:** two outcome-gated attempts failed to move
+  `cre_a`. The corrected Amestoy-Davis-Duff bound improved the `degen3` and
+  `cre_d` ordering slices by 21% and 24%, but cut `cre_a` only 9.6% while adding
+  7.1% factor flops. The target instance was the one the approximation hurt.
+- **Ruiz pass-count reduction:** every board IPM instance uses all 10 passes.
+  A 0.05 early-exit tolerance cut `cre_a` 3.7%, changed objectives, and regressed
+  `cre_d` 3.4%; 0.01 did not help (1.018). Equilibration remains numerics-active.
+- **Certificate-evaluation windowing:** the measured ceiling on `cre_a` was
+  0.2–1.2 ms against a roughly 2.7 ms (3%) bar. The windowed attempt measured
+  1.0034, so the lever closed on ceiling.
+- **Dual-simplex dense-U FTRAN:** the candidate showed three distinct bandwidth
+  regimes: 16% faster under three-worker local contention, 1.8% faster on the
+  Modal host class (`greenbea` 0.982, 18/21), and no gain on a quiet box.
+  `woodw` measured 0.999, `stocfor3` 1.002, and `80bau3b` 0.989 with a
+  0.946–1.127 host spread. The on-host result missed the 5% bar and closed the
+  dense-U path.
+
+### Protocol v3 makes host luck visible
+
+Protocol v3 runs the paired benchmark concurrently on three AWS `us-west-2`
+hosts, seven interleaved pairs per host, and scores the median host ratio. The
+artifact keeps each host's spread and all 21 pair outcomes. A region pin alone
+was insufficient because Modal can place two `us-west-2` runs on different host
+generations; bandwidth-sensitive verdicts were still moving with the hardware
+lottery.
+
+The first v3 certification settled the bandwidth-sensitive set. `pilot87`
+became a certified win at **0.826**, with a host range of 0.813–0.939 and
+**21/21** pair wins. `pds_20` held its win at **0.824** (20/21). The four losses
+in that wave were stable on every host: `greenbea` 1.695, `osa_14` 1.424,
+`osa_60` 1.290, and `pds_10` 1.258.
+
+The knife-edge certification then repriced the old pin4 parity band. `woodw`
+moved from 0.996 parity to **1.201** (3/21), and `80bau3b` moved from 1.010
+parity to **1.198** (2/21). Their pin4 results were host luck. `cre_a` at
+**1.002** and `stocfor3` at **0.999**, both with 12/21 wins, are the two true
+coin flips. The resulting board of record is **16W-2P-6L**.
 
 ## Current certified scoreboard
 
-The **certified** standing uses the paired 5–7-run interleaved protocol in
+The **certified** standing uses the protocol-v3 median-of-hosts method in
 `docs/HANDOFF.md` and the Modal artifacts replayed into `assets/campaign.db`;
-the single-shot replay table below is narrative-grade only. The current board
-of record is the 2026-07-16 AWS `us-west-2` pinned-region run in
-`assets/pin4_chunk{1,2}.json`:
+the single-shot replay table below is narrative-grade only. The board of record
+combines the stable prior cells with the two 2026-07-16 AWS `us-west-2` v3
+certifications (three hosts × seven pairs):
 
-- **Canonical board: 14W-5L-4P, plus `qap15` coverage = 15 wins.**
-- **Losses:** `greenbea` 1.69, `osa_60` 1.50, `osa_14` 1.34, `pds_10` 1.20,
-  `cre_a` 4/7-at-0.966 (ratio is below parity, but it missed the wins bar).
-- **Parity band:** `woodw` 0.996, `pilot87` 0.995, `80bau3b` 1.010,
-  `stocfor3` 1.010.
-- **New flips in the canonical wave:** `cre_d` WIN 8/9 (0.957), `degen3` WIN
-  9/9 (0.823), `pds_20` WIN 9/9 (0.826), `osa_30` WIN 8/9.
+- **V3 board of record: 16W-2P-6L**, including `qap15` as a coverage win.
+- **Confirmed wins:** `pilot87` 0.826 (21/21) and `pds_20` 0.824 (20/21).
+- **True coin flips:** `cre_a` 1.002 (12/21) and `stocfor3` 0.999 (12/21).
+- **Losses:** `greenbea` 1.69, `osa_14` 1.42, `osa_60` 1.29, `pds_10` 1.26,
+  `woodw` 1.20, and `80bau3b` 1.20.
 
-The 2026-07-16 board supersedes the earlier 2026-07-14 clean-box snapshot. The
-important certification waypoints since presolve V2 shipped:
+The v3 board supersedes the single-host pin4 board. The important certification
+waypoints since presolve V2 shipped:
 
 - **Clean-box certification at `1f4351d` (2026-07-14, AWS `us-west-2`,
   `assets/modal_bench_1f4351dcfa96_{suite,paired}.json`):** 13W-11L; geomean
@@ -255,60 +299,64 @@ important certification waypoints since presolve V2 shipped:
   9/9 (0.733), `stocfor3` to WIN 9/9 (0.854), and `cre_a` to WIN 6/9 (0.896).
   `woodw` moved to parity at 1.022, while `cre_d` and `80bau3b` narrowed but
   remained losses on that run.
-- **Canonical board at the `957347b`-era build (2026-07-16, AWS `us-west-2`,
-  `assets/pin4_chunk{1,2}.json`):** the current board above. The OSA swing was
+- **Pin4 board at the `957347b`-era build (2026-07-16, AWS `us-west-2`,
+  `assets/pin4_chunk{1,2}.json`):** 14W-5L-4P plus `qap15` coverage, for 15
+  wins. The OSA swing was
   investigated and not attributed to a code regression; Modal still does not
-  expose instance-type pinning, so bandwidth-sensitive cells remain
-  host-hardware-conditional until protocol v3 takes multi-container medians.
+  expose instance-type pinning. This board remains a waypoint, but its
+  `woodw`/`80bau3b` parity calls did not survive multi-host measurement.
+- **Protocol-v3 first certification (`c344177`, 2026-07-16, AWS `us-west-2`,
+  `assets/modal_bench_c34417761bb6_paired_hosts3.json`):** `pilot87` won at
+  0.826 (21/21), `pds_20` at 0.824 (20/21), and the four bandwidth-sensitive
+  losses remained losses on all three hosts.
+- **V3 knife-edge certification (`b656ef3`, 2026-07-16, AWS `us-west-2`,
+  `assets/modal_bench_b656ef3f8915_paired_hosts3.json`):** `woodw` and
+  `80bau3b` repriced to roughly 1.20 losses; `cre_a` and `stocfor3` settled as
+  12/21 coin flips. This produced the 16W-2P-6L board of record.
+- **Dense-U on-host envab (`bda0579`, 2026-07-16, AWS `us-west-2`,
+  `assets/modal_bench_bda057900a4d_envab_hosts3.json`):** `greenbea` improved
+  only 1.8% on the scoring host class, below the 5% ship bar. The artifact is
+  stored as envab metadata and A/B evidence, not as linprogx/HiGHS paired rows.
 
 ## Headline per-instance trajectories
 
-Single-shot replay wall-seconds, **baseline `a1a355d` → current `5f89032`**, against
+Single-shot replay wall-seconds, **baseline `a1a355d` → current `82cd31d`**, against
 the single-shot HiGHS reference on the same (loaded) box. Ordered by final ratio
 (wins first). **These are narrative-grade, not certification-grade** — see the
 noise note below.
 
 | instance | baseline (s) | current (s) | HiGHS ref (s) | ratio | route | W/L |
 |---|---:|---:|---:|---:|---|:--:|
-| qap12 | 1.74 | 1.65 | 102.98 | 0.02 | pdhg | **WIN** |
+| qap12 | 1.74 | 1.53 | 102.98 | 0.01 | pdhg | **WIN** |
 | truss | 0.13 | 0.10 | 2.75 | 0.04 | ipm | **WIN** |
-| fit2p | 0.09 | 0.11 | 1.45 | 0.07 | ipm | **WIN** |
-| osa_60 | 7.79 | 5.02 | 19.13 | 0.26 | ipm | **WIN** |
-| osa_30 | 2.10 | 1.52 | 4.23 | 0.36 | ipm | **WIN** |
-| d2q06c | 0.39 | 0.37 | 0.88 | 0.42 | ipm | **WIN** |
-| ken_13 | 0.67 | 0.48 | 0.96 | 0.50 | ipm | **WIN** |
+| fit2p | 0.09 | 0.09 | 1.45 | 0.06 | ipm | **WIN** |
+| d2q06c | 0.39 | 0.29 | 0.88 | 0.33 | ipm | **WIN** |
+| ken_13 | 0.67 | 0.49 | 0.96 | 0.51 | ipm | **WIN** |
 | ken_07 | 0.02 | 0.02 | 0.04 | 0.53 | ipm | **WIN** |
-| ken_18 | 8.99 | 5.27 | 8.56 | 0.62 | ipm | **WIN** |
-| ken_11 | 0.24 | 0.18 | 0.30 | 0.62 | ipm | **WIN** |
-| osa_14 | 1.10 | 0.90 | 1.09 | 0.83 | ipm | **WIN** |
-| cre_b | 5.98 | 1.62 | 1.94 | 0.84 | ipm | **WIN** |
-| degen3 | 0.21 | 0.19 | 0.22 | 0.85 | ipm | **WIN** |
-| pilot87 | 4.09 | 3.18 | 3.63 | 0.88 | ipm | **WIN** |
-| maros_r7 | 2.39 | 0.89 | 1.01 | 0.89 | ipm | **WIN** |
-| stocfor3 | 0.90 | 0.63 | 0.61 | 1.02 | ipm | loss |
-| 80bau3b | 0.33 | 0.19 | 0.18 | 1.03 | ipm | loss |
-| cre_d | 5.38 | 1.30 | 1.09 | 1.20 | ipm | loss |
-| cre_a | 0.13 | 0.12 | 0.09 | 1.34 | ipm | loss |
-| pds_20 | 20.98 | 15.08 | 10.72 | 1.41 | pdhg | loss |
-| woodw | 0.18 | 0.13 | 0.09 | 1.41 | ipm | loss |
-| greenbea | 3.87 | 0.48 | 0.27 | 1.80 | dual-simplex | loss |
-| pds_10 | 3.71 | 2.91 | 1.45 | 2.00 | pdhg | loss |
-| qap15 | 0.87 | 0.71 | TIMEOUT | n/a | pdhg | **WIN** |
+| cre_b | 5.98 | 1.05 | 1.94 | 0.54 | ipm | **WIN** |
+| ken_11 | 0.24 | 0.17 | 0.30 | 0.57 | ipm | **WIN** |
+| ken_18 | 8.99 | 5.47 | 8.56 | 0.64 | ipm | **WIN** |
+| maros_r7 | 2.39 | 0.64 | 1.01 | 0.64 | ipm | **WIN** |
+| degen3 | 0.21 | 0.17 | 0.22 | 0.75 | ipm | **WIN** |
+| osa_30 | 2.10 | 3.85 | 4.23 | 0.91 | ipm | **WIN** |
+| pilot87 | 4.09 | 3.31 | 3.63 | 0.91 | ipm | **WIN** |
+| 80bau3b | 0.33 | 0.17 | 0.18 | 0.93 | ipm | **WIN** |
+| cre_d | 5.38 | 1.01 | 1.09 | 0.93 | ipm | **WIN** |
+| osa_60 | 7.79 | 18.58 | 19.13 | 0.97 | ipm | **WIN** |
+| stocfor3 | 0.90 | 0.60 | 0.61 | 0.98 | ipm | **WIN** |
+| cre_a | 0.13 | 0.10 | 0.09 | 1.08 | ipm | loss |
+| pds_20 | 20.98 | 12.57 | 10.72 | 1.17 | pdhg | loss |
+| woodw | 0.18 | 0.11 | 0.09 | 1.21 | ipm | loss |
+| osa_14 | 1.10 | 1.53 | 1.09 | 1.40 | ipm | loss |
+| pds_10 | 3.71 | 2.20 | 1.45 | 1.52 | pdhg | loss |
+| greenbea | 3.87 | 0.43 | 0.27 | 1.63 | dual-simplex | loss |
+| qap15 | 0.87 | 0.67 | TIMEOUT | n/a | pdhg | **WIN** |
 
-The clean structural wins survive the noise and match the paired/clean-box
-record: **maros_r7 2.39 → 0.89** (Tdense fix + ordering + MCC, now a
-single-shot WIN), **greenbea 3.87 → 0.48** (DS rate + LU cadence + FT + Suhl
-bounded pivot search + Dantzig route + presolve V2), and **cre_b 5.98 → 1.62**
-/ **cre_d 5.38 → 1.30** (presolve V2) — `cre_b` crosses this single-shot
-table's break-even for the first time, at ratio 0.84. This replay's `current`
-column now runs through the two newest ship commits (`422af49` Dantzig route,
-`5f89032` presolve V2), measured at a quiet loadavg (2.9–5.6, well below the
-box's usual 6–16) with no spike this pass. The two new ships' own certified
-deltas (paired/clean-box protocol, not this single-shot table) are in the
-ship-by-ship story above and the clean-box certification below: **greenbea
-public 1.66s → 0.83s** from the Dantzig route, and **cre_b 5.68s → 1.69s /
-cre_d 5.27s → 1.41s**, plus **cre_b's flip to a certified 0.940× win**, from
-presolve V2.
+The clean structural wins survive the noise: **maros_r7 2.39 → 0.64**,
+**greenbea 3.87 → 0.43**, and **cre_b 5.98 → 1.05 / cre_d 5.38 → 1.01**.
+The `current` column now includes the backfilled `26a9359` setup-fast-path and
+`82cd31d` native-presolve rows, bringing the trajectory to 23 commits. These
+single-shot ratios still do not set the board; the v3 results above do.
 
 ### Measurement note (read before trusting a single cell)
 
@@ -316,8 +364,8 @@ Every number in the table and DB is a **single-shot replay under variable machin
 load** (the box ran at load average 6–16 throughout, with other benchmark work
 active). This is deliberately **narrative-grade**: it reconstructs the shape of the
 improvement arc, not a certifiable head-to-head. The campaign's **certification**
-protocol is different — paired, interleaved 5–7-run measurements on a quiet box,
-recorded in `docs/HANDOFF.md`. Where a single-shot cell disagrees with the paired
+protocol is different: three hosts, seven interleaved pairs per host, scored by
+the median host ratio and recorded in `docs/HANDOFF.md`. Where a single-shot cell disagrees with the paired
 record (e.g. a load-spiked pilot87/cre_b in the last commit, or a commit whose
 aggregate rose purely because its replay window was loaded), trust the paired
 record. Load average per run is stored in the DB's `runs` table for exactly this
