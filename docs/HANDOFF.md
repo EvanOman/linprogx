@@ -1832,6 +1832,30 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   cells in win territory (osa_14 ~0.89 vs HiGHS 0.98; osa_60 ~10.3
   vs 17.3).
 
+- H1 SHIPPED — PRESOLVE FIXPOINT RE-STAGE (2026-07-17, opus worker,
+  928399c): classic pass making >=2% progress triggers a composed
+  second V2 fixpoint on the rebuilt reduced problem; second
+  reductions under 2% of the reduced shape are DISCARDED
+  (byte-identical off-path). Reduced shapes hit the census
+  second-fixpoint targets exactly; iters cre_a 36->34, 80bau3b
+  62->47 (deterministic), stocfor3 same iters but -12% nnz.
+  Orchestrator quiet-box re-verify (7 alternating pairs): cre_a
+  +14.3% median (+3.8% min-floor), 80bau3b +25.8% (+28.0% floor),
+  stocfor3 +10.9% (+9.3% floor), pds_10 floor -0.1% (guard holds).
+  stocfor3 missed its pre-registered 12% census bar but sits at
+  0.999 on-host — flip logic overrides projection bar. CRITICAL
+  CENSUS-MISSED FINDING (worker): naive re-staging regresses pds_10
+  -41% (PDHG 8576->10688 iters) and d2q06c -34% via conditioning
+  perturbation from tiny reductions — the acceptance gate is
+  load-bearing, not hygiene. An in-C staged single-call variant
+  reached an INFERIOR order-dependent fixpoint (cre_a 36->38) and
+  was reverted: compose rebuild-then-rerun is the correct shape.
+  osa gate provably closed (classic returns None there; 37-col
+  border < any gate). 357 tests incl. 57 new characterization tests.
+  LINPROGX_PRESOLVE_FIXPOINT=0 reverts. Modal v3 cert of the wave
+  (osa pair + knife-edge trio + pds_10/greenbea sentinels) RUNNING
+  at 928399c.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
