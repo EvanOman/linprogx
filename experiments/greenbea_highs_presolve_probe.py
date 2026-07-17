@@ -37,7 +37,7 @@ def load_instance(name: str) -> dict:
 
 
 def build_highs(data: dict, log_file: str, rule_off: int = 0):
-    import highspy
+    import highspy  # ty: ignore[unresolved-import]
 
     h = highspy.Highs()
     h.setOptionValue("output_flag", True)
@@ -103,7 +103,5 @@ if __name__ == "__main__":
     names = sys.argv[1:] or ["greenbea", "woodw", "80bau3b"]
     for nm in names:
         r = run_presolve(nm)
-        print(
-            f"{nm}: raw {r['raw']} -> presolved {r['presolved']}  status={r['status']}"
-        )
+        print(f"{nm}: raw {r['raw']} -> presolved {r['presolved']}  status={r['status']}")
         print(f"   log: {r['log_file']}")

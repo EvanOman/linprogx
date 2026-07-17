@@ -314,14 +314,18 @@ def artifact_host_metadata(data: dict[str, object]) -> tuple[dict[str, object], 
     loads = data.get("load_checks")
     host_results = data.get("host_results")
     if isinstance(host_results, list) and host_results:
-        first_host = host_results[0]
-        if isinstance(first_host, dict):
+        first_host_obj: object = host_results[0]
+        if isinstance(first_host_obj, dict):
+            first_host: dict[str, object] = {str(k): v for k, v in first_host_obj.items()}
             machine = machine or first_host.get("machine_info")
             loads = loads or first_host.get("load_checks")
-    return (
-        machine if isinstance(machine, dict) else {},
-        loads if isinstance(loads, dict) else {},
+    machine_out: dict[str, object] = (
+        {str(k): v for k, v in machine.items()} if isinstance(machine, dict) else {}
     )
+    loads_out: dict[str, object] = (
+        {str(k): v for k, v in loads.items()} if isinstance(loads, dict) else {}
+    )
+    return (machine_out, loads_out)
 
 
 def do_artifacts(conn: sqlite3.Connection, paths: list[str] | None) -> None:
