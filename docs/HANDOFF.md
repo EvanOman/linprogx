@@ -1753,6 +1753,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   it needs a fresh-eyes hypothesis census (the pattern that found
   presolve V2), not another shave.
 
+- V3 KNIFE-EDGE CERTIFICATION (2026-07-16, 3 hosts x 7 pairs, AWS
+  us-west-2, at b656ef3-era build,
+  assets/modal_bench_<head>_paired_hosts3.json): the pin4 parity
+  band REPRICES under median-of-hosts. woodw 1.201 [1.054,1.246]
+  3/21 and 80bau3b 1.198 [1.063,1.234] 2/21 are REAL ~1.2 LOSSES —
+  their pin4 0.996/1.010 parity was host luck, the same artifact
+  class as the osa swing. cre_a 1.002 [0.963,1.014] with a 12/21
+  wins MAJORITY and stocfor3 0.999 [0.990,1.052] 12/21 are TRUE
+  COIN FLIPS. **V3 BOARD OF RECORD: 16W-2P-6L** (wins incl. qap15
+  coverage + pilot87; parity cre_a/stocfor3; losses greenbea 1.69,
+  osa_14 1.42, osa_60 1.29, pds_10 1.26, woodw 1.20, 80bau3b 1.20).
+  TACTICAL: woodw/80bau3b/stocfor3 are DS-routed — the queued
+  on-host dense-U envab A/B now covers the full DS family
+  (greenbea+woodw+80bau3b+stocfor3), one run. cre_a fresh-eyes
+  census remains queued.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
