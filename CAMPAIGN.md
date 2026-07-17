@@ -20,24 +20,24 @@ Where the two axes stand:
   certified optimality.
 - **Runtime: aggregate EXCEEDED, per-instance majority WON.** The suite total and
   geometric-mean time ratio have favored linprogx since early in the campaign; the
-  per-instance head-to-head crossed into linprogx's majority (14-10 on the paired
-  protocol) mid-campaign and the ship commits since have deepened the wins and
-  narrowed the losses — culminating in the 2026-07-14 clean-box certification,
-  where the hard-loss ladder collapsed to nothing above 2× and `cre_b` flipped
-  to a certified win (see [Clean-box certification](#clean-box-certification-2026-07-14)).
+  paired head-to-head is now **14W-5L-4P**, plus `qap15` coverage for **15 wins**,
+  on the 2026-07-16 AWS `us-west-2` canonical board. The hard-loss ladder has
+  collapsed below 1.7×, with four parity cells inside the 0.97–1.03 band (see
+  [Current certified scoreboard](#current-certified-scoreboard)).
 
 ## The arc
 
 The campaign narrative (fully dated in `docs/HANDOFF.md`) runs from a **14-10**
 paired head-to-head at the session-start baseline (`a1a355d`, 2026-07-04) through
-twenty substantive ship commits to presolve V2 shipping on 2026-07-14. The
-through-line: the IPM factor path and the dual-simplex LU path were each driven
-to their measured floors, closing whole classes of hypotheses along the way —
-and further ships kept landing after the Forrest-Tomlin program (a Cholesky
-uplook kernel and an LU pivot-search bound) and the Suhl bounded pivot search
-kept moving both floors further than "complete" suggested. The final two ships
-came out of a joint Claude/Codex strategy round that killed three more
-falsifier probes before finding its two winners (see below).
+twenty substantive ship commits to presolve V2 shipping on 2026-07-14, then into
+the post-V2 certification wave on 2026-07-15 and 2026-07-16. The through-line:
+the IPM factor path, dual-simplex LU path, presolve layer, and measurement
+protocol were each tightened under paired certification, closing whole classes
+of hypotheses along the way. The final pre-V2 ships came out of a joint
+Claude/Codex strategy round that killed three more falsifier probes before
+finding its two winners (Dantzig rescue-route leaving and presolve V2); the
+post-V2 wave then focused on setup cost, native presolve porting, and
+host-pinned certification.
 
 ### Ship-by-ship story
 
@@ -217,63 +217,49 @@ The campaign is as much a record of what does **not** work. Permanently closed:
 ## Current certified scoreboard
 
 The **certified** standing uses the paired 5–7-run interleaved protocol in
-`docs/HANDOFF.md` (not the single-shot replay below). As of the Suhl bounded
-pivot search ship:
+`docs/HANDOFF.md` and the Modal artifacts replayed into `assets/campaign.db`;
+the single-shot replay table below is narrative-grade only. The current board
+of record is the 2026-07-16 AWS `us-west-2` pinned-region run in
+`assets/pin4_chunk{1,2}.json`:
 
-- **Head-to-head: 14-10 linprogx** on the paired protocol, plus all aggregate axes
-  (coverage 24/24, aggregate suite time and geomean decisively linprogx's). The
-  two post-FT ships did not flip any instance's win/loss classification — they
-  deepened existing positions (greenbea's loss margin, cre_b/osa_14's certified
-  wall) rather than crossing the knife edge; the paired protocol has not been
-  re-run end-to-end since the FT ship, so this line is carried forward, not
-  re-verified.
-- **Knife-edge band** (paired 7-run): **degen3 WIN 0.80** (7/7); **osa_14 TIE 1.00**
-  (4/7, pre-block-row-gate) — the block-row uplook gate cut osa_14 a further
-  **−4.1%** paired but a fresh 7-run has not been taken to re-call the tie;
-  losses stocfor3 1.03, 80bau3b 1.07 (mins dead-tied), cre_a 1.22.
-- **Hard-loss ladder** (by ratio, from the quiet 03dc77c re-baseline): **greenbea
-  ~6.2×** (now **1.650s certified vs 0.267s HiGHS**, down from 10× — Forrest-Tomlin
-  plus the Suhl bounded pivot search have now cut the ladder's steepest rung by
-  ~38% again on top of the FT drop), cre_d 5.6× / cre_b 3.3× (IPM side closed;
-  the block-row uplook gate found a further **cre_b wall −12.8%** but the DS
-  count program remains the only path to close the ladder position itself),
-  pds_10 2.3× / pds_20 1.4× (PDHG route), woodw 2× (flop-bound, though the Suhl
-  pivot search found **woodw +20.3%** paired within that ceiling), maros_r7 1.6×
-  (serial floor reached), 80bau3b ~1.1× paired (Suhl **+8.1%** further), cre_a 1.3×.
+- **Canonical board: 14W-5L-4P, plus `qap15` coverage = 15 wins.**
+- **Losses:** `greenbea` 1.69, `osa_60` 1.50, `osa_14` 1.34, `pds_10` 1.20,
+  `cre_a` 4/7-at-0.966 (ratio is below parity, but it missed the wins bar).
+- **Parity band:** `woodw` 0.996, `pilot87` 0.995, `80bau3b` 1.010,
+  `stocfor3` 1.010.
+- **New flips in the canonical wave:** `cre_d` WIN 8/9 (0.957), `degen3` WIN
+  9/9 (0.823), `pds_20` WIN 9/9 (0.826), `osa_30` WIN 8/9.
 
-This snapshot predates the Dantzig route and presolve V2 ships (`422af49`,
-`5f89032`) and is carried forward as the last locally re-verified paired
-snapshot — it has not been re-run end-to-end on the local box since. The
-current authoritative standing is the **clean-box certification** below, which
-supersedes it: the hard-loss ladder collapsed to nothing above 2× and `cre_b`
-flipped to a certified win.
+The 2026-07-16 board supersedes the earlier 2026-07-14 clean-box snapshot. The
+important certification waypoints since presolve V2 shipped:
 
-## Clean-box certification (2026-07-14)
-
-Second validated run on the Modal clean-box harness (`tools/modal_bench.py`;
-see [Modal cloud benchmarking harness](#modal-cloud-benchmarking-harness-toolsmodal_benchpy)
-below for methodology), at ref `1f4351d` (`5f89032` plus the chronicle commits
-on top of it) — AWS `us-west-2`, `cpu_count=20`, loadavg 0.00 throughout both
-the suite and paired runs
-(`assets/modal_bench_1f4351dcfa96_{suite,paired}.json`):
-
-- **13W-11L**, geomean lx/HiGHS ratio **0.558** (was 0.735 on the first
-  clean-box run) — 24/24 coverage vs HiGHS's 23/24, aggregate suite wall 49.1s
-  vs HiGHS's 192.8s-plus-a-qap15-timeout.
-- **The headline flip: `cre_b` LOSS 2.75× → WIN 0.940×** (6/7 paired, IPM
-  2.42s vs HiGHS 2.57s) — presolve V2's certified headline. `cre_a` flipped
-  back to a loss (1.066×, knife-edge churn — machine-dependent, as the first
-  clean-box run already showed with degen3/pilot87).
-- **The hard-loss ladder collapsed — nothing above 2×**: `greenbea` 1.89
-  (was 5.25; 0.69s certified via the Dantzig route), `woodw` 1.69, `pds_10`
-  1.66 (was 2.83), `cre_d` 1.53 (was 4.63), `80bau3b` 1.32 (a regression from
-  the 1.20 paired figure — local A/B shows −9% on the same change; the clean
-  box disagrees and this is open as an anomaly), then six instances bunched
-  at 1.00–1.17: `maros_r7` 1.17, `degen3` 1.08, `cre_a` 1.07, `stocfor3` 1.06,
-  `pds_20` 1.03 (near-tie, was 1.63), `pilot87` 1.008 (dead knife-edge, 3/7).
-
-Session totals as of this certification: 20+ ship commits, 21 settled
-hypotheses, geomean nearly halved in two days.
+- **Clean-box certification at `1f4351d` (2026-07-14, AWS `us-west-2`,
+  `assets/modal_bench_1f4351dcfa96_{suite,paired}.json`):** 13W-11L; geomean
+  0.558; aggregate 49.1s vs HiGHS 192.8s plus the `qap15` timeout; coverage
+  24/24 vs 23/24. `cre_b` flipped from LOSS 2.75× to WIN 0.940 (6/7), and the
+  loss ladder collapsed to nothing above 2×.
+- **Host-conditional margins (2026-07-16,
+  `assets/knife_chunk{A,B}.json`):** the knife-edge verdicts depend on host
+  class. On Azure-Asia, `pilot87`, `degen3`, `stocfor3`, and `pds_20` became
+  clear losses, while `cre_a` remained the true knife-edge at 1.036 median and
+  0.969 min-vs-min. This established the doctrine that certifications must pin
+  cloud and region.
+- **Setup fast-path ship and pinned-region certification (2026-07-16, AWS
+  `us-west-2`, `assets/modal_bench_99ce9c9fd693_{suite,paired}.json`):**
+  bucketed min-degree queue, exact preallocation, and fused compaction improved
+  setup while preserving exact output. The pinned-region certification reached
+  15W-9L, flipping `pilot87` and `pds_20`, with `degen3`, `cre_a`, and
+  `stocfor3` at parity.
+- **Post-native-port paired certification (2026-07-16,
+  `assets/modal_bench_82cd31d060d2_paired.json`):** `maros_r7` flipped to WIN
+  9/9 (0.733), `stocfor3` to WIN 9/9 (0.854), and `cre_a` to WIN 6/9 (0.896).
+  `woodw` moved to parity at 1.022, while `cre_d` and `80bau3b` narrowed but
+  remained losses on that run.
+- **Canonical board at the `957347b`-era build (2026-07-16, AWS `us-west-2`,
+  `assets/pin4_chunk{1,2}.json`):** the current board above. The OSA swing was
+  investigated and not attributed to a code regression; Modal still does not
+  expose instance-type pinning, so bandwidth-sensitive cells remain
+  host-hardware-conditional until protocol v3 takes multi-container medians.
 
 ## Headline per-instance trajectories
 
