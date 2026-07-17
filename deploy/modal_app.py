@@ -42,6 +42,10 @@ app = modal.App("linprogx-demo")
     image=image,
     min_containers=0,  # scale-to-zero; set to 1 for always-warm
     scaledown_window=300,  # keep a warm container ~5 min after last request
+    # Restore from a memory snapshot instead of cold-importing Python on
+    # scale-from-zero — measured ~20 s worst-case cold starts drop to a few
+    # seconds. The app is snapshot-safe: no GPU, no open sockets at import.
+    enable_memory_snapshot=True,
     cpu=1.0,
     memory=512,  # dense simplex at demo scale is tiny
     timeout=30,  # app enforces its own 5 s solve cap well inside this
