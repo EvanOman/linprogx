@@ -37,6 +37,21 @@ _PIVOT_EPS = 1e-12
 _DROP_EPS = 1e-15
 _BOUND_EPS = 1e-10
 _V2_MIN_REDUCTION_FRACTION = 0.08
+# Second-fixpoint re-stage cost guard: only re-run the combined V2 fixpoint
+# after the classic cascade when classic itself shrank the problem by at least
+# this fraction of rows or columns. Classic progress is the signal that new
+# fixed/forcing/empty/column-singleton opportunities were created; a problem
+# classic cannot touch (e.g. the OSA dense-singleton border, where classic
+# returns no reduction at all) never reaches this branch, so this guard keeps
+# the expensive standalone V2 pass off those negative-control instances.
+_FIXPOINT_MIN_CLASSIC_FRACTION = 0.02
+# Second-fixpoint acceptance gate: keep the composed V2 reduction only when it
+# removes at least this fraction of the reduced problem's rows or columns. A
+# tiny second reduction does not speed the solve up and can perturb PDHG/IPM
+# conditioning enough to slow it down badly (measured regressions on pds_10,
+# d2q06c, and ken_* when the second pass removes < ~1.2% of the reduced shape),
+# so those are discarded and the classic-only reduction is kept.
+_FIXPOINT_MIN_SECOND_FRACTION = 0.02
 
 try:
     _csparse: object = importlib.import_module("linprogx._csparse")
@@ -204,6 +219,111 @@ def _v2_worth_python_pass(
     return candidate_rows >= _V2_MIN_REDUCTION_FRACTION * max(
         1, rows
     ) or candidate_cols >= _V2_MIN_REDUCTION_FRACTION * max(1, cols)
+
+
+def _fixpoint_enabled() -> bool:
+    """Second-fixpoint re-stage (default ON). Set to ``0`` for the byte-identical
+    pre-change presolve behavior."""
+    return os.environ.get("LINPROGX_PRESOLVE_FIXPOINT", "1") != "0"
+
+
+def _fixpoint_worth_restage(
+    removed_rows: int,
+    removed_cols: int,
+    rows: int,
+    cols: int,
+) -> bool:
+    return removed_rows >= _FIXPOINT_MIN_CLASSIC_FRACTION * max(
+        1, rows
+    ) or removed_cols >= _FIXPOINT_MIN_CLASSIC_FRACTION * max(1, cols)
+
+
+def _fixpoint_reduction_is_substantial(
+    removed_rows: int,
+    removed_cols: int,
+    rows: int,
+    cols: int,
+) -> bool:
+    return removed_rows >= _FIXPOINT_MIN_SECOND_FRACTION * max(
+        1, rows
+    ) or removed_cols >= _FIXPOINT_MIN_SECOND_FRACTION * max(1, cols)
+
+
+def _remap_record(record: Any, active_cols: list[int]) -> Any:
+    """Relabel a reduction record's column indices from the intermediate
+    (classic-reduced) space back into the original column space via
+    ``active_cols`` (intermediate column -> original column)."""
+    if isinstance(record, _FixedVar):
+        return _FixedVar(active_cols[record.column], record.value)
+    if isinstance(record, _Doubleton):
+        return _Doubleton(
+            active_cols[record.eliminated],
+            active_cols[record.kept],
+            record.coef_eliminated,
+            record.coef_kept,
+            record.rhs,
+        )
+    if isinstance(record, _ColumnSingleton):
+        return _ColumnSingleton(
+            active_cols[record.eliminated],
+            record.coef_eliminated,
+            record.rhs,
+            tuple((active_cols[j], coef) for j, coef in record.terms),
+        )
+    if isinstance(record, _DuplicateColumn):
+        return _DuplicateColumn(
+            active_cols[record.removed],
+            active_cols[record.kept],
+            record.removed_lo,
+            record.removed_hi,
+            record.kept_lo,
+            record.kept_hi,
+        )
+    raise ValueError(f"unknown presolve record type {type(record)!r}")
+
+
+def _compose_reductions(
+    first: PresolveResult,
+    second: PresolveResult,
+) -> PresolveResult:
+    """Compose two reductions applied in sequence (original -> first-reduced
+    -> second-reduced) into a single reduction from the original space.
+
+    ``second`` was computed on ``first``'s reduced matrix, so its records and
+    active columns index that intermediate space. Postsolve replays records in
+    reverse: appending ``second``'s (remapped) records after ``first``'s means
+    reversed replay undoes ``second`` first, then ``first`` -- the correct order.
+    """
+    a1 = first._active_cols  # intermediate column -> original column
+    combined_active = [a1[j] for j in second._active_cols]
+    combined_records = list(first._records) + [_remap_record(rec, a1) for rec in second._records]
+    combined_counts = _empty_reduction_counts()
+    for key in combined_counts:
+        combined_counts[key] = first._reduction_counts.get(key, 0) + second._reduction_counts.get(
+            key, 0
+        )
+    # Mirror ``second``'s reduced-matrix representation: the native reducer
+    # returns a CSRMatrix in ``_matrix`` (components empty); the Python reducer
+    # returns components with ``_matrix`` None. Either is valid downstream.
+    return PresolveResult(
+        rows=second.rows,
+        cols=second.cols,
+        indptr=second.indptr,
+        indices=second.indices,
+        data=second.data,
+        b=second.b,
+        c=second.c,
+        lo=second.lo,
+        hi=second.hi,
+        objective_offset=first.objective_offset + second.objective_offset,
+        removed_rows=first.removed_rows + second.removed_rows,
+        removed_cols=first.removed_cols + second.removed_cols,
+        _records=combined_records,
+        _active_cols=combined_active,
+        _original_cols=first._original_cols,
+        _reduction_counts=combined_counts,
+        _matrix=second._matrix,
+    )
 
 
 def _same_bound(lo_value: float, hi_value: float) -> bool:
@@ -793,6 +913,8 @@ def presolve_matrix(
                     max_fill=max_fill,
                 )
 
+        # Raw opportunity gate is closed: run the classic singleton/doubleton
+        # cascade.
         raw = _c_presolve(
             matrix,
             packed_b,
@@ -801,7 +923,56 @@ def presolve_matrix(
             packed_hi,
             max_fill,
         )
-        return None if raw is None else _result_from_c(raw)
+        if raw is None:
+            return None
+        first_result = _result_from_c(raw)
+        orig_rows, orig_cols = matrix.shape  # type: ignore[attr-defined]
+        # Second-fixpoint re-stage (default on): the raw gate above is scored
+        # BEFORE the classic cascade, so it cannot see the fixed/forcing/empty/
+        # column-singleton opportunities that cascade creates. When classic made
+        # meaningful progress, run the combined V2 fixpoint on the reduced
+        # problem and compose it onto the classic reduction. Staying with a
+        # rebuilt reduced problem (rather than continuing the classic build in
+        # place) reaches strictly the deeper fixpoint the loss census measured.
+        # LINPROGX_PRESOLVE_FIXPOINT=0 restores the byte-identical classic path.
+        if (
+            _fixpoint_enabled()
+            and _v2_enabled()
+            and _fixpoint_worth_restage(
+                first_result.removed_rows, first_result.removed_cols, orig_rows, orig_cols
+            )
+        ):
+            second: PresolveResult | None
+            if _v2_native_enabled() and _c_presolve_v2 is not None:
+                reduced_matrix = first_result._matrix
+                r1_b = _pack_dbls(first_result.b)
+                r1_c = _pack_dbls(first_result.c)
+                r1_lo = _pack_dbls(first_result.lo)
+                r1_hi = _pack_dbls(first_result.hi)
+                second_raw = _c_presolve_v2(reduced_matrix, r1_b, r1_c, r1_lo, r1_hi, max_fill)
+                second = None if second_raw is None else _result_from_c(second_raw)
+            else:
+                r1_indptr, r1_indices, r1_data = first_result._matrix.to_components()
+                second = _presolve_eq_box_python(
+                    first_result.rows,
+                    first_result.cols,
+                    r1_indptr,
+                    r1_indices,
+                    r1_data,
+                    list(first_result.b),
+                    list(first_result.c),
+                    list(first_result.lo),
+                    list(first_result.hi),
+                    max_fill=max_fill,
+                )
+            # Accept the deeper reduction only when it is substantial. A tiny
+            # second reduction is not worth the pass and can slow the solver
+            # down (PDHG/IPM conditioning), so fall back to the classic result.
+            if second is not None and _fixpoint_reduction_is_substantial(
+                second.removed_rows, second.removed_cols, first_result.rows, first_result.cols
+            ):
+                return _compose_reductions(first_result, second)
+        return first_result
 
     # Fallback: extract components and use Python path
     rows_val, cols_val = matrix.shape  # type: ignore[attr-defined]
