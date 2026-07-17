@@ -16149,6 +16149,8 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
     PSRec       *recs        = NULL;
     Py_ssize_t   recs_n = 0, recs_cap = 0;
     Py_ssize_t  *snap_buf    = NULL;   /* col_rows snapshot  */
+    Py_ssize_t  *build_gen   = NULL;   /* per-column row-build generation stamp */
+    Py_ssize_t  *build_slot  = NULL;   /* per-column entry index within the row */
     Py_ssize_t  *fix_cols    = NULL;
     double      *fix_vals    = NULL;
     PSTerm      *term_buf    = NULL;
@@ -16182,15 +16184,46 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
     }
 
     /* ---- build row_entries -------------------------------------------- */
+    /* FASTGATE: the naive build calls ps_row_set (a linear ps_row_find scan)
+     * per nonzero, which is O(row_degree^2) — pathological on dense rows
+     * (e.g. lp_osa_60's degree-173k border cost ~22s here). A per-column
+     * generation-stamp table detects the intra-row duplicates that ps_row_set
+     * would collapse in O(1), giving an O(nnz) build that is bit-identical for
+     * any input (including duplicate columns: last write wins, matching
+     * ps_row_set). LINPROGX_PRESOLVE_FASTGATE=0 restores the naive build. */
+    const char *fastgate_env = getenv("LINPROGX_PRESOLVE_FASTGATE");
+    int fastgate = !(fastgate_env && fastgate_env[0] == '0' && fastgate_env[1] == '\0');
     row_data = (PSRow *)calloc((size_t)(rows > 0 ? rows : 1), sizeof(PSRow));
     if (!row_data) goto oom;
+    if (fastgate && cols > 0) {
+        build_gen  = (Py_ssize_t *)calloc((size_t)cols, sizeof(Py_ssize_t));
+        build_slot = (Py_ssize_t *)malloc((size_t)cols * sizeof(Py_ssize_t));
+        if (!build_gen || !build_slot) goto oom;
+    }
     for (Py_ssize_t i = 0; i < rows; i++) {
         Py_ssize_t cap = indptr[i + 1] - indptr[i] + 2;
         if (ps_row_init(&row_data[i], cap) != 0) goto oom;
-        for (Py_ssize_t off = indptr[i]; off < indptr[i + 1]; off++) {
-            if (fabs(data_in[off]) > PRESOLVE_DROP_EPS) {
-                if (ps_row_set(&row_data[i], indices[off], data_in[off]) != 0)
-                    goto oom;
+        if (fastgate) {
+            Py_ssize_t gen = i + 1;  /* never 0, so calloc'd build_gen is fresh */
+            PSRow *r = &row_data[i];
+            for (Py_ssize_t off = indptr[i]; off < indptr[i + 1]; off++) {
+                if (fabs(data_in[off]) <= PRESOLVE_DROP_EPS) continue;
+                Py_ssize_t j = indices[off];
+                if (build_gen[j] == gen) {
+                    /* duplicate column in this row: last-write-wins update */
+                    r->entries[build_slot[j]].val = data_in[off];
+                } else {
+                    build_gen[j] = gen;
+                    build_slot[j] = r->total;
+                    if (ps_row_append(r, j, data_in[off]) != 0) goto oom;
+                }
+            }
+        } else {
+            for (Py_ssize_t off = indptr[i]; off < indptr[i + 1]; off++) {
+                if (fabs(data_in[off]) > PRESOLVE_DROP_EPS) {
+                    if (ps_row_set(&row_data[i], indices[off], data_in[off]) != 0)
+                        goto oom;
+                }
             }
         }
     }
@@ -16789,7 +16822,8 @@ cleanup:
         for (Py_ssize_t r = 0; r < recs_n; r++) free(recs[r].terms);
         free(recs);
     }
-    free(snap_buf); free(fix_cols); free(fix_vals); free(term_buf);
+    free(snap_buf); free(build_gen); free(build_slot);
+    free(fix_cols); free(fix_vals); free(term_buf);
     free(dup_buf_a); free(dup_buf_b); free(dup_hash_cols); free(dup_hash_values);
     free(act_rows); free(act_cols); free(col_map); free(sort_buf);
     free(o_indptr); free(o_indices); free(o_data); free(o_b);
