@@ -17,7 +17,7 @@ ROOT = Path("/home/evan/dev/linprogx-perf-worktree")
 REPORT_DATA = Path("/tmp/campaign_report_data.json")
 REPORT_HTML = ROOT / "docs/campaign_report.html"
 
-CANONICAL_BOARD = {
+PIN4_BOARD = {
     "date": "2026-07-16",
     "label": "AWS us-west-2 pinned canonical board",
     "artifacts": ["pin4_chunk1.json", "pin4_chunk2.json"],
@@ -54,6 +54,50 @@ CANONICAL_BOARD = {
     },
 }
 
+CANONICAL_BOARD = {
+    "date": "2026-07-16",
+    "label": "Protocol v3 median-of-hosts board (AWS us-west-2, 3 hosts x 7 pairs)",
+    "artifacts": [
+        "modal_bench_c34417761bb6_paired_hosts3.json",
+        "modal_bench_b656ef3f8915_paired_hosts3.json",
+    ],
+    "summary": "16W-2P-6L",
+    "wins": [
+        "qap12",
+        "ken_18",
+        "d2q06c",
+        "fit2p",
+        "truss",
+        "ken_07",
+        "ken_11",
+        "ken_13",
+        "cre_b",
+        "maros_r7",
+        "cre_d",
+        "degen3",
+        "pds_20",
+        "osa_30",
+        "pilot87",
+    ],
+    "coverage_wins": ["qap15"],
+    "confirmed_wins": {
+        "pilot87": "0.826 (21/21 wins)",
+        "pds_20": "0.824 (20/21 wins)",
+    },
+    "parity": {
+        "cre_a": "1.002 (12/21 wins)",
+        "stocfor3": "0.999 (12/21 wins)",
+    },
+    "losses": {
+        "greenbea": 1.69,
+        "osa_14": 1.42,
+        "osa_60": 1.29,
+        "pds_10": 1.26,
+        "woodw": 1.20,
+        "80bau3b": 1.20,
+    },
+}
+
 # Canonical ship order (baseline first, then chronological ship commits).
 ORDER_SHORT = [
     "a1a355d",  # baseline
@@ -77,6 +121,8 @@ ORDER_SHORT = [
     "11f4157",  # Suhl bounded pivot search (port from exp-leaving)
     "422af49",  # plain-Dantzig leaving on DS auto-rescue routes
     "5f89032",  # presolve V2
+    "26a9359",  # chol_setup fast path
+    "82cd31d",  # native presolve V2 hot path
 ]
 
 conn = sqlite3.connect(DB)
@@ -200,6 +246,7 @@ data = {
     "aggregate": agg,
     "generated": "2026-07-16",
     "canonical_board": CANONICAL_BOARD,
+    "prior_boards": [PIN4_BOARD],
 }
 
 if table_exists("bench_artifacts"):
@@ -230,7 +277,7 @@ if table_exists("modal_pairs"):
             """
         )
     ]
-    data["canonical_pairs"] = [
+    data["pin4_pairs"] = [
         dict(r)
         for r in conn.execute(
             """
@@ -244,6 +291,37 @@ if table_exists("modal_pairs"):
     ]
 else:
     data["modal_pairs"] = []
+    data["pin4_pairs"] = []
+
+if table_exists("modal_v3_pairs"):
+    data["v3_pairs"] = [
+        dict(r)
+        for r in conn.execute(
+            """
+            SELECT artifact, substr(ref,1,12) AS ref, certification_date, label,
+                   cloud, region, instance, hosts_observed, hosts_with_ratio,
+                   pairs_total, lx_wins_total, ratio_median_of_hosts,
+                   ratio_min_host, ratio_max_host, verdict
+            FROM modal_v3_pairs
+            ORDER BY certification_date, artifact, instance
+            """
+        )
+    ]
+    data["canonical_pairs"] = [
+        dict(r)
+        for r in conn.execute(
+            """
+            SELECT artifact, instance, hosts_observed, pairs_total, lx_wins_total,
+                   ratio_median_of_hosts, ratio_min_host, ratio_max_host, verdict
+            FROM modal_v3_pairs
+            WHERE (artifact = ? AND instance <> 'lp_woodw') OR artifact = ?
+            ORDER BY artifact, instance
+            """,
+            tuple(CANONICAL_BOARD["artifacts"]),
+        )
+    ]
+else:
+    data["v3_pairs"] = []
     data["canonical_pairs"] = []
 
 REPORT_DATA.write_text(json.dumps(data, indent=1))
@@ -294,18 +372,20 @@ if table_exists("bench_artifacts"):
             f"{r['mode']:<6} {r['cloud'] or 'n/a'} {r['region'] or 'n/a'}  {r['label']}"
         )
 
-if table_exists("modal_pairs"):
-    print("\n=== CANONICAL BOARD PAIRS (pin4 chunks) ===")
+if table_exists("modal_v3_pairs"):
+    print("\n=== CANONICAL BOARD PAIRS (protocol v3) ===")
     for r in conn.execute(
         """
-        SELECT instance, pairs, lx_wins, ratio_median, verdict, artifact
-        FROM modal_pairs
-        WHERE artifact IN ('pin4_chunk1.json', 'pin4_chunk2.json')
-        ORDER BY ratio_median
-        """
+        SELECT instance, pairs_total, lx_wins_total, ratio_median_of_hosts,
+               verdict, artifact
+        FROM modal_v3_pairs
+        WHERE (artifact = ? AND instance <> 'lp_woodw') OR artifact = ?
+        ORDER BY ratio_median_of_hosts
+        """,
+        tuple(CANONICAL_BOARD["artifacts"]),
     ):
         name = r["instance"].replace("lp_", "")
         print(
-            f"{name:>10} {r['pairs']:2d} pairs {r['lx_wins']:2d} lx-wins "
-            f"ratio={r['ratio_median']:.3f} {r['verdict']:<12} {r['artifact']}"
+            f"{name:>10} {r['pairs_total']:2d} pairs {r['lx_wins_total']:2d} lx-wins "
+            f"ratio={r['ratio_median_of_hosts']:.3f} {r['verdict']:<12} {r['artifact']}"
         )

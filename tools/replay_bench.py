@@ -80,6 +80,9 @@ ARTIFACT_DATES = {
     "82cd31d": "2026-07-16",
     "957347b": "2026-07-16",
     "6ec6e2e": "2026-07-16",
+    "c344177": "2026-07-16",
+    "b656ef3": "2026-07-16",
+    "bda0579": "2026-07-16",
 }
 
 ARTIFACT_LABELS = {
@@ -90,6 +93,9 @@ ARTIFACT_LABELS = {
     "82cd31d": "post-native-port paired certification",
     "957347b": "957347b-era paired artifact",
     "6ec6e2e": "canonical board chunk",
+    "c344177": "protocol v3 first certification",
+    "b656ef3": "v3 knife-edge certification",
+    "bda0579": "dense-U on-host envab A/B",
 }
 
 
@@ -209,6 +215,28 @@ def connect() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS modal_v3_pairs (
+            artifact       TEXT NOT NULL,
+            ref            TEXT NOT NULL,
+            certification_date TEXT,
+            label          TEXT,
+            cloud          TEXT,
+            region         TEXT,
+            instance       TEXT NOT NULL,
+            hosts_observed INTEGER,
+            hosts_with_ratio INTEGER,
+            pairs_total    INTEGER,
+            lx_wins_total  INTEGER,
+            ratio_median_of_hosts REAL,
+            ratio_min_host REAL,
+            ratio_max_host REAL,
+            verdict        TEXT,
+            PRIMARY KEY (artifact, instance)
+        )
+        """
+    )
     conn.commit()
     return conn
 
@@ -278,10 +306,27 @@ def artifact_label(ref: str, artifact: str) -> str:
     return label
 
 
+def artifact_host_metadata(data: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+    """Return top-level or first-host machine/load metadata."""
+    machine = data.get("machine_info")
+    loads = data.get("load_checks")
+    host_results = data.get("host_results")
+    if isinstance(host_results, list) and host_results:
+        first_host = host_results[0]
+        if isinstance(first_host, dict):
+            machine = machine or first_host.get("machine_info")
+            loads = loads or first_host.get("load_checks")
+    return (
+        machine if isinstance(machine, dict) else {},
+        loads if isinstance(loads, dict) else {},
+    )
+
+
 def do_artifacts(conn: sqlite3.Connection, paths: list[str] | None) -> None:
     imported = 0
     result_rows = 0
     pair_rows = 0
+    v3_pair_rows = 0
     for path in artifact_paths(paths):
         if not path.exists():
             print(f"missing {path}", flush=True)
@@ -290,8 +335,7 @@ def do_artifacts(conn: sqlite3.Connection, paths: list[str] | None) -> None:
         ref = str(data["ref"])
         mode = str(data["mode"])
         short = ref[:7]
-        machine = data.get("machine_info", {})
-        loads = data.get("load_checks", {})
+        machine, loads = artifact_host_metadata(data)
         cert_date = artifact_date(ref)
         label = artifact_label(ref, path.name)
         conn.execute(
@@ -378,13 +422,48 @@ def do_artifacts(conn: sqlite3.Connection, paths: list[str] | None) -> None:
                 ),
             )
             pair_rows += 1
+        v3_paired = data.get("v3", {}).get("paired", {})
+        for instance, entry in v3_paired.items():
+            pairs_by_host = entry.get("pairs_by_host", [])
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO modal_v3_pairs
+                  (artifact, ref, certification_date, label, cloud, region, instance,
+                   hosts_observed, hosts_with_ratio, pairs_total, lx_wins_total,
+                   ratio_median_of_hosts, ratio_min_host, ratio_max_host, verdict)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    path.name,
+                    ref,
+                    cert_date,
+                    label,
+                    machine.get("modal_cloud"),
+                    machine.get("modal_region"),
+                    instance,
+                    entry.get("hosts_observed"),
+                    entry.get("hosts_with_ratio"),
+                    sum(pairs_by_host) if pairs_by_host else None,
+                    entry.get("lx_wins_total"),
+                    entry.get("ratio_median_of_hosts"),
+                    entry.get("ratio_min_host"),
+                    entry.get("ratio_max_host"),
+                    entry.get("verdict"),
+                ),
+            )
+            v3_pair_rows += 1
         conn.commit()
+        shape_note = ""
+        if mode == "envab":
+            shape_note = " envab=artifact-only"
         print(
-            f"  artifact {path.name}: {mode} ref={short} rows={len(data.get('rows', []))} pairs={len(data.get('paired', {}))}",
+            f"  artifact {path.name}: {mode} ref={short} rows={len(data.get('rows', []))} "
+            f"pairs={len(data.get('paired', {}))} v3_pairs={len(v3_paired)}{shape_note}",
             flush=True,
         )
     print(
-        f"imported {imported} artifacts, upserted {result_rows} suite rows and {pair_rows} paired rows",
+        f"imported {imported} artifacts, upserted {result_rows} suite rows, "
+        f"{pair_rows} paired rows, and {v3_pair_rows} v3 paired rows",
         flush=True,
     )
 
