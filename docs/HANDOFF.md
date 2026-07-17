@@ -1722,6 +1722,37 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   once the greenbea DS ship lands (woodw/80bau3b/stocfor3 are
   DS-family — the dense-U route may move the whole parity trio).
 
+- TWENTY-FIFTH SETTLED — DS FTRAN DENSE-U SWEEP (2026-07-16, codex,
+  honest gate-fail): the pre-existing LINPROGX_DS_FT_DENSE_U bisect
+  probe measured -16.1% on greenbea under a LOADED box (three worker
+  benches running) but only -0.21% on the quiet box; the adaptive
+  productionization (20-25% FTRAN density band; greenbea mean density
+  24.1%) was removed after failing its own >=12% gate. BTRAN dense
+  sweep separately dead: regresses (~0.423->0.436s) AND perturbs the
+  pivot sequence (4399->4420). METHOD LESSON: alternating A/B is
+  robust to load drift but NOT to load-dependent RELATIVE effects —
+  bandwidth-hungry candidate paths must be gated on a quiet box, same
+  doctrine as replay. LIVE RESIDUE: the relative gain under bandwidth
+  contention was real, and Modal cert hosts are bandwidth-tight
+  (greenbea's 1.69 loss lives there) — an ON-HOST knob A/B is queued
+  (harness needs an env-override A/B mode). SOLVE_SLICE per-solve
+  timing instrumentation shipped (LINPROGX_DS_SOLVE_SLICE,
+  default-off).
+
+- TWENTY-SIXTH SETTLED — CRE_A RUIZ + CERT-EVAL WINDOWING
+  (2026-07-16, codex): both remaining queued IPM shave levers killed.
+  Ruiz early-exit: every board IPM instance runs exactly 10 passes;
+  tol 0.05 gives cre_a -3.7% but CHANGES OBJECTIVES (equilibration is
+  numerics-active, not overhead) and regresses cre_d +3.4%; tol 0.01
+  helps nothing (1.018). Cert-eval windowing: measured ceiling
+  0.2-1.2ms on cre_a vs a ~2.7ms (3%) bar — killed on ceiling; the
+  window attempt measured 1.0034. cre_a's engineered-shave queue is
+  now EMPTY (min-degree/AMD, presolve pass cost, setup fast-path,
+  loop-misc, Ruiz, cert-eval all closed). Next: v3 knife-edge re-cert
+  (cre_a/woodw/80bau3b/stocfor3); if cre_a still misses the wins bar,
+  it needs a fresh-eyes hypothesis census (the pattern that found
+  presolve V2), not another shave.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
