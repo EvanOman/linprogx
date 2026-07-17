@@ -1782,6 +1782,38 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   residue that outlives it: envab mode (on-host env-knob A/B,
   composes with --hosts) is now available for any future knob.
 
+- LOSS CENSUS LANDED (2026-07-16, codex, the presolve-V2 pattern:
+  experiments/loss_census_2026_07_16.md — full 8-cell phase
+  attribution + HiGHS-advantage decomposition + 6 ranked falsifiable
+  hypotheses). HEADLINES: (H1) re-staging the semantic V2 gate after
+  the classic cascade has MEASURED second-fixpoint gains — cre_a
+  5.9% net (its coin flip is 1.002 — this flips it), 80bau3b IPM
+  -24.2% (from 1.198 -> projected ~0.91 = FLIP), stocfor3 IPM -14.5%
+  (0.999 -> ~0.85 = certifies); OSA is the explicit negative control
+  (second pass costs 1.1s/22.3s standalone). (H3) both osa losses
+  reduce to ONE structure: 37 dense singleton rows = 38-40% of nnz,
+  exactly what HiGHS removes; core -71%/-65% if treated as an IPM
+  border. (H4) greenbea's 338 bounded singleton columns need
+  ranged-row elimination (ceiling 35-45%). (H5) pds_10 is a unit
+  degree-2 network; contraction proxy -30.5% work. Parallel-column
+  merge measured dead (3.3% ceiling). ORCHESTRATOR ADDENDUM, the
+  census's buried lede: current presolve on osa yields ZERO
+  reductions yet costs 57.9%/82.3% of public wall (1.07s/21.92s,
+  post-native-port) — eliminating zero-yield presolve overhead
+  alone flips both osa cells on the census's own numbers (osa_60
+  core 4.54s vs HiGHS 17.3s). Queued as H0 ahead of the border.
+
+- TWENTY-EIGHTH SETTLED — DS-ROUTE ATTRIBUTION ON THE KNIFE-EDGE SET
+  (2026-07-16, zero-cost kill from existing artifacts): census H2
+  ("make fast IPM certify on the v3 DS family") dies by its own kill
+  criterion — assets/modal_bench_b656ef3f8915_paired_hosts3.json
+  records backend=ipm for EVERY pair on EVERY host for
+  woodw/80bau3b/stocfor3/cre_a. The "DS on certification hosts"
+  framing was stale attribution. woodw/80bau3b 1.20 are IPM-route
+  on-host losses (local IPM is near HiGHS parity; the on-host gap is
+  the bandwidth-sensitive refactor slice, ~51% of IPM wall) — their
+  live lever is H1's second-fixpoint reduction, not a route switch.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
