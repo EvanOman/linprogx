@@ -40,6 +40,10 @@ Usage (run from the replay worktree root):
 
   # inspect
   python3 tools/replay_bench.py status
+
+  # ingest Modal/paired benchmark artifacts already saved under assets/
+  python3 tools/replay_bench.py artifacts
+  python3 tools/replay_bench.py artifacts assets/modal_bench_*.json assets/pin4_chunk*.json
 """
 
 from __future__ import annotations
@@ -67,6 +71,26 @@ DB_PATH = Path("/home/evan/dev/linprogx-perf-worktree/assets/campaign.db")
 PER_CELL_TIMEOUT = 300.0
 REFERENCE_SOLVERS = ("highs", "clarabel")
 REFERENCE_TAG = "reference"
+
+ARTIFACT_DATES = {
+    "7e9947a": "2026-07-13",
+    "1f4351d": "2026-07-14",
+    "ecf94bd": "2026-07-16",
+    "99ce9c9": "2026-07-16",
+    "82cd31d": "2026-07-16",
+    "957347b": "2026-07-16",
+    "6ec6e2e": "2026-07-16",
+}
+
+ARTIFACT_LABELS = {
+    "7e9947a": "first clean-box validation",
+    "1f4351d": "post-presolve-v2 clean-box certification",
+    "ecf94bd": "host-conditional knife-edge precision",
+    "99ce9c9": "pinned-region setup fast-path certification",
+    "82cd31d": "post-native-port paired certification",
+    "957347b": "957347b-era paired artifact",
+    "6ec6e2e": "canonical board chunk",
+}
 
 
 def fixtures(subset: list[str] | None) -> list[Path]:
@@ -120,6 +144,71 @@ def connect() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bench_artifacts (
+            artifact       TEXT PRIMARY KEY,
+            ref            TEXT NOT NULL,
+            short_ref      TEXT NOT NULL,
+            mode           TEXT NOT NULL,
+            certification_date TEXT,
+            label          TEXT,
+            cloud          TEXT,
+            region         TEXT,
+            cpu_count      INTEGER,
+            mem_total_kb   INTEGER,
+            load_start     TEXT,
+            load_end       TEXT,
+            imported_at    TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS modal_results (
+            artifact       TEXT NOT NULL,
+            ref            TEXT NOT NULL,
+            certification_date TEXT,
+            instance       TEXT NOT NULL,
+            solver         TEXT NOT NULL,
+            wall_seconds   REAL,
+            status         TEXT,
+            objective      REAL,
+            residual       REAL,
+            route          TEXT,
+            iterations     INTEGER,
+            PRIMARY KEY (artifact, instance, solver)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS modal_pairs (
+            artifact       TEXT NOT NULL,
+            ref            TEXT NOT NULL,
+            certification_date TEXT,
+            label          TEXT,
+            cloud          TEXT,
+            region         TEXT,
+            instance       TEXT NOT NULL,
+            pairs          INTEGER,
+            lx_median      REAL,
+            lx_min         REAL,
+            lx_n           INTEGER,
+            lx_status      TEXT,
+            lx_backend     TEXT,
+            highs_median   REAL,
+            highs_min      REAL,
+            highs_n        INTEGER,
+            highs_status   TEXT,
+            lx_wins        INTEGER,
+            ratio_median   REAL,
+            ratio_min      REAL,
+            verdict        TEXT,
+            PRIMARY KEY (artifact, instance)
+        )
+        """
+    )
     conn.commit()
     return conn
 
@@ -164,6 +253,140 @@ def record_run(conn: sqlite3.Connection, **kw: object) -> None:
         kw,
     )
     conn.commit()
+
+
+def artifact_paths(paths: list[str] | None) -> list[Path]:
+    if paths:
+        return sorted(Path(p) for p in paths)
+    return sorted(
+        list((WORKTREE / "assets").glob("modal_bench_*.json"))
+        + list((WORKTREE / "assets").glob("pin4_chunk*.json"))
+        + list((WORKTREE / "assets").glob("knife_chunk*.json"))
+    )
+
+
+def artifact_date(ref: str) -> str | None:
+    return ARTIFACT_DATES.get(ref[:7])
+
+
+def artifact_label(ref: str, artifact: str) -> str:
+    label = ARTIFACT_LABELS.get(ref[:7], "Modal benchmark artifact")
+    if artifact.startswith("pin4_chunk"):
+        return "canonical board chunk"
+    if artifact.startswith("knife_chunk"):
+        return "host-conditional knife-edge precision"
+    return label
+
+
+def do_artifacts(conn: sqlite3.Connection, paths: list[str] | None) -> None:
+    imported = 0
+    result_rows = 0
+    pair_rows = 0
+    for path in artifact_paths(paths):
+        if not path.exists():
+            print(f"missing {path}", flush=True)
+            continue
+        data = json.loads(path.read_text())
+        ref = str(data["ref"])
+        mode = str(data["mode"])
+        short = ref[:7]
+        machine = data.get("machine_info", {})
+        loads = data.get("load_checks", {})
+        cert_date = artifact_date(ref)
+        label = artifact_label(ref, path.name)
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO bench_artifacts
+              (artifact, ref, short_ref, mode, certification_date, label, cloud,
+               region, cpu_count, mem_total_kb, load_start, load_end, imported_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                path.name,
+                ref,
+                short,
+                mode,
+                cert_date,
+                label,
+                machine.get("modal_cloud"),
+                machine.get("modal_region"),
+                machine.get("cpu_count"),
+                machine.get("mem_total_kb"),
+                loads.get("loadavg_at_start"),
+                loads.get("loadavg_at_end"),
+                time.strftime("%Y-%m-%dT%H:%M:%S"),
+            ),
+        )
+        imported += 1
+        for row in data.get("rows", []):
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO modal_results
+                  (artifact, ref, certification_date, instance, solver,
+                   wall_seconds, status, objective, residual, route, iterations)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    path.name,
+                    ref,
+                    cert_date,
+                    row.get("instance"),
+                    row.get("solver"),
+                    row.get("seconds"),
+                    row.get("status"),
+                    row.get("objective"),
+                    row.get("residual"),
+                    row.get("backend"),
+                    row.get("iterations"),
+                ),
+            )
+            result_rows += 1
+        for instance, entry in data.get("paired", {}).items():
+            lx = entry.get("lx", {})
+            hx = entry.get("hx", {})
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO modal_pairs
+                  (artifact, ref, certification_date, label, cloud, region, instance,
+                   pairs, lx_median, lx_min, lx_n, lx_status, lx_backend,
+                   highs_median, highs_min, highs_n, highs_status, lx_wins,
+                   ratio_median, ratio_min, verdict)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    path.name,
+                    ref,
+                    cert_date,
+                    label,
+                    machine.get("modal_cloud"),
+                    machine.get("modal_region"),
+                    instance,
+                    entry.get("pairs"),
+                    lx.get("median"),
+                    lx.get("min"),
+                    lx.get("n"),
+                    lx.get("status"),
+                    lx.get("backend"),
+                    hx.get("median"),
+                    hx.get("min"),
+                    hx.get("n"),
+                    hx.get("status"),
+                    entry.get("lx_wins"),
+                    entry.get("ratio_median"),
+                    entry.get("ratio_min"),
+                    entry.get("verdict"),
+                ),
+            )
+            pair_rows += 1
+        conn.commit()
+        print(
+            f"  artifact {path.name}: {mode} ref={short} rows={len(data.get('rows', []))} pairs={len(data.get('paired', {}))}",
+            flush=True,
+        )
+    print(
+        f"imported {imported} artifacts, upserted {result_rows} suite rows and {pair_rows} paired rows",
+        flush=True,
+    )
 
 
 # --- git / build ------------------------------------------------------------
@@ -373,6 +596,16 @@ def do_status(conn: sqlite3.Connection) -> None:
         """
     ):
         print(f"  {row[0]}  {str(row[1])[:10]}  {row[2]:2d} cells  {row[3]} ok  {row[4]}")
+    if conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bench_artifacts'"
+    ).fetchone():
+        n_artifacts = conn.execute("SELECT COUNT(*) FROM bench_artifacts").fetchone()[0]
+        n_pairs = conn.execute("SELECT COUNT(*) FROM modal_pairs").fetchone()[0]
+        n_modal = conn.execute("SELECT COUNT(*) FROM modal_results").fetchone()[0]
+        print("\nbenchmark artifacts:")
+        print(f"  artifacts     : {n_artifacts}")
+        print(f"  suite rows    : {n_modal}")
+        print(f"  paired rows   : {n_pairs}")
 
 
 def main() -> int:
@@ -391,6 +624,13 @@ def main() -> int:
 
     sub.add_parser("status", help="print DB coverage")
 
+    a = sub.add_parser("artifacts", help="ingest saved Modal benchmark JSON artifacts")
+    a.add_argument(
+        "paths",
+        nargs="*",
+        help="artifact JSON paths; defaults to assets/modal_bench_*.json, pin4_chunk*.json, knife_chunk*.json",
+    )
+
     args = ap.parse_args()
     if shutil.which("uv") is None:
         print("uv not found on PATH", file=sys.stderr)
@@ -402,6 +642,8 @@ def main() -> int:
     elif args.mode == "replay":
         subset = args.instances.split(",") if args.instances else None
         do_replay(conn, args.commits, subset)
+    elif args.mode == "artifacts":
+        do_artifacts(conn, args.paths or None)
     elif args.mode == "status":
         do_status(conn)
     return 0

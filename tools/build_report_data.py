@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Extract campaign.db into a JSON blob for the report + a narrative table.
+"""Extract campaign.db into the self-contained campaign report.
 
-Emits scratchpad/report_data.json and prints a per-instance trajectory table.
+Emits /tmp/campaign_report_data.json, re-embeds the JSON into docs/campaign_report.html,
+and prints the single-shot trajectory plus certification summaries.
 """
 
 from __future__ import annotations
@@ -12,6 +13,46 @@ import sqlite3
 from pathlib import Path
 
 DB = "/home/evan/dev/linprogx-perf-worktree/assets/campaign.db"
+ROOT = Path("/home/evan/dev/linprogx-perf-worktree")
+REPORT_DATA = Path("/tmp/campaign_report_data.json")
+REPORT_HTML = ROOT / "docs/campaign_report.html"
+
+CANONICAL_BOARD = {
+    "date": "2026-07-16",
+    "label": "AWS us-west-2 pinned canonical board",
+    "artifacts": ["pin4_chunk1.json", "pin4_chunk2.json"],
+    "summary": "14W-5L-4P plus qap15 coverage = 15 wins",
+    "wins": [
+        "qap12",
+        "ken_18",
+        "d2q06c",
+        "fit2p",
+        "truss",
+        "ken_07",
+        "ken_11",
+        "ken_13",
+        "cre_b",
+        "maros_r7",
+        "cre_d",
+        "degen3",
+        "pds_20",
+        "osa_30",
+    ],
+    "coverage_wins": ["qap15"],
+    "losses": {
+        "greenbea": 1.69,
+        "osa_60": 1.50,
+        "osa_14": 1.34,
+        "pds_10": 1.20,
+        "cre_a": "4/7 at 0.966",
+    },
+    "parity": {
+        "woodw": 0.996,
+        "pilot87": 0.995,
+        "80bau3b": 1.010,
+        "stocfor3": 1.010,
+    },
+}
 
 # Canonical ship order (baseline first, then chronological ship commits).
 ORDER_SHORT = [
@@ -34,10 +75,22 @@ ORDER_SHORT = [
     "d0e6cb1",  # FT program ship (== HEAD code)
     "2f4a1df",  # block-row uplook kernel + saveable-fraction gate (exp-panel merge)
     "11f4157",  # Suhl bounded pivot search (port from exp-leaving)
+    "422af49",  # plain-Dantzig leaving on DS auto-rescue routes
+    "5f89032",  # presolve V2
 ]
 
 conn = sqlite3.connect(DB)
 conn.row_factory = sqlite3.Row
+
+
+def table_exists(name: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        ).fetchone()
+        is not None
+    )
+
 
 # Resolve full hashes present, map short->full
 rows = conn.execute(
@@ -145,14 +198,64 @@ data = {
     "ordered_instances": ordered_instances,
     "final_ratio": {k: (round(v, 3) if v else None) for k, v in final_ratio.items()},
     "aggregate": agg,
-    "generated": "2026-07-13",
+    "generated": "2026-07-16",
+    "canonical_board": CANONICAL_BOARD,
 }
 
-out = Path(
-    "/tmp/claude-1000/-home-evan-dev-linprogx/c9aaa169-d2a9-450d-ad6e-204790d20e27/scratchpad/report_data.json"
-)
-out.write_text(json.dumps(data, indent=1))
-print(f"wrote {out} ({out.stat().st_size} bytes)")
+if table_exists("bench_artifacts"):
+    data["certification_artifacts"] = [
+        dict(r)
+        for r in conn.execute(
+            """
+            SELECT artifact, short_ref, mode, certification_date, label, cloud, region,
+                   cpu_count, load_start, load_end
+            FROM bench_artifacts
+            ORDER BY certification_date, artifact
+            """
+        )
+    ]
+else:
+    data["certification_artifacts"] = []
+
+if table_exists("modal_pairs"):
+    data["modal_pairs"] = [
+        dict(r)
+        for r in conn.execute(
+            """
+            SELECT artifact, substr(ref,1,12) AS ref, certification_date, label,
+                   cloud, region, instance, pairs, lx_median, highs_median, lx_wins,
+                   ratio_median, ratio_min, verdict
+            FROM modal_pairs
+            ORDER BY certification_date, artifact, instance
+            """
+        )
+    ]
+    data["canonical_pairs"] = [
+        dict(r)
+        for r in conn.execute(
+            """
+            SELECT artifact, instance, pairs, lx_median, highs_median, lx_wins,
+                   ratio_median, ratio_min, verdict
+            FROM modal_pairs
+            WHERE artifact IN ('pin4_chunk1.json', 'pin4_chunk2.json')
+            ORDER BY instance
+            """
+        )
+    ]
+else:
+    data["modal_pairs"] = []
+    data["canonical_pairs"] = []
+
+REPORT_DATA.write_text(json.dumps(data, indent=1))
+print(f"wrote {REPORT_DATA} ({REPORT_DATA.stat().st_size} bytes)")
+
+html = REPORT_HTML.read_text()
+start = html.index('<script id="data" type="application/json">')
+start = html.index("\n", start) + 1
+end = html.index("\n</script>", start)
+embedded = json.dumps(data, separators=(",", ":"))
+REPORT_HTML.write_text(html[:start] + embedded + html[end:])
+print(f"updated {REPORT_HTML} ({REPORT_HTML.stat().st_size} bytes)")
 
 # ---- narrative table to stdout ----
 print("\n=== HEADLINE PER-INSTANCE TRAJECTORY (baseline -> current vs HiGHS) ===")
@@ -176,3 +279,33 @@ for i, (c, a) in enumerate(zip(data["commits"], agg, strict=True)):
     print(
         f"{i:2d} {c['short']:>8} {c['date']:>10} {a['total']:8.2f} {str(a['geomean_ratio']):>8}  {c['subject'][:44]}"
     )
+
+if table_exists("bench_artifacts"):
+    print("\n=== CERTIFICATION ARTIFACTS ===")
+    for r in conn.execute(
+        """
+        SELECT certification_date, artifact, short_ref, mode, label, cloud, region
+        FROM bench_artifacts
+        ORDER BY certification_date DESC, artifact
+        """
+    ):
+        print(
+            f"{r['certification_date']} {r['artifact']:<38} {r['short_ref']} "
+            f"{r['mode']:<6} {r['cloud'] or 'n/a'} {r['region'] or 'n/a'}  {r['label']}"
+        )
+
+if table_exists("modal_pairs"):
+    print("\n=== CANONICAL BOARD PAIRS (pin4 chunks) ===")
+    for r in conn.execute(
+        """
+        SELECT instance, pairs, lx_wins, ratio_median, verdict, artifact
+        FROM modal_pairs
+        WHERE artifact IN ('pin4_chunk1.json', 'pin4_chunk2.json')
+        ORDER BY ratio_median
+        """
+    ):
+        name = r["instance"].replace("lp_", "")
+        print(
+            f"{name:>10} {r['pairs']:2d} pairs {r['lx_wins']:2d} lx-wins "
+            f"ratio={r['ratio_median']:.3f} {r['verdict']:<12} {r['artifact']}"
+        )

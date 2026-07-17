@@ -1,0 +1,340 @@
+{
+  "ref": "957347b105dae154cca44740d83f96fe20d57a84",
+  "mode": "paired",
+  "use_snapshot": true,
+  "machine_info": {
+    "cpu_model": "unknown",
+    "cpu_count": 20,
+    "mem_total_kb": 924076124,
+    "loadavg": "0.00 0.00 0.00 0/0 0",
+    "modal_region": "us-west4",
+    "modal_cloud": "CLOUD_PROVIDER_GCP",
+    "modal_task_id": "ta-01KXMTAPFME5J304K0CRVJ8PZR"
+  },
+  "load_checks": {
+    "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+    "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+  },
+  "paired": {
+    "lp_osa_14": {
+      "pairs": 7,
+      "lx": {
+        "median": 2.2651556510000006,
+        "min": 2.081976875999999,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 1.302681341000003,
+        "min": 1.2696369489999952,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.7388409426830005,
+      "ratio_min": 1.639820641357222,
+      "verdict": "highs_faster"
+    },
+    "lp_osa_30": {
+      "pairs": 7,
+      "lx": {
+        "median": 4.845234500000004,
+        "min": 4.560688887999987,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 4.43942494800001,
+        "min": 4.340189424000002,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.091410386875177,
+      "ratio_min": 1.0508041107101656,
+      "verdict": "highs_faster"
+    },
+    "lp_osa_60": {
+      "pairs": 7,
+      "lx": {
+        "median": 20.004237246999992,
+        "min": 19.84508006699997,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 19.349271998999996,
+        "min": 18.58480678799998,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.0338496067466438,
+      "ratio_min": 1.0678120194294263,
+      "verdict": "highs_faster"
+    },
+    "lp_qap12": {
+      "pairs": 7,
+      "lx": {
+        "median": 1.9139313480000055,
+        "min": 1.8463031139999657,
+        "n": 7,
+        "status": "optimal",
+        "backend": "pdhg"
+      },
+      "hx": {
+        "median": 106.16604911900004,
+        "min": 105.74571664999996,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.01802771567636191,
+      "ratio_min": 0.017459838303530626,
+      "verdict": "lx_faster"
+    },
+    "lp_ken_18": {
+      "pairs": 7,
+      "lx": {
+        "median": 4.943834000999914,
+        "min": 4.737345817000005,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 10.504823305999935,
+        "min": 10.309363928000039,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.47062514589618976,
+      "ratio_min": 0.4595187297766706,
+      "verdict": "lx_faster"
+    },
+    "lp_d2q06c": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.5536413570000605,
+        "min": 0.5055038070001956,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.9363500470001327,
+        "min": 0.9311816189999718,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.591276049778403,
+      "ratio_min": 0.5428627420106011,
+      "verdict": "lx_faster"
+    },
+    "lp_fit2p": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.14143478699998013,
+        "min": 0.12743658499994126,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 1.258247320999999,
+        "min": 1.2259109350000017,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.1124061896571924,
+      "ratio_min": 0.10395256405795995,
+      "verdict": "lx_faster"
+    },
+    "lp_truss": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.20481029400002626,
+        "min": 0.17052813999998762,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 2.9109750909999548,
+        "min": 2.880286712000043,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.07035796858353449,
+      "ratio_min": 0.059205265673560166,
+      "verdict": "lx_faster"
+    },
+    "lp_ken_07": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.037184522999950786,
+        "min": 0.03553977399997166,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.094581393999988,
+        "min": 0.0871605949998866,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.3931483923778445,
+      "ratio_min": 0.4077504748564176,
+      "verdict": "lx_faster"
+    },
+    "lp_ken_11": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.28255046800018135,
+        "min": 0.26097583299997495,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.47210546099995554,
+        "min": 0.4333017800001926,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.5984901496409676,
+      "ratio_min": 0.6022957787061455,
+      "verdict": "lx_faster"
+    },
+    "lp_ken_13": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.6417903379999643,
+        "min": 0.5925274749999971,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 1.2888686579999558,
+        "min": 1.2243021379999846,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.49794859547277964,
+      "ratio_min": 0.48397160848542486,
+      "verdict": "lx_faster"
+    },
+    "lp_pilot87": {
+      "pairs": 7,
+      "lx": {
+        "median": 5.814552453000033,
+        "min": 5.1571166319999975,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 3.9677281959998254,
+        "min": 3.933987702999957,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.4654613838876702,
+      "ratio_min": 1.3109132568124995,
+      "verdict": "highs_faster"
+    },
+    "lp_cre_b": {
+      "pairs": 7,
+      "lx": {
+        "median": 1.8673889750000399,
+        "min": 1.7401120350000383,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 2.2043248769998627,
+        "min": 2.153061692999927,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.8471478022520889,
+      "ratio_min": 0.8082035181144702,
+      "verdict": "lx_faster"
+    },
+    "lp_stocfor3": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.7073591839998699,
+        "min": 0.6565654690000429,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.7969865200000186,
+        "min": 0.7748331859997961,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.8875422184052164,
+      "ratio_min": 0.8473636401528827,
+      "verdict": "lx_faster"
+    },
+    "lp_cre_a": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.15633275200002572,
+        "min": 0.15151751199982755,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.17355206699994596,
+        "min": 0.16423622199999954,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 5,
+      "ratio_median": 0.900783002486939,
+      "ratio_min": 0.922558435372606,
+      "verdict": "lx_faster"
+    },
+    "lp_maros_r7": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.7250017660001049,
+        "min": 0.6655280649999895,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.8864465649999147,
+        "min": 0.8626153789998625,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.8178741896305669,
+      "ratio_min": 0.7715235332015749,
+      "verdict": "lx_faster"
+    }
+  }
+}
