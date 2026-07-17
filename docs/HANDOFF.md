@@ -1814,6 +1814,24 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   the bandwidth-sensitive refactor slice, ~51% of IPM wall) — their
   live lever is H1's second-fixpoint reduction, not a route switch.
 
+- H0 SHIPPED — O(NNZ) PRESOLVE ROW BUILD (2026-07-16, opus worker,
+  d727389): the census's zero-yield osa presolve overhead was an
+  accidental O(degree^2) loop — the classic presolve row build called
+  ps_row_set (linear ps_row_find) per nonzero, detonating on osa's
+  dense border rows (deg 38k/173k; predicted quadratic ratio 20.45 vs
+  measured 20.9 — exact signature). Generation-stamp dedup makes the
+  build O(nnz): presolve wall osa_14 1050->9ms (-98.3%), osa_60
+  21916->66ms (-99.5%); public walls (worker A/B) osa_14 -58%
+  (2.13->0.89s), osa_60 -84% (64.4->10.3s under load). BIT-IDENTICAL
+  reduced problems on all 24 fixtures (fingerprints; orchestrator
+  re-verified 3/3 independently); 300 tests green (twice,
+  independently). Knob LINPROGX_PRESOLVE_FASTGATE=0 restores the
+  naive build. Strictly better than a skip-gate: also cheapens
+  presolve where it fires. AWAITING Modal v3 cert of the osa pair
+  (bundled with H1's cert wave). Local projections put BOTH osa
+  cells in win territory (osa_14 ~0.89 vs HiGHS 0.98; osa_60 ~10.3
+  vs 17.3).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
