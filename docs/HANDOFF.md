@@ -1988,6 +1988,23 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   machine 7-day gate still applies) — 8697483. Modal v3 cert of
   80bau3b/cre_a/d2q06c/ken_07/greenbea RUNNING.
 
+- AGGREGATION CERTIFICATION — 80BAU3B FLIPS (2026-07-17, v3 3 hosts
+  x 7 pairs, us-west-2, at 70203c4,
+  assets/modal_bench_70203c413cea_paired_hosts3.json): **80bau3b WIN
+  0.881** [0.840,0.948] 20/21 (was 1.062 — the native aggregation
+  flip); d2q06c 0.371 and ken_07 0.410 both 21/21 (deepened).
+  cre_a 1.021 [1.010,1.052] 7/21 — DECOMPOSED against the prior
+  wave via bit-identical iterations (34 both waves): our side +4ms
+  (~the 2.75ms reject scan), HiGHS side -6ms (host luck) — the
+  scan's ~2% is real on a cell whose true margin is +-3% around
+  parity; cre_a is HONESTLY A COIN FLIP (0.939 and 1.021 across
+  waves), scored as parity. greenbea sentinel 1.741: iters 4399
+  identical, our wall +1%, HiGHS -2.5% — host drift, clean.
+  **V3 BOARD OF RECORD: 20W-1P-3L** (parity cre_a; losses greenbea
+  ~1.7, pds_10 1.26-1.57 host-dependent, woodw 1.20). QUEUED SMALL
+  UNIT: cre_a reject-scan cost — target <0.5ms or a proven a-priori
+  discriminator (fill-trajectory minima proven non-separating).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
