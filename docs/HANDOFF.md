@@ -1967,6 +1967,27 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   PS_REC_COLUMN_SINGLETON (tag 2) marshalling is the record
   template. Native-port worker dispatched.
 
+- NATIVE AGGREGATION SHIPPED — DEFAULT ON, DOUBLE-GATED (2026-07-17,
+  opus worker + orchestrator route gate, 54e9232): C port of the
+  reference aggregation (PS_REC_AGGREGATION tag 5), bit-identical on
+  all 24 fixtures, 2.23ms accept / sub-2ms rejects (Python was
+  465ms), RSS-flat over 1200 iterations. TWO GATES: fill-non-positive
+  (structural; accepts only 80bau3b/d2q06c/ken_07 on the board) and
+  IPM-route-only (orchestrator addition: algorithm in ipm/auto —
+  aggregated shapes raise DS pivots per 31st settled AND can push
+  PDHG past convergence; the worker found the cycle benchmark went
+  optimal->iteration_limit when fill-gate-accepted, a status-
+  semantics regression — the route gate fixes it and the cycle test
+  now runs UNPINNED against the shipped default). Local A/B: 80bau3b
+  -6.8% (IPM 47->44), d2q06c -19.7%, ken_07 -7.7%; cre_a pays ~3%
+  reject-scan (proven no cheap discriminator: fill-trajectory minima
+  overlap between accepts and rejects). just ci FULLY GREEN
+  (coverage 88.87%); en route, remediated fresh PYSEC advisories
+  (pillow 12.3.0, setuptools 83.0.0) by advancing the project
+  exclude-newer pin 06-20 -> 07-10 (both releases 13-16 days old;
+  machine 7-day gate still applies) — 8697483. Modal v3 cert of
+  80bau3b/cre_a/d2q06c/ken_07/greenbea RUNNING.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
