@@ -2077,6 +2077,24 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   class the campaign has not found. Residue shipped default-off:
   the native basis-injection warm-start hook (research tooling).
 
+- A2 CERTIFICATION — WOODW FLIPS, BOARD 21W-1P-2L (2026-07-17, v3
+  3 hosts x 7 pairs, us-west-2, at c5517a2,
+  assets/modal_bench_c5517a23f370_paired_hosts3.json): **woodw WIN
+  0.962** [0.884,0.970] **21/21** — the cache-sized-tail
+  single-thread scheduling ship (b394c7e; refactor -19.9% local,
+  amplified on bandwidth-tight hosts) flips the cell. 80bau3b
+  DEEPENS to 0.793 [0.756,0.811] 21/21 (was 0.881). cre_a 0.995
+  13/21 — the coin flip trends our side (0.939/1.021/0.995 across
+  waves). pilot87 printed 1.027 [0.914,1.292] but iterations are
+  128 in every pair of both waves, its code path is byte-identical
+  under a2 (10MiB tail > threshold), and HiGHS walls were flat
+  while ours swung 3.76->6.13s with host hardware — HOST LOTTERY,
+  same class as pds_10's documented swings. Cumulative v3 record:
+  30/42 pair wins, median of 6 host-medians 0.927 = host-conditional
+  WIN. **V3 BOARD OF RECORD: 21W-1P-2L** (parity cre_a; losses
+  greenbea ~1.7 and pds_10 1.26-1.57, both requiring new idea
+  classes — 35th settled and 29th settled respectively).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
