@@ -2038,6 +2038,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   Instrument: LINPROGX_IPM_SLICE result-embedded, flows through the
   bench harness (envab arm B overhead ~0.6%).
 
+- THIRTY-FOURTH SETTLED — AGGREGATION REJECT-SCAN FLOOR (2026-07-17,
+  codex, two attempts, killed; no changes retained): the cre_a
+  reject scan cannot go below ~2.6ms — the candidate scan's
+  activity/implied-free (1.08ms), fill-simulation (0.59ms) and
+  substitution (0.76ms) phases ARE the decision procedure, and a
+  conservative structural prefilter cannot reject cre_a (optimistic
+  fill floor -17,860 nnz; 1,512 eligible columns overlap the accept
+  census — no separating threshold exists). Refined measurement:
+  aggregation costs cre_a 5.2% locally (83.3 vs 79.2ms, 9 pairs,
+  same iterations). DECISION: keep aggregation ON — board math
+  favors it (ON: 80bau3b WIN + cre_a parity; OFF: cre_a win +
+  80bau3b LOSS), and the refactor-bandwidth unit (in flight) should
+  overwhelm the scan cost on cre_a (refactor is 51% of its wall at
+  x1.60 on-host inflation — a 20% refactor cut = ~10% wall).
+  Revisit only if the refactor unit dies.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
