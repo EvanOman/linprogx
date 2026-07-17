@@ -1687,3 +1687,32 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   certification (protocol v3, queued). The stable core (kens, qaps,
   truss, fit2p, d2q06c, cre_b 0.62, maros 0.77, degen3, cre_d,
   stocfor3~, cre_a~) holds across every host observed.
+
+- PROTOCOL V3 SHIPPED + FIRST V3 CERTIFICATION (2026-07-16, c344177,
+  codex build + orchestrator cert): modal_bench.py --hosts N runs the
+  full paired protocol in N concurrent containers (starmap) and
+  aggregates median-of-hosts verdicts with per-host spread preserved;
+  --hosts 1 byte-identical to before; aggregation unit-tested. FIRST
+  V3 CERT (3 hosts x 7 pairs, AWS us-west-2, bandwidth-sensitive set,
+  assets/modal_bench_c34417761bb6_paired_hosts3.json): pilot87
+  **WIN 0.826** [0.813,0.939] 21/21 — UPGRADES from 0.995 parity;
+  pds_20 WIN 0.824 [0.788,0.830] 20/21 confirmed; woodw 1.014
+  [0.991,1.106] 8/21 — a TRUE knife-edge, hosts disagree; greenbea
+  1.695 [1.676,1.713] 0/21 rock-solid; osa_14 1.424 [1.406,1.662],
+  osa_60 1.290 [1.287,1.370], pds_10 1.258 [1.251,1.279] all 0/21 —
+  REAL losses on every host this wave; the host-conditional framing
+  for osa/pds_10 does NOT rescue them under v3. PROVISIONAL V3 BOARD:
+  **16W-3P-5L** (pilot87 parity->win; parity woodw/80bau3b/stocfor3;
+  losses greenbea/osa_60/osa_14/pds_10/cre_a). DOCTRINE: v3
+  median-of-hosts is now the certification standard for the
+  bandwidth-sensitive set.
+
+- CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
+  ingestion added to replay_bench.py (idempotent, artifact-keyed
+  tables); /tmp bench artifacts rescued into assets/ (knife chunks,
+  6ec6e2e/957347b/82cd31d/ecf94bd/7e9947a); CAMPAIGN.md + embedded
+  report regenerated through the canonical board; gh-pages 55fb707
+  and the Claude artifact republished. Per-ship local replay rows for
+  26a9359 (setup fast-path) and 82cd31d (native V2 port) still
+  pending — queued behind the current kernel probes (needs a quiet
+  box).
