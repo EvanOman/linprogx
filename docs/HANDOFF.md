@@ -1895,6 +1895,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   architecture project, not a presolve probe, if the ceiling
   (~25% pds_10, 35-45% greenbea) is judged worth it.
 
+- THIRTIETH SETTLED — GREENBEA RANGED-ROW SINGLETONS (2026-07-17,
+  opus worker, killed at the projection gate + confirmed by A/B):
+  the census H4 premise is FALSE for greenbea — it is already at a
+  bound-propagation fixpoint. Eliminating all 338 bounded singletons
+  yields 10 redundant rows (bar: ~574-1,000), ZERO propagated bound
+  tightenings, ZERO fixings; the eq-box realization (singleton ->
+  ranged row -> bounded slack) is a near-null relabel that makes
+  Dantzig WORSE (4,399 -> 7,302 pivots, +73% wall, obj drift
+  4.87e-4). No source was modified. IMPLICATION: HiGHS's 574-row
+  greenbea reduction does NOT come from bounded-singleton
+  elimination — cause unknown; a presolve-log rule-count diff
+  (HiGHS runtime logs, not source) is the queued measurement. Also
+  NARROWS the ranged-row architecture case: it remains pds_10's
+  only path (29th settled) but would not close greenbea.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
