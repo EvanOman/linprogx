@@ -1707,6 +1707,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   median-of-hosts is now the certification standard for the
   bandwidth-sensitive set.
 
+- TWENTY-FOURTH SETTLED — AMD APPROXIMATE DEGREE (2026-07-16, codex,
+  two attempts, kill final): approximate external degree cannot flip
+  cre_a. Attempt 1 (loose bound): cre_a slice -46% but nnz(L)
+  +5-11% / flops +25-41% across the family — quality gate fail.
+  Attempt 2 (proper Amestoy-Davis-Duff bound + element absorption +
+  exact-when-<=2-elements): quality now GOOD on degen3/cre_d
+  (slice -21%/-24%, nnz -0.7%/-0.4%, flops improve) but cre_a itself
+  only -9.6% slice (bar: -30%) with flops +7.1% — the target instance
+  is the one whose ordering the approximation hurts. Probe stays
+  behind default-off LINPROGX_MD_APPROX in the discarded worktree;
+  NOT shipped. cre_a's remaining queued levers: Ruiz pass-count,
+  certificate-eval windowing, and a v3 re-cert of the knife-edge set
+  once the greenbea DS ship lands (woodw/80bau3b/stocfor3 are
+  DS-family — the dense-U route may move the whole parity trio).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
