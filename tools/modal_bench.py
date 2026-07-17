@@ -65,6 +65,11 @@ USAGE
       --instances lp_degen3,lp_osa_14,lp_stocfor3,lp_80bau3b,lp_cre_a,lp_greenbea,lp_cre_b \
       --pairs 7
 
+  # protocol v3: same paired certification, concurrently across 3 hosts
+  uvx modal run tools/modal_bench.py --action bench --mode paired --ref <sha> \
+      --instances lp_osa_14,lp_osa_60,lp_pds_10,lp_pds_20,lp_pilot87,lp_woodw,lp_greenbea \
+      --pairs 7 --hosts 3
+
 The local entrypoint prints the JSON blob to stdout and saves it to
 /tmp/modal_bench_<ref>_<mode>.json locally.
 """
@@ -263,6 +268,83 @@ def _run_cell(workdir: Path, fixture: Path, solver: str) -> dict[str, Any]:
     return row
 
 
+def aggregate_protocol_v3_hosts(host_results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate independent paired-protocol host results into v3 verdicts."""
+    if not host_results:
+        raise ValueError("host_results must not be empty")
+
+    instances = sorted(
+        {
+            inst
+            for host_result in host_results
+            for inst in host_result.get("paired", {}).keys()
+        }
+    )
+    paired: dict[str, Any] = {}
+
+    for inst in instances:
+        per_host: list[dict[str, Any]] = []
+        ratios: list[float] = []
+        wins: list[int] = []
+        pairs_by_host: list[int] = []
+
+        for idx, host_result in enumerate(host_results):
+            entry = host_result.get("paired", {}).get(inst)
+            if entry is None:
+                continue
+
+            ratio = entry.get("ratio_median")
+            if ratio is not None:
+                ratios.append(float(ratio))
+
+            lx_wins = entry.get("lx_wins")
+            if lx_wins is not None:
+                wins.append(int(lx_wins))
+
+            pairs = entry.get("pairs")
+            if pairs is not None:
+                pairs_by_host.append(int(pairs))
+
+            per_host.append(
+                {
+                    "host_index": host_result.get("host_index", idx),
+                    "machine_info": host_result.get("machine_info"),
+                    "load_checks": host_result.get("load_checks"),
+                    "pairs": pairs,
+                    "lx": entry.get("lx"),
+                    "hx": entry.get("hx"),
+                    "lx_wins": lx_wins,
+                    "ratio_median": ratio,
+                    "ratio_min": entry.get("ratio_min"),
+                    "verdict": entry.get("verdict"),
+                }
+            )
+
+        ratio_median = statistics.median(ratios) if ratios else None
+        verdict = None
+        if ratio_median is not None:
+            verdict = "lx_faster" if ratio_median < 1.0 else "highs_faster"
+
+        paired[inst] = {
+            "hosts_observed": len(per_host),
+            "hosts_with_ratio": len(ratios),
+            "ratio_median_of_hosts": ratio_median,
+            "ratio_min_host": min(ratios) if ratios else None,
+            "ratio_max_host": max(ratios) if ratios else None,
+            "lx_wins_by_host": wins,
+            "lx_wins_total": sum(wins),
+            "pairs_by_host": pairs_by_host,
+            "verdict": verdict,
+            "per_host": per_host,
+        }
+
+    return {
+        "protocol": "v3",
+        "hosts": len(host_results),
+        "paired": paired,
+    }
+
+
 # --------------------------------------------------------------------------
 # Remote function
 # --------------------------------------------------------------------------
@@ -286,6 +368,7 @@ def bench(
     pairs: int = 7,
     mode: str = "suite",
     use_snapshot: bool = True,
+    include_raw_pairs: bool = False,
 ) -> dict[str, Any]:
     """Build linprogx at git_ref and benchmark on a clean CPU container.
 
@@ -338,10 +421,11 @@ def bench(
             fixture = Path(FIXTURES_DIR) / f"{inst}.mat"
             lx_secs: list[float] = []
             hx_secs: list[float] = []
+            pair_results: list[dict[str, Any]] = []
             lx_wins = 0
             lx_status = hx_status = "optimal"
             lx_backend = None
-            for _ in range(pairs):
+            for pair_index in range(pairs):
                 # interleaved: lx then HiGHS, back to back
                 lx = _run_cell(workdir, fixture, "linprogx")
                 hx = _run_cell(workdir, fixture, "highs")
@@ -357,6 +441,19 @@ def bench(
                 if lx.get("status") == "optimal" and hx.get("status") == "optimal":
                     if float(lx["seconds"]) < float(hx["seconds"]):
                         lx_wins += 1
+                if include_raw_pairs:
+                    pair_results.append(
+                        {
+                            "pair": pair_index + 1,
+                            "lx": lx,
+                            "hx": hx,
+                            "lx_won": (
+                                lx.get("status") == "optimal"
+                                and hx.get("status") == "optimal"
+                                and float(lx["seconds"]) < float(hx["seconds"])
+                            ),
+                        }
+                    )
 
             def _stat(xs: list[float]) -> dict[str, Any]:
                 if not xs:
@@ -381,6 +478,8 @@ def bench(
                 "ratio_min": ratio_min,
                 "verdict": verdict,
             }
+            if include_raw_pairs:
+                entry["pair_results"] = pair_results
             paired[inst] = entry
             print(
                 f"{inst:>14}: lx med {lx_st['median']} hx med {hx_st['median']} "
@@ -418,6 +517,7 @@ def main(
     mode: str = "suite",
     instances: str = "",
     pairs: int = 7,
+    hosts: int = 1,
     use_snapshot: bool = True,
     worktree: str = "/home/evan/dev/linprogx-perf-worktree",
     local_fixtures: str = "/tmp/lpsuite",
@@ -464,7 +564,40 @@ def main(
     if action == "bench":
         if not ref:
             raise SystemExit("--ref required for bench")
+        if hosts < 1:
+            raise SystemExit("--hosts must be >= 1")
+        if hosts > 1 and mode != "paired":
+            raise SystemExit("--hosts > 1 is only supported for --mode paired")
         inst_list = [s for s in (i.strip() for i in instances.split(",")) if s] or None
+        short = ref[:12]
+        if hosts > 1:
+            calls = [
+                (ref, inst_list, pairs, mode, use_snapshot, True)
+                for _ in range(hosts)
+            ]
+            host_results: list[dict[str, Any]] = []
+            for idx, host_result in enumerate(bench.starmap(calls)):
+                host_result["host_index"] = idx
+                host_results.append(host_result)
+
+            result = {
+                "ref": ref,
+                "mode": mode,
+                "protocol": "v3",
+                "hosts": hosts,
+                "pairs": pairs,
+                "use_snapshot": use_snapshot,
+                "instances": [_norm(i) for i in inst_list] if inst_list else CERTIFIED_SET,
+                "host_results": host_results,
+                "v3": aggregate_protocol_v3_hosts(host_results),
+            }
+            blob = json.dumps(result, indent=2, default=str)
+            print(blob)
+            outp = Path(f"/tmp/modal_bench_{short}_{mode}_hosts{hosts}.json")
+            outp.write_text(blob)
+            print(f"\n[saved] {outp}", file=__import__("sys").stderr)
+            return
+
         result = bench.remote(
             git_ref=ref,
             instances=inst_list,
@@ -474,7 +607,6 @@ def main(
         )
         blob = json.dumps(result, indent=2, default=str)
         print(blob)
-        short = ref[:12]
         outp = Path(f"/tmp/modal_bench_{short}_{mode}.json")
         outp.write_text(blob)
         print(f"\n[saved] {outp}", file=__import__("sys").stderr)
