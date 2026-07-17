@@ -10,11 +10,13 @@ current era).
   session-backup-20260702 tracks HEAD. Main checkout /home/evan/dev/linprogx
   belongs to another session (web-demo) — never touch it.
 - BOARD OF RECORD (protocol v3: 3 hosts x 7 pairs median-of-hosts, AWS
-  us-west-2): **20W-1P-3L** (incl. qap15 coverage win).
-  - Parity: cre_a — TRUE coin flip (0.939 and 1.021 across waves,
-    iterations bit-identical; the aggregation reject-scan costs it ~2%
-    on a +-3% margin).
-  - Losses: greenbea ~1.7, pds_10 1.26-1.57 (host-dependent), woodw 1.20.
+  us-west-2): **21W-1P-2L** (incl. qap15 coverage win).
+  - Parity: cre_a — TRUE coin flip (0.939/1.021/0.995 across waves).
+  - Losses: greenbea ~1.7 (EVERY scoped family settled — 35th settled;
+    needs a new idea class) and pds_10 1.26-1.57 (ranged-row
+    architecture, 29th settled).
+  - woodw flipped 0.962 21/21 (a2 refactor scheduling, b394c7e);
+    pilot87 is a host-conditional win (cumulative 30/42, 0.927).
 - This session shipped and certified: protocol v3 + envab harness modes,
   DS solve-slice instrument, H0 quadratic presolve row-build fix
   (osa_60 0.280!, osa_14 0.912), H1 presolve fixpoint re-stage (cre_a,
