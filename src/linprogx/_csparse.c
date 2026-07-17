@@ -8728,6 +8728,11 @@ typedef struct {
     int64_t  btran_dense_count;
     int64_t  btran_sparse_count;
     int64_t  btran_sparse_nnz_total;
+    int      solve_slice_on;
+    double   ftran_dense_s;
+    double   ftran_sparse_s;
+    double   btran_dense_s;
+    double   btran_sparse_s;
 
     /* ---- True Forrest-Tomlin update state (LINPROGX_DS_FT=1) ----
      *
@@ -9777,6 +9782,11 @@ assemble:
     ctx->btran_dense_count = 0;
     ctx->btran_sparse_count = 0;
     ctx->btran_sparse_nnz_total = 0;
+    ctx->solve_slice_on = getenv("LINPROGX_DS_SOLVE_SLICE") != NULL;
+    ctx->ftran_dense_s = 0.0;
+    ctx->ftran_sparse_s = 0.0;
+    ctx->btran_dense_s = 0.0;
+    ctx->btran_sparse_s = 0.0;
 
     /* Cleanup temporaries and return */
     lu_active_free(&active);
@@ -10737,6 +10747,12 @@ static int32_t lu_ftran_sparse(LUContext *ctx,
                                const double *rhs_values,
                                double *x, int32_t *x_pattern) {
     int32_t m = ctx->m;
+    double solve_t0 = ctx->solve_slice_on ? linprogx_monotonic_seconds() : 0.0;
+#define LU_RECORD_FTRAN_SPARSE() do { \
+        if (ctx->solve_slice_on) { \
+            ctx->ftran_sparse_s += linprogx_monotonic_seconds() - solve_t0; \
+        } \
+    } while (0)
     if (ctx->ft_active && ctx->ft_n_upd > 0) {
         /* NOTE: rhs_indices may alias x_pattern (the DS passes
          * ftran_pattern for both; the contract is that the rhs is fully
@@ -10770,6 +10786,7 @@ static int32_t lu_ftran_sparse(LUContext *ctx,
             }
             ctx->ftran_sparse_count++;
             ctx->ftran_sparse_nnz_total += nnz;
+            LU_RECORD_FTRAN_SPARSE();
             return nnz;
         }
         /* Hyper-sparse FT FTRAN: static-L GP solve, gathered row etas,
@@ -10897,6 +10914,7 @@ static int32_t lu_ftran_sparse(LUContext *ctx,
         }
         ctx->ftran_sparse_count++;
         ctx->ftran_sparse_nnz_total += nnz;
+        LU_RECORD_FTRAN_SPARSE();
         return nnz;
     }
     double *z = ctx->ws_z;
@@ -11003,6 +11021,8 @@ static int32_t lu_ftran_sparse(LUContext *ctx,
     /* Update statistics */
     ctx->ftran_sparse_count++;
     ctx->ftran_sparse_nnz_total += sol_nnz;
+    LU_RECORD_FTRAN_SPARSE();
+#undef LU_RECORD_FTRAN_SPARSE
     return sol_nnz;
 }
 
@@ -11021,6 +11041,12 @@ static int32_t lu_btran_sparse(LUContext *ctx,
                                int32_t rhs_pos,
                                double *x, int32_t *x_pattern) {
     int32_t m = ctx->m;
+    double solve_t0 = ctx->solve_slice_on ? linprogx_monotonic_seconds() : 0.0;
+#define LU_RECORD_BTRAN_SPARSE() do { \
+        if (ctx->solve_slice_on) { \
+            ctx->btran_sparse_s += linprogx_monotonic_seconds() - solve_t0; \
+        } \
+    } while (0)
     if (ctx->ft_active && ctx->ft_n_upd > 0) {
         /* Adaptive route: see lu_ftran_sparse. */
         int64_t s_cnt = ctx->ftran_sparse_count + ctx->btran_sparse_count;
@@ -11036,6 +11062,7 @@ static int32_t lu_btran_sparse(LUContext *ctx,
             }
             ctx->btran_sparse_count++;
             ctx->btran_sparse_nnz_total += nnz;
+            LU_RECORD_BTRAN_SPARSE();
             return nnz;
         }
         /* Hyper-sparse FT BTRAN: U'^T GP solve over the virtual row
@@ -11121,6 +11148,7 @@ static int32_t lu_btran_sparse(LUContext *ctx,
         }
         ctx->btran_sparse_count++;
         ctx->btran_sparse_nnz_total += nnz;
+        LU_RECORD_BTRAN_SPARSE();
         return nnz;
     }
     double *z = ctx->ws_z;
@@ -11258,6 +11286,8 @@ static int32_t lu_btran_sparse(LUContext *ctx,
     /* Update statistics */
     ctx->btran_sparse_count++;
     ctx->btran_sparse_nnz_total += sol_nnz;
+    LU_RECORD_BTRAN_SPARSE();
+#undef LU_RECORD_BTRAN_SPARSE
     return sol_nnz;
 }
 
@@ -11274,9 +11304,11 @@ static int32_t lu_btran_sparse(LUContext *ctx,
  * Dense rhs for milestone 1.
  */
 static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
+    LUContext *mctx = (LUContext *)ctx;
+    double solve_t0 = mctx->solve_slice_on ? linprogx_monotonic_seconds() : 0.0;
     if (ctx->ft_active && ctx->ft_n_upd > 0) {
         lu_ft_ftran((LUContext *)ctx, b, x);
-        return;
+        goto record_dense_ftran;
     }
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
@@ -11341,6 +11373,11 @@ static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
         x[pos] = temp;
     }
 
+record_dense_ftran:
+    mctx->ftran_dense_count++;
+    if (mctx->solve_slice_on) {
+        mctx->ftran_dense_s += linprogx_monotonic_seconds() - solve_t0;
+    }
 }
 
 /*
@@ -11361,9 +11398,11 @@ static void lu_ftran(const LUContext *ctx, const double *b, double *x) {
  *    So x[i] = y[inv_perm_row[i]].
  */
 static void lu_btran(const LUContext *ctx, const double *b, double *x) {
+    LUContext *mctx = (LUContext *)ctx;
+    double solve_t0 = mctx->solve_slice_on ? linprogx_monotonic_seconds() : 0.0;
     if (ctx->ft_active && ctx->ft_n_upd > 0) {
         lu_ft_btran((LUContext *)ctx, b, x);
-        return;
+        goto record_dense_btran;
     }
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
@@ -11443,6 +11482,11 @@ static void lu_btran(const LUContext *ctx, const double *b, double *x) {
     /* Step 4: x[i] = y[inv_perm_row[i]] */
     for (int32_t i = 0; i < m; i++) {
         x[i] = z[ctx->inv_perm_row[i]];
+    }
+record_dense_btran:
+    mctx->btran_dense_count++;
+    if (mctx->solve_slice_on) {
+        mctx->btran_dense_s += linprogx_monotonic_seconds() - solve_t0;
     }
 }
 
@@ -12868,8 +12912,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * 4. MAIN DUAL SIMPLEX LOOP
      * ============================================================ */
     /* Running totals for hyper-sparse density stats (survive refactorizations) */
+    int64_t cum_ftran_dense_count = 0, cum_btran_dense_count = 0;
     int64_t cum_ftran_sparse_count = 0, cum_ftran_sparse_nnz = 0;
     int64_t cum_btran_sparse_count = 0, cum_btran_sparse_nnz = 0;
+    double cum_ftran_dense_s = 0.0, cum_ftran_sparse_s = 0.0;
+    double cum_btran_dense_s = 0.0, cum_btran_sparse_s = 0.0;
     int64_t total_refacs = 0;
     double refac_time_total = 0.0;
     double refac_factorize_time = 0.0;
@@ -12903,6 +12950,21 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         double ds_t_now_ = linprogx_monotonic_seconds(); \
         ds_phase_s[(idx)] += ds_t_now_ - ds_t_prev; \
         ds_t_prev = ds_t_now_; \
+    } while (0)
+#define DS_ACCUM_SOLVE_SLICE(lu_) do { \
+        LUContext *ds_lu_ = (lu_); \
+        if (ds_lu_ != NULL) { \
+            cum_ftran_dense_count += ds_lu_->ftran_dense_count; \
+            cum_ftran_sparse_count += ds_lu_->ftran_sparse_count; \
+            cum_ftran_sparse_nnz   += ds_lu_->ftran_sparse_nnz_total; \
+            cum_btran_dense_count += ds_lu_->btran_dense_count; \
+            cum_btran_sparse_count += ds_lu_->btran_sparse_count; \
+            cum_btran_sparse_nnz   += ds_lu_->btran_sparse_nnz_total; \
+            cum_ftran_dense_s += ds_lu_->ftran_dense_s; \
+            cum_ftran_sparse_s += ds_lu_->ftran_sparse_s; \
+            cum_btran_dense_s += ds_lu_->btran_dense_s; \
+            cum_btran_sparse_s += ds_lu_->btran_sparse_s; \
+        } \
     } while (0)
     /* LU cadence economics instrument (env LINPROGX_DS_LU_STAT=1; stderr).
      * Census of which trigger fires each refactorization, plus the
@@ -14247,12 +14309,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     struct timespec _rf_t0, _rf_t1, _rf_tmid;
                     clock_gettime(CLOCK_MONOTONIC, &_rf_t0);
                     /* Accumulate density stats before freeing old LU */
-                    if (lu != NULL) {
-                        cum_ftran_sparse_count += lu->ftran_sparse_count;
-                        cum_ftran_sparse_nnz   += lu->ftran_sparse_nnz_total;
-                        cum_btran_sparse_count += lu->btran_sparse_count;
-                        cum_btran_sparse_nnz   += lu->btran_sparse_nnz_total;
-                    }
+                    DS_ACCUM_SOLVE_SLICE(lu);
                     lu_context_free(lu);
                     lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows,
                                             a_data, basis,
@@ -14431,12 +14488,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
     /* Accumulate final LU's stats into cumulative totals before
      * the optimality-check refactorization creates a fresh LU. */
-    if (lu != NULL) {
-        cum_ftran_sparse_count += lu->ftran_sparse_count;
-        cum_ftran_sparse_nnz   += lu->ftran_sparse_nnz_total;
-        cum_btran_sparse_count += lu->btran_sparse_count;
-        cum_btran_sparse_nnz   += lu->btran_sparse_nnz_total;
-    }
+    DS_ACCUM_SOLVE_SLICE(lu);
+#undef DS_ACCUM_SOLVE_SLICE
 
     if (strcmp(status, "optimal") == 0) {
         lu_context_free(lu);
@@ -14730,6 +14783,30 @@ build_result:
                 Py_DECREF(ds_ph);
             } else {
                 PyErr_Clear();
+            }
+            if (getenv("LINPROGX_DS_SOLVE_SLICE") != NULL) {
+                PyObject *solve_slice = Py_BuildValue(
+                    "{s:d,s:d,s:d,s:d,s:d,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:L}",
+                    "ftran_dense", cum_ftran_dense_s * 1e6,
+                    "ftran_sparse", cum_ftran_sparse_s * 1e6,
+                    "ftran_total", (cum_ftran_dense_s + cum_ftran_sparse_s) * 1e6,
+                    "btran_dense", cum_btran_dense_s * 1e6,
+                    "btran_sparse", cum_btran_sparse_s * 1e6,
+                    "btran_total", (cum_btran_dense_s + cum_btran_sparse_s) * 1e6,
+                    "solve_total", (cum_ftran_dense_s + cum_ftran_sparse_s +
+                                      cum_btran_dense_s + cum_btran_sparse_s) * 1e6,
+                    "ftran_dense_count", (long long)cum_ftran_dense_count,
+                    "ftran_sparse_count", (long long)cum_ftran_sparse_count,
+                    "ftran_count", (long long)(cum_ftran_dense_count + cum_ftran_sparse_count),
+                    "btran_dense_count", (long long)cum_btran_dense_count,
+                    "btran_sparse_count", (long long)cum_btran_sparse_count,
+                    "btran_count", (long long)(cum_btran_dense_count + cum_btran_sparse_count));
+                if (solve_slice != NULL) {
+                    PyDict_SetItemString(result, "solve_slice_us", solve_slice);
+                    Py_DECREF(solve_slice);
+                } else {
+                    PyErr_Clear();
+                }
             }
             PyObject *ds_ft = Py_BuildValue(
                 "{s:L,s:L,s:i}",
