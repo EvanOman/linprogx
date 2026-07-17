@@ -27,6 +27,7 @@ import array
 import importlib
 import os
 import struct
+from collections import deque
 from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any
@@ -230,9 +231,36 @@ def _v2_enabled() -> bool:
 
 
 def _agg_enabled() -> bool:
-    """General equality-row aggregation (default OFF for now; the ship-time
-    default is decided separately). Set ``LINPROGX_PRESOLVE_AGG=1`` to enable."""
+    """General equality-row aggregation inside the raw pure-Python reducer
+    (``_presolve_eq_box_python`` / ``presolve_eq_box`` direct calls).
+
+    This governs ONLY direct reducer invocations, so it stays default OFF to keep
+    those paths (and the C/Python bit-equivalence tests) byte-identical to HEAD.
+    The solver's aggregation ships through the composed ``_maybe_aggregate``
+    re-stage, gated by ``_agg_restage_enabled`` below. Set
+    ``LINPROGX_PRESOLVE_AGG=1`` to force the raw agg block on."""
     return os.environ.get("LINPROGX_PRESOLVE_AGG", "0") == "1"
+
+
+def _agg_restage_enabled() -> bool:
+    """Solver-path aggregation re-stage. DEFAULT OFF.
+
+    Investigation verdict (2026-07-17): equality-row aggregation is fill-negative
+    and cuts IPM iterations on 80bau3b (47->44), but the pure-Python re-stage cost
+    (best measured ~34ms over base after an 11x optimization) swamps the ~9ms
+    solve-side saving, netting a wall regression. A net win needs the re-stage at
+    <=~4ms, i.e. a native (_csparse.c) implementation. Until then the ship default
+    stays OFF; ``LINPROGX_PRESOLVE_AGG=1`` enables the (correct, fill-gated)
+    machinery for the native port to build on. See docs/HANDOFF.md."""
+    return os.environ.get("LINPROGX_PRESOLVE_AGG", "0") != "0"
+
+
+def _agg_fillgate_enabled() -> bool:
+    """Fill-gate on the aggregation re-stage (default ON). The re-stage is kept
+    only when it does not grow nnz (fill-non-positive), which structurally
+    excludes fill-positive instances such as greenbea. Set
+    ``LINPROGX_AGG_FILLGATE=0`` for the unconditional (always-compose) arm."""
+    return os.environ.get("LINPROGX_AGG_FILLGATE", "1") != "0"
 
 
 def _agg_max_fill() -> int:
@@ -401,6 +429,11 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
         r_indptr, r_indices, r_data = result._matrix.to_components()
     else:
         r_indptr, r_indices, r_data = result.indptr, result.indices, result.data
+    # Early-abort budget: aggregation is stopped once its cumulative fill exceeds
+    # this, so fill-positive instances (greenbea) bail after a handful of
+    # substitutions instead of paying the whole cascade before the fill-gate
+    # rejects them. Fill-negative instances (80bau3b nets -287) never approach it.
+    fill_budget = max(256, nnz // 40)
     second = _presolve_eq_box_python(
         result.rows,
         result.cols,
@@ -412,12 +445,22 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
         list(result.lo),
         list(result.hi),
         max_fill=max_fill,
+        agg=True,
+        agg_fill_budget=fill_budget,
+        agg_only=True,
     )
-    if second is not None and _fixpoint_reduction_is_substantial(
+    if second is None or not _fixpoint_reduction_is_substantial(
         second.removed_rows, second.removed_cols, result.rows, result.cols
     ):
-        return _compose_reductions(result, second)
-    return result
+        return result
+    # Fill-gate (SHIP DEFAULT): compose the aggregation only when it did not grow
+    # nonzeros. This is a global structural threshold -- no per-problem tuning --
+    # that keeps aggregation where it is fill-non-positive (80bau3b: 21798->21511)
+    # and structurally excludes the fill-positive cases (greenbea: 23274->26683).
+    second_nnz = second._matrix.nnz if second._matrix is not None else len(second.data)
+    if _agg_fillgate_enabled() and second_nnz > nnz:
+        return result
+    return _compose_reductions(result, second)
 
 
 def _same_bound(lo_value: float, hi_value: float) -> bool:
@@ -494,6 +537,106 @@ def _column_bounds_are_redundant(
     return True
 
 
+def _row_activity(
+    entries: dict[int, float], lo: list[float], hi: list[float]
+) -> tuple[float, float, int, int, int, float]:
+    """One O(degree) pass over a whole row returning its cached activity summary:
+    ``(lo_fin, hi_fin, lo_unb, hi_unb, _, row_max)`` where the row's activity
+    lower bound is ``-inf`` if ``lo_unb`` else ``lo_fin`` (symmetrically upper),
+    and ``row_max`` is the largest coefficient magnitude (Markowitz floor). The
+    per-column implied-free test then subtracts one column's contribution in
+    O(1), replacing the quadratic per-(column, row) ``_activity_bounds`` sweep."""
+    lo_fin = 0.0
+    hi_fin = 0.0
+    lo_unb = 0
+    hi_unb = 0
+    row_max = 0.0
+    for coef in entries.values():
+        av = -coef if coef < 0.0 else coef
+        if av > row_max:
+            row_max = av
+    for k, coef in entries.items():
+        lok = lo[k]
+        hik = hi[k]
+        if coef >= 0.0:
+            if isfinite(lok):
+                lo_fin += coef * lok
+            else:
+                lo_unb += 1
+            if isfinite(hik):
+                hi_fin += coef * hik
+            else:
+                hi_unb += 1
+        else:
+            if isfinite(hik):
+                lo_fin += coef * hik
+            else:
+                lo_unb += 1
+            if isfinite(lok):
+                hi_fin += coef * lok
+            else:
+                hi_unb += 1
+    return lo_fin, hi_fin, lo_unb, hi_unb, 0, row_max
+
+
+def _implied_free_from_activity(
+    j: int,
+    coef: float,
+    rhs: float,
+    lo: list[float],
+    hi: list[float],
+    lo_fin: float,
+    hi_fin: float,
+    lo_unb: int,
+    hi_unb: int,
+) -> bool:
+    """O(1) implied-free test: the same decision as ``_column_bounds_are_redundant``
+    but derived from a cached whole-row activity summary by subtracting column
+    ``j``'s own contribution instead of re-summing every other column."""
+    loj = lo[j]
+    hij = hi[j]
+    loj_fin = isfinite(loj)
+    hij_fin = isfinite(hij)
+    if not loj_fin and not hij_fin:
+        return True
+    # Column j's contribution to the row activity (mirrors _row_activity).
+    if coef >= 0.0:
+        j_lo_fin = coef * loj if loj_fin else 0.0
+        j_lo_unb = 0 if loj_fin else 1
+        j_hi_fin = coef * hij if hij_fin else 0.0
+        j_hi_unb = 0 if hij_fin else 1
+    else:
+        j_lo_fin = coef * hij if hij_fin else 0.0
+        j_lo_unb = 0 if hij_fin else 1
+        j_hi_fin = coef * loj if loj_fin else 0.0
+        j_hi_unb = 0 if loj_fin else 1
+    rest_lo_inf = (lo_unb - j_lo_unb) > 0
+    rest_hi_inf = (hi_unb - j_hi_unb) > 0
+    rest_lo = lo_fin - j_lo_fin
+    rest_hi = hi_fin - j_hi_fin
+    if coef > 0.0:
+        implied_lo_inf = rest_hi_inf
+        implied_hi_inf = rest_lo_inf
+        implied_lo = -float("inf") if rest_hi_inf else (rhs - rest_hi) / coef
+        implied_hi = float("inf") if rest_lo_inf else (rhs - rest_lo) / coef
+    else:
+        implied_lo_inf = rest_lo_inf
+        implied_hi_inf = rest_hi_inf
+        implied_lo = -float("inf") if rest_lo_inf else (rhs - rest_lo) / coef
+        implied_hi = float("inf") if rest_hi_inf else (rhs - rest_hi) / coef
+    if loj_fin:
+        if implied_lo_inf:
+            return False
+        if implied_lo < loj - _BOUND_EPS * max(1.0, abs(loj), abs(implied_lo)):
+            return False
+    if hij_fin:
+        if implied_hi_inf:
+            return False
+        if implied_hi > hij + _BOUND_EPS * max(1.0, abs(hij), abs(implied_hi)):
+            return False
+    return True
+
+
 def _choose_empty_column_value(
     j: int, c: list[float], lo: list[float], hi: list[float]
 ) -> float | None:
@@ -524,8 +667,22 @@ def _presolve_eq_box_python(
     hi: list[float],
     *,
     max_fill: int = 5,
+    agg: bool | None = None,
+    agg_fill_budget: int | None = None,
+    agg_only: bool = False,
 ) -> PresolveResult | None:
-    """Pure-Python reference implementation (kept as the fallback)."""
+    """Pure-Python reference implementation (kept as the fallback).
+
+    ``agg_only`` (used by the ``_maybe_aggregate`` re-stage) runs *only* the
+    aggregation drain plus a single empty-row/empty-column cleanup, skipping the
+    other reduction passes -- the C first stage already drove those to a fixpoint,
+    so re-running the full 8-block cascade on every wave is pure overhead. This is
+    the difference between a ~15ms and a ~120ms re-stage on 80bau3b.
+
+    ``agg`` overrides the env-driven aggregation switch when not ``None`` (the
+    ``_maybe_aggregate`` re-stage passes ``agg=True`` explicitly so the ship
+    default does not depend on ``_agg_enabled``). ``agg_fill_budget`` caps the
+    cumulative aggregation fill before the scan aborts early."""
     b = list(b)
     c = list(c)
     lo = list(lo)
@@ -550,16 +707,32 @@ def _presolve_eq_box_python(
     removed_cols: set[int] = set()
     objective_offset = 0.0
     v2 = _v2_enabled()
-    agg = _agg_enabled()
+    agg = _agg_enabled() if agg is None else agg
     agg_max_fill = _agg_max_fill()
     agg_pivot_tol = _agg_pivot_tol()
     reduction_counts = _empty_reduction_counts()
+
+    # Aggregation scan state (only touched when ``agg``). ``agg_worklist`` is a
+    # FIFO of columns worth (re)examining -- seeded with every column, then fed
+    # incrementally by the columns of rows an aggregation rewrites, so the scan
+    # never re-sweeps stable columns across fixpoint waves. ``row activity cache``
+    # memoizes each row's largest-magnitude coefficient for the Markowitz floor.
+    agg_worklist: deque[int] = deque()
+    agg_in_queue: set[int] = set()
+    # Cached per-row activity summary (lo_fin, hi_fin, lo_unb, hi_unb, _, row_max);
+    # built once per row and reused across all its candidate columns.
+    row_act_cache: dict[int, tuple[float, float, int, int, int, float]] = {}
+    agg_fill_delta = 0
+    agg_aborted = False
+    if agg:
+        agg_worklist.extend(range(cols))
+        agg_in_queue.update(range(cols))
 
     changed = True
     while changed:
         changed = False
 
-        if v2:
+        if v2 and not agg_only:
             for j in range(cols):
                 if j in removed_cols or not _same_bound(lo[j], hi[j]):
                     continue
@@ -649,7 +822,23 @@ def _presolve_eq_box_python(
                 reduction_counts["empty_rows"] += 1
                 changed = True
 
-        for i in range(rows):
+        if agg_only:
+            # Lean re-stage cleanup: fix columns that aggregation emptied. This
+            # replaces the skipped v2 fixed/empty/forcing cascade -- only columns
+            # left with no rows need a value chosen.
+            for j in range(cols):
+                if j in removed_cols or col_rows[j]:
+                    continue
+                value = _choose_empty_column_value(j, c, lo, hi)
+                if value is None:
+                    continue
+                records.append(_FixedVar(j, value))
+                objective_offset += c[j] * value
+                removed_cols.add(j)
+                reduction_counts["empty_columns"] += 1
+                changed = True
+
+        for i in () if agg_only else range(rows):
             if i in removed_rows or len(row_entries[i]) != 1:
                 continue
             j, coef = next(iter(row_entries[i].items()))
@@ -673,7 +862,7 @@ def _presolve_eq_box_python(
             reduction_counts["singleton_rows"] += 1
             changed = True
 
-        if v2:
+        if v2 and not agg_only:
             for j in range(cols):
                 if j in removed_cols or len(col_rows[j]) != 1:
                     continue
@@ -699,7 +888,7 @@ def _presolve_eq_box_python(
                 reduction_counts["column_singletons"] += 1
                 changed = True
 
-        for i in range(rows):
+        for i in () if agg_only else range(rows):
             if i in removed_rows or len(row_entries[i]) != 2:
                 continue
             (jp, ap), (jq, dq) = row_entries[i].items()
@@ -771,8 +960,16 @@ def _presolve_eq_box_python(
             reduction_counts["doubletons"] += 1
             changed = True
 
-        if agg:
-            for j in range(cols):
+        if agg and not agg_aborted:
+            # Worklist-driven aggregation scan. Only columns whose incident rows
+            # were rewritten (or the initial seed) are examined, so the scan is
+            # near-linear in the number of substitutions rather than
+            # O(waves x cols). ``row_act_cache`` memoizes each row's activity
+            # summary so the implied-free test is O(1) per candidate column.
+            row_act_cache.clear()
+            while agg_worklist:
+                j = agg_worklist.popleft()
+                agg_in_queue.discard(j)
                 if j in removed_cols:
                     continue
                 rows_j = [i for i in col_rows[j] if i not in removed_rows]
@@ -787,12 +984,18 @@ def _presolve_eq_box_python(
                     coef = row_i.get(j)
                     if coef is None or abs(coef) < _PIVOT_EPS or len(row_i) < 2:
                         continue
-                    row_max = max(abs(v) for v in row_i.values())
+                    act = row_act_cache.get(i)
+                    if act is None:
+                        act = _row_activity(row_i, lo, hi)
+                        row_act_cache[i] = act
+                    lo_fin, hi_fin, lo_unb, hi_unb, _unused, row_max = act
                     if abs(coef) < agg_pivot_tol * row_max:
                         continue
-                    terms = tuple((k, v) for k, v in row_i.items() if k != j)
-                    if not _column_bounds_are_redundant(j, coef, b[i], terms, lo, hi):
+                    if not _implied_free_from_activity(
+                        j, coef, b[i], lo, hi, lo_fin, hi_fin, lo_unb, hi_unb
+                    ):
                         continue
+                    terms = tuple((k, v) for k, v in row_i.items() if k != j)
                     # Fill guard: count nonzeros newly created across the other
                     # rows of j (conservative -- cancellations are not credited).
                     fill = 0
@@ -822,6 +1025,10 @@ def _presolve_eq_box_python(
                 cost_scale = c[j] / coef
                 for k, value in terms:
                     c[k] -= cost_scale * value
+                # Track the net nnz change: the pivot row and column vanish, each
+                # other row loses its (r, j) entry, and term substitution adds or
+                # cancels fill. The running total drives the early-abort budget.
+                delta = -len(row_entries[i])
                 for r in list(col_rows[j]):
                     if r == i or r in removed_rows:
                         continue
@@ -837,20 +1044,39 @@ def _presolve_eq_box_python(
                             if k in rr:
                                 del rr[k]
                                 col_rows[k].discard(r)
+                                delta -= 1
+                                # k's degree dropped: it may now be implied-free
+                                # via a remaining row, so re-examine it.
+                                if k not in agg_in_queue and k not in removed_cols:
+                                    agg_in_queue.add(k)
+                                    agg_worklist.append(k)
                         else:
                             if k not in rr:
                                 col_rows[k].add(r)
+                                delta += 1
                             rr[k] = merged
                     del rr[j]
+                    delta -= 1
+                    # Row r was rewritten: its cached activity is now stale.
+                    row_act_cache.pop(r, None)
                 for k, _value in terms:
                     col_rows[k].discard(i)
+                row_act_cache.pop(i, None)
                 removed_rows.add(i)
                 removed_cols.add(j)
                 col_rows[j].clear()
                 reduction_counts["aggregations"] += 1
                 changed = True
+                agg_fill_delta += delta
+                if agg_fill_budget is not None and agg_fill_delta > agg_fill_budget:
+                    # Fill has grown past budget: this instance is fill-positive.
+                    # Stop aggregating (the composed fill-gate will reject it).
+                    agg_aborted = True
+                    agg_worklist.clear()
+                    agg_in_queue.clear()
+                    break
 
-        if v2:
+        if v2 and not agg_only:
             signatures: dict[tuple[tuple[tuple[int, float], ...], float], int] = {}
             for j in range(cols):
                 if (
@@ -1059,7 +1285,7 @@ def presolve_matrix(
         def _agg(res: PresolveResult | None) -> PresolveResult | None:
             # General equality-row aggregation lives only in the Python reducer;
             # inject it as a composed re-stage over whatever the C path produced.
-            if res is not None and _agg_enabled():
+            if res is not None and _agg_restage_enabled():
                 return _maybe_aggregate(res, max_fill)
             return res
 
