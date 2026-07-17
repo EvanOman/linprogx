@@ -12219,8 +12219,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     PyObject *c_obj, *b_obj, *lo_obj, *hi_obj;
     Py_ssize_t max_iter_arg = 0;
     double tol = 1e-8;
-    int pricing = 0; /* 0 = Devex (default), 1 = carried exact steepest edge */
-    int leaving_rule = 0; /* leaving-row selection rule; 0 = current (byte-identical) */
+    int pricing = 0; /* legacy experiment: 0 = Devex, 1 = DSE + cost perturbation */
+    int leaving_rule = 0; /* 0 = Devex, 1 = Dantzig, 5 = exact dual steepest edge */
     int bfrt = 0; /* 1 = bound-flipping (longest-step) dual ratio test */
     int r_refresh = 0; /* drift audit: every K pivots recompute y and all
                         * nonbasic reduced costs from scratch (with the
@@ -12246,6 +12246,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     Py_ssize_t n_s = self->cols;
     int32_t m = (int32_t)m_s;
     int32_t n = (int32_t)n_s;
+    int exact_dse = (leaving_rule == 5);
+    int maintain_dse_weights = (pricing == 1 || exact_dse);
     /* n_total = structural + artificial columns */
     int32_t n_total = n + m;
     Py_ssize_t max_iter = max_iter_arg > 0 ? max_iter_arg
@@ -12275,7 +12277,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *e_i = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *c_B = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *devex_w = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
-    double *dse_beta = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *dse_tau = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     int32_t *basis = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
 
     /* Basis CSC workspace (max nnz = A's nnz + m for artificials) */
@@ -12359,7 +12361,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         x_ext == NULL || r_ext == NULL || basis_pos == NULL || bound_status == NULL ||
         b == NULL || y == NULL || x_B == NULL || rhs == NULL ||
         rho == NULL || alpha_col == NULL || e_i == NULL || c_B == NULL ||
-        devex_w == NULL || basis == NULL ||
+        devex_w == NULL || dse_tau == NULL || basis == NULL ||
         b_indptr == NULL || b_indices == NULL || b_values == NULL ||
         rho_nz_rows == NULL || ftran_pattern == NULL || btran_pattern == NULL ||
         alpha_scratch == NULL || alpha_touched == NULL || alpha_pattern == NULL ||
@@ -12571,7 +12573,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         hi_ext[n + i] = 0.0;
     }
 
-    /* Initialize Devex weights to 1 */
+    /* Initialize Devex weights to 1. Exact DSE weights are initialized from
+     * the actual crash basis after it has been factorized. */
     for (int32_t k = 0; k < m; k++) devex_w[k] = 1.0;
     for (int32_t k = 0; k < m; k++) infeas_stamp[k] = -1;
 
@@ -12784,6 +12787,32 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             }
         }
         lu_build_transposes(lu);
+    }
+
+    if (maintain_dse_weights) {
+        /* Exact initialization for the basis that the solver actually starts
+         * from. The crash basis is generally not the all-artificial identity,
+         * so gamma_i=1 is not exact here. Compute
+         *
+         *     gamma_i = ||B^{-T} e_i||_2^2
+         *
+         * directly once. The hyper-sparse BTRAN path keeps this affordable on
+         * triangular crash bases; the per-pivot Forrest-Goldfarb recurrence
+         * below carries the weights thereafter. */
+        for (int32_t k = 0; k < m; k++) {
+            int32_t init_nnz = lu_btran_sparse(lu, k, rho, rho_nz_rows);
+            double gamma = 0.0;
+            for (int32_t ri = 0; ri < init_nnz; ri++) {
+                int32_t row = rho_nz_rows[ri];
+                double value = rho[row];
+                gamma += value * value;
+            }
+            if (gamma < 1e-12) gamma = 1e-12;
+            devex_w[k] = gamma;
+            for (int32_t ri = 0; ri < init_nnz; ri++) {
+                rho[rho_nz_rows[ri]] = 0.0;
+            }
+        }
     }
     /* Initialize basis_pos */
     for (int32_t j = 0; j < n_total; j++) basis_pos[j] = -1;
@@ -13151,6 +13180,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
              *   4: Devex score damped by the leaving column's churn count
              *      (de-prioritize columns that have re-entered the basis many
              *      times, to break quasi-cycles).
+             *   5: exact Forrest-Goldfarb dual steepest edge, maximizing
+             *      violation^2 / ||B^{-T}e_i||^2.
              */
             int32_t leaving_basis_pos = -1;
             double max_score = 0.0;
@@ -13367,7 +13398,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
             }
 
-            if (pricing == 1) {
+            if (maintain_dse_weights) {
                 /* Continuous drift anchor: rho = B^{-T} e_r is in hand, so
                  * the leaving row's exact steepest-edge weight ||rho||^2 is
                  * free. Anchoring gamma_r each pivot keeps the carried
@@ -14081,7 +14112,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 /* Tiny pivot: inflate the Devex weight for this position so it
                  * is deprioritized in future iterations, then skip.
                  * Clean up sparse workspaces before continuing. */
-                devex_w[leaving_basis_pos] *= 1e6;
+                if (!maintain_dse_weights) {
+                    devex_w[leaving_basis_pos] *= 1e6;
+                }
                 for (int32_t ki = 0; ki < ftran_nnz; ki++)
                     alpha_col[ftran_pattern[ki]] = 0.0;
                 for (int32_t ki = 0; ki < rho_nnz; ki++)
@@ -14179,21 +14212,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             DS_TICK(8);
 
             /* ---- 4i. Pricing weight update ---- */
-            if (pricing == 1) {
-                /* Exact dual steepest-edge update (Forrest-Goldfarb 1992),
-                 * transplanted from the exp-sedge experiment (see branch
-                 * 158b70a for the full derivation). With basis change
-                 * (leaving row r, entering column q, pivot = alpha_col[r]):
-                 *     gamma_i' = gamma_i - 2 tau_i beta_i + tau_i^2 gamma_r,
-                 *     gamma_r' = gamma_r / pivot^2,
-                 * where tau_i = alpha_col[i]/pivot and beta = B^{-1} rho
-                 * costs ONE extra sparse FTRAN on the PRE-update factor.
-                 * Unlike the experiment, weights are seeded exactly once
-                 * (gamma=1 is exact at the identity-artificial start) and
-                 * CARRIED across refactorizations — gamma is a basis
-                 * property, and the per-pivot ||rho||^2 anchor above stops
-                 * drift from compounding. */
-                lu_ftran(lu, rho, dse_beta);
+            if (maintain_dse_weights) {
+                /* Exact dual steepest-edge update (Forrest-Goldfarb 1992).
+                 * For leaving row r, entering column q, u=B^{-1}a_q,
+                 * rho=B^{-T}e_r, and tau=B^{-1}rho:
+                 *
+                 *   gamma_i' = gamma_i - 2(u_i/u_r)tau_i
+                 *                         + (u_i/u_r)^2 gamma_r,
+                 *   gamma_r' = gamma_r/u_r^2.
+                 *
+                 * The tau solve is one extra FTRAN on the pre-update basis.
+                 * Weights are initialized exactly for the actual crash basis
+                 * and carried across ordinary refactorizations. Recomputing
+                 * gamma_r from rho each pivot anchors accumulated drift. */
+                lu_ftran(lu, rho, dse_tau);
                 double inv_pivot = 1.0 / pivot;
                 double gamma_r_old = devex_w[leaving_basis_pos];
                 if (gamma_r_old < 1e-12) gamma_r_old = 1e-12;
@@ -14202,7 +14234,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     if (k == leaving_basis_pos) continue;
                     double tau = alpha_col[k] * inv_pivot;
                     double g = devex_w[k]
-                             - 2.0 * tau * dse_beta[k]
+                             - 2.0 * tau * dse_tau[k]
                              + tau * tau * gamma_r_old;
                     if (g < 1e-12) g = 1e-12;
                     devex_w[k] = g;
@@ -14328,7 +14360,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                     clock_gettime(CLOCK_MONOTONIC, &_rf_tmid);
                     lu_build_transposes(lu);
-                    if (pricing != 1) {
+                    if (!maintain_dse_weights) {
                         /* Devex resets its reference frame; steepest-edge
                          * weights are basis properties and carry across a
                          * refactorization unchanged. */
@@ -14846,7 +14878,7 @@ done:
     free(x_ext); free(r_ext); free(basis_pos); free(bound_status);
     free(b); free(y); free(x_B); free(rhs);
     free(rho); free(alpha_col); free(e_i); free(c_B);
-    free(devex_w); free(dse_beta); free(enter_count); free(c_shift); free(basis);
+    free(devex_w); free(dse_tau); free(enter_count); free(c_shift); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched); free(alpha_pattern);

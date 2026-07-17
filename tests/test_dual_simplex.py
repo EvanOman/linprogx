@@ -207,6 +207,37 @@ class TestDegenerate:
 
 
 # ---------------------------------------------------------------------------
+# Exact dual steepest-edge leaving-row pricing (leaving_rule=5)
+# ---------------------------------------------------------------------------
+
+
+class TestExactDualSteepestEdge:
+    """The exact-DSE route must preserve the LP optimum and determinism."""
+
+    def test_exact_dse_matches_highs_on_crash_bases(self) -> None:
+        rng = np.random.RandomState(20260717)
+        for trial in range(8):
+            m = 4 + trial
+            n = m + 6
+            c, A, b, lo, hi = _random_feasible_lp(m, n, rng)
+            oracle = _solve_highs(c, A, b, lo, hi)
+            assert oracle.status == 0
+
+            A_obj = _make_csr(A)
+            first = A_obj.solve_eq_box_dual_simplex(c, b, lo, hi, leaving_rule=5, expand=1)
+            second = A_obj.solve_eq_box_dual_simplex(c, b, lo, hi, leaving_rule=5, expand=1)
+
+            assert first["status"] == "optimal", (
+                f"trial {trial}: exact DSE returned {first['status']}"
+            )
+            assert abs(first["objective"] - oracle.fun) < 1e-6
+            assert first["max_primal_residual"] < 1e-8
+            assert second["status"] == first["status"]
+            assert second["iterations"] == first["iterations"]
+            assert second["objective"] == first["objective"]
+
+
+# ---------------------------------------------------------------------------
 # Infeasible system
 # ---------------------------------------------------------------------------
 
