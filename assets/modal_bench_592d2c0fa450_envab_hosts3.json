@@ -1,0 +1,3401 @@
+{
+  "ref": "592d2c0fa45061271d4ff5de6baf640983277704",
+  "mode": "envab",
+  "protocol": "v3",
+  "hosts": 3,
+  "pairs": 7,
+  "use_snapshot": true,
+  "instances": [
+    "lp_woodw",
+    "lp_80bau3b",
+    "lp_cre_a",
+    "lp_pilot87"
+  ],
+  "host_results": [
+    {
+      "ref": "592d2c0fa45061271d4ff5de6baf640983277704",
+      "mode": "envab",
+      "use_snapshot": true,
+      "machine_info": {
+        "cpu_model": "unknown",
+        "cpu_count": 20,
+        "mem_total_kb": 195132220,
+        "loadavg": "0.00 0.00 0.00 0/0 0",
+        "modal_region": "us-west-2",
+        "modal_cloud": "CLOUD_PROVIDER_AWS",
+        "modal_task_id": "ta-01KXREAT3199XK5P81CT1DGM6R"
+      },
+      "load_checks": {
+        "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+        "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+      },
+      "env_a": {},
+      "env_b": {
+        "LINPROGX_IPM_SLICE": "1"
+      },
+      "envab": {
+        "lp_woodw": {
+          "pairs": 7,
+          "lxA": {
+            "median": 0.15417931600000045,
+            "min": 0.15171256700000058,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 0.15127710300000174,
+            "min": 0.1488958029999985,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 5,
+          "ratio_median": 0.981176379067613,
+          "ratio_min": 0.9814335486130027,
+          "verdict": "lxB_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15205380300000115,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15116046500000024,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8240.939000000224,
+                  "symbolic": 894.05199999959,
+                  "refactor": 77693.04099999275,
+                  "triangular_solves": 12002.555999970355,
+                  "matvecs_residuals": 9631.138000028017,
+                  "other": 8772.497000009593
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15358224099999873,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.154217991000003,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8618.355000002965,
+                  "symbolic": 958.1269999969777,
+                  "refactor": 78652.08600000173,
+                  "triangular_solves": 12260.498000003394,
+                  "matvecs_residuals": 9845.157000004434,
+                  "other": 8731.780999990946
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15422876599999924,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15127710300000174,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8995.082000001987,
+                  "symbolic": 885.3959999974848,
+                  "refactor": 77553.13000000897,
+                  "triangular_solves": 11590.290000018655,
+                  "matvecs_residuals": 9304.403000022887,
+                  "other": 8590.656999949431
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15417931600000045,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1488958029999985,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8243.515000000201,
+                  "symbolic": 981.938999998988,
+                  "refactor": 75328.90300000616,
+                  "triangular_solves": 11892.78800000082,
+                  "matvecs_residuals": 9706.63500000768,
+                  "other": 8651.174999986466
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.18776346499999974,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15264646700000029,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 9188.237000000043,
+                  "symbolic": 1156.0020000018767,
+                  "refactor": 78220.82799999208,
+                  "triangular_solves": 11846.472000001995,
+                  "matvecs_residuals": 9301.336000017813,
+                  "other": 8750.991999985303
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.2123575659999979,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1507669440000008,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8634.949000001057,
+                  "symbolic": 1234.467999999822,
+                  "refactor": 76332.40699999889,
+                  "triangular_solves": 11927.404000001474,
+                  "matvecs_residuals": 9501.754000002195,
+                  "other": 8807.347999997717
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15171256700000058,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15480884299999786,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8287.310000000049,
+                  "symbolic": 1197.2399999997663,
+                  "refactor": 81383.50999998422,
+                  "triangular_solves": 12016.022999993937,
+                  "matvecs_residuals": 9485.078999990294,
+                  "other": 8560.719000030304
+                }
+              },
+              "lxB_won": false
+            }
+          ]
+        },
+        "lp_80bau3b": {
+          "pairs": 7,
+          "lxA": {
+            "median": 0.23723200300000258,
+            "min": 0.23199408800000043,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 0.24084435299999996,
+            "min": 0.23232044999999601,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 4,
+          "ratio_median": 1.0152270770988572,
+          "ratio_min": 1.0014067686069466,
+          "verdict": "lxA_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.23955017100000475,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.23839188900000607,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9375.676000004773,
+                  "symbolic": 1132.9139999958215,
+                  "refactor": 106844.44299998574,
+                  "triangular_solves": 19129.480999957592,
+                  "matvecs_residuals": 17318.774000017358,
+                  "other": 25423.979000038344
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.23723200300000258,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.23232044999999601,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9519.486000002074,
+                  "symbolic": 1163.5119999979793,
+                  "refactor": 102661.94800000505,
+                  "triangular_solves": 18356.624999945838,
+                  "matvecs_residuals": 15976.818999924091,
+                  "other": 25302.652000128488
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.32123097400000233,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.24084435299999996,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9747.623999999178,
+                  "symbolic": 1179.70000000156,
+                  "refactor": 109513.98100000632,
+                  "triangular_solves": 18568.467999969584,
+                  "matvecs_residuals": 16554.384000016853,
+                  "other": 24981.707000009123
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.23520884999999936,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.264451686000001,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9202.52699999935,
+                  "symbolic": 1120.0269999989132,
+                  "refactor": 121356.60800000637,
+                  "triangular_solves": 21856.60899998254,
+                  "matvecs_residuals": 26717.2979999728,
+                  "other": 25456.570000038424
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.290843578999997,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.2706175779999995,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9454.301000005216,
+                  "symbolic": 1157.0989999967196,
+                  "refactor": 128090.33999997865,
+                  "triangular_solves": 20276.34000003786,
+                  "matvecs_residuals": 23466.36800008639,
+                  "other": 25983.46199989976
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.23691804199999922,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.2421910010000019,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9391.579000002537,
+                  "symbolic": 1122.044999995353,
+                  "refactor": 110600.30699997726,
+                  "triangular_solves": 19433.821999953692,
+                  "matvecs_residuals": 17167.824000082986,
+                  "other": 25464.73999998966
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.23199408800000043,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.23254426099999392,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9382.553000001792,
+                  "symbolic": 1177.8710000029946,
+                  "refactor": 104054.88900001103,
+                  "triangular_solves": 18446.096000047874,
+                  "matvecs_residuals": 16162.150000077701,
+                  "other": 24827.511999859555
+                }
+              },
+              "lxB_won": false
+            }
+          ]
+        },
+        "lp_cre_a": {
+          "pairs": 7,
+          "lxA": {
+            "median": 0.1666932360000004,
+            "min": 0.14902199799999494,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 0.1608457530000038,
+            "min": 0.14368579000000636,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 4,
+          "ratio_median": 0.9649206942026335,
+          "ratio_min": 0.9641918101246452,
+          "verdict": "lxB_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.15137073999999728,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14368579000000636,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17689.416999999707,
+                  "symbolic": 1099.6950000006223,
+                  "refactor": 54453.123000044456,
+                  "triangular_solves": 13984.08299996845,
+                  "matvecs_residuals": 11470.63100000878,
+                  "other": 9644.799999975363
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14902199799999494,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.15181273900000036,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 18862.661000000004,
+                  "symbolic": 1301.249999997367,
+                  "refactor": 59167.289000001234,
+                  "triangular_solves": 14219.370999931869,
+                  "matvecs_residuals": 12651.279999921882,
+                  "other": 10145.236000148827
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1566399270000005,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.15728677799999957,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 18095.421999994698,
+                  "symbolic": 1127.2270000048934,
+                  "refactor": 60007.68600001294,
+                  "triangular_solves": 14224.40399998237,
+                  "matvecs_residuals": 16967.58199994264,
+                  "other": 10076.801000060697
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1878382820000013,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.16598482900000278,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17756.387000005703,
+                  "symbolic": 1184.445999996342,
+                  "refactor": 63641.03799999299,
+                  "triangular_solves": 14707.428000022559,
+                  "matvecs_residuals": 22491.379000001645,
+                  "other": 10725.226999980463
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1666932360000004,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1608457530000038,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 20826.178000000084,
+                  "symbolic": 1131.9279999995047,
+                  "refactor": 59861.47600002312,
+                  "triangular_solves": 15056.899000086332,
+                  "matvecs_residuals": 14027.300000016396,
+                  "other": 10128.8539998734
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.19544871499999772,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.3203440390000054,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 31498.144000003947,
+                  "symbolic": 1669.9549999970031,
+                  "refactor": 114977.01900000124,
+                  "triangular_solves": 25368.51900001125,
+                  "matvecs_residuals": 74424.9760000244,
+                  "other": 25400.504999964825
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.35439079100000015,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.2795785890000033,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 21740.86399999453,
+                  "symbolic": 3202.7089999999703,
+                  "refactor": 97323.88899999479,
+                  "triangular_solves": 19209.15400000922,
+                  "matvecs_residuals": 58061.397999964014,
+                  "other": 14288.695000033158
+                }
+              },
+              "lxB_won": true
+            }
+          ]
+        },
+        "lp_pilot87": {
+          "pairs": 7,
+          "lxA": {
+            "median": 5.587213500000004,
+            "min": 4.190430769000002,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 6.4296774769999985,
+            "min": 4.5140862899999945,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 3,
+          "ratio_median": 1.1507842821828795,
+          "ratio_min": 1.0772368137887716,
+          "verdict": "lxA_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.678852033000005,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.5140862899999945,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 121775.44699999742,
+                  "symbolic": 10258.847000002901,
+                  "refactor": 2941136.4949998953,
+                  "triangular_solves": 869169.7219997891,
+                  "matvecs_residuals": 452981.2330003224,
+                  "other": 94640.33799999072
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.190430769000002,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.876928174,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 127917.05100001139,
+                  "symbolic": 11220.442999999137,
+                  "refactor": 3224693.639000037,
+                  "triangular_solves": 885002.7119997321,
+                  "matvecs_residuals": 500222.79400037916,
+                  "other": 99463.69499984087
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.816053126,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.4296774769999985,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 144710.46500000285,
+                  "symbolic": 12451.257999998688,
+                  "refactor": 4367043.949000049,
+                  "triangular_solves": 1096877.9270002216,
+                  "matvecs_residuals": 668753.309000337,
+                  "other": 110866.62499938882
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 7.255003595000005,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.823575422000005,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 161278.57300000414,
+                  "symbolic": 11404.76400000523,
+                  "refactor": 4657423.054999981,
+                  "triangular_solves": 1129842.4290001492,
+                  "matvecs_residuals": 722844.3939998357,
+                  "other": 110101.76000003469
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.587213500000004,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.922623191,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 193797.20099999532,
+                  "symbolic": 11811.683000004792,
+                  "refactor": 4687867.238000024,
+                  "triangular_solves": 1163072.7170001194,
+                  "matvecs_residuals": 701083.1940002901,
+                  "other": 125559.94499956569
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 8.395994188000003,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.034873990000023,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 154866.21200000172,
+                  "symbolic": 12478.184000002557,
+                  "refactor": 4077299.849999804,
+                  "triangular_solves": 1037235.3959998861,
+                  "matvecs_residuals": 614601.6689993417,
+                  "other": 107145.2740009704
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.271848764999987,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.614853936000003,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 168899.88700000913,
+                  "symbolic": 14476.839999986169,
+                  "refactor": 4507522.214999937,
+                  "triangular_solves": 1103703.0179995212,
+                  "matvecs_residuals": 673403.3170000373,
+                  "other": 112290.79400050068
+                }
+              },
+              "lxB_won": false
+            }
+          ]
+        }
+      },
+      "host_index": 0
+    },
+    {
+      "ref": "592d2c0fa45061271d4ff5de6baf640983277704",
+      "mode": "envab",
+      "use_snapshot": true,
+      "machine_info": {
+        "cpu_model": "unknown",
+        "cpu_count": 20,
+        "mem_total_kb": 195132220,
+        "loadavg": "0.00 0.00 0.00 0/0 0",
+        "modal_region": "us-west-2",
+        "modal_cloud": "CLOUD_PROVIDER_AWS",
+        "modal_task_id": "ta-01KXREB97CWE36XW7G02RD9YPR"
+      },
+      "load_checks": {
+        "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+        "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+      },
+      "env_a": {},
+      "env_b": {
+        "LINPROGX_IPM_SLICE": "1"
+      },
+      "envab": {
+        "lp_woodw": {
+          "pairs": 7,
+          "lxA": {
+            "median": 0.155559199999999,
+            "min": 0.15129678999999996,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 0.16452063400000227,
+            "min": 0.15310210599999863,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 3,
+          "ratio_median": 1.0576078689013786,
+          "ratio_min": 1.0119322822381007,
+          "verdict": "lxA_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1548093200000018,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15435082499999808,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8178.636000000239,
+                  "symbolic": 957.0289999984993,
+                  "refactor": 79766.90599999615,
+                  "triangular_solves": 11913.999999983105,
+                  "matvecs_residuals": 9866.271000063876,
+                  "other": 8756.233999957174
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.17189793100000017,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.3650051249999997,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 22707.715999999324,
+                  "symbolic": 3099.2699999998763,
+                  "refactor": 200531.79099999595,
+                  "triangular_solves": 19019.15100001972,
+                  "matvecs_residuals": 45496.32800000936,
+                  "other": 15403.544999973206
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.155559199999999,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.16452063400000227,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8642.293999997719,
+                  "symbolic": 1039.493000000391,
+                  "refactor": 85454.11799999059,
+                  "triangular_solves": 12186.119999981314,
+                  "matvecs_residuals": 10942.665999991164,
+                  "other": 9262.493000036899
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.19117375400000114,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.18906366999999946,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8727.839999998821,
+                  "symbolic": 975.17100000033,
+                  "refactor": 100584.62199999596,
+                  "triangular_solves": 12413.106999993317,
+                  "matvecs_residuals": 21103.212000006977,
+                  "other": 9090.543000006335
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.18185483899999966,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15310210599999863,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8310.150999999876,
+                  "symbolic": 955.9239999994418,
+                  "refactor": 79070.60800001275,
+                  "triangular_solves": 11976.825000015622,
+                  "matvecs_residuals": 9677.073999945662,
+                  "other": 8634.409000027432
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15129678999999996,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.16251210599999766,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 13231.868999998398,
+                  "symbolic": 985.8280000010211,
+                  "refactor": 81202.63499998969,
+                  "triangular_solves": 12132.24399999646,
+                  "matvecs_residuals": 9507.978999995004,
+                  "other": 8879.967000016364
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15506476599999885,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.16711616099999915,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 9505.273000002035,
+                  "symbolic": 1034.2899999997712,
+                  "refactor": 85118.48299999513,
+                  "triangular_solves": 12516.805999997161,
+                  "matvecs_residuals": 15179.256000013907,
+                  "other": 8570.939999991368
+                }
+              },
+              "lxB_won": false
+            }
+          ]
+        },
+        "lp_80bau3b": {
+          "pairs": 7,
+          "lxA": {
+            "median": 0.3355618679999992,
+            "min": 0.246888773000002,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 0.29534800300000086,
+            "min": 0.24856677600000054,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 6,
+          "ratio_median": 0.8801596103881552,
+          "ratio_min": 1.006796594999476,
+          "verdict": "lxB_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.25190946000000025,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.24856677600000054,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9545.035000002144,
+                  "symbolic": 1166.683999997531,
+                  "refactor": 114464.34299999809,
+                  "triangular_solves": 19058.042999986923,
+                  "matvecs_residuals": 17398.7870000083,
+                  "other": 27406.615000007405
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.2762113229999983,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.25551804399999867,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9660.777000000564,
+                  "symbolic": 1226.2380000009898,
+                  "refactor": 116569.84700000806,
+                  "triangular_solves": 19142.24099999018,
+                  "matvecs_residuals": 21538.594000105604,
+                  "other": 25971.90899989954
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.246888773000002,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.34564298000000093,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 10273.988999998095,
+                  "symbolic": 1155.4610000032994,
+                  "refactor": 164273.07400001466,
+                  "triangular_solves": 24640.844000025198,
+                  "matvecs_residuals": 42930.298000051436,
+                  "other": 29938.23199990686
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.3355618679999992,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.29534800300000086,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9681.260000000691,
+                  "symbolic": 1014.6780000042099,
+                  "refactor": 142500.32199999652,
+                  "triangular_solves": 22939.763999985986,
+                  "matvecs_residuals": 30371.555000002103,
+                  "other": 26719.07300000953
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.41097409099999993,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.2566467779999968,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 11828.197999996348,
+                  "symbolic": 1213.575000001299,
+                  "refactor": 117830.18999997807,
+                  "triangular_solves": 19502.77400000999,
+                  "matvecs_residuals": 19828.03600004246,
+                  "other": 25150.03299996721
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.6791324960000011,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.5189745630000004,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 11183.488999996882,
+                  "symbolic": 1224.063999998748,
+                  "refactor": 279160.67000001733,
+                  "triangular_solves": 29183.09099997174,
+                  "matvecs_residuals": 74806.3999999431,
+                  "other": 34028.418000069396
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.9070676790000007,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.313114726000002,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9457.67700000033,
+                  "symbolic": 1218.426999997746,
+                  "refactor": 148369.44500001436,
+                  "triangular_solves": 21828.573000064465,
+                  "matvecs_residuals": 41207.909000029016,
+                  "other": 27514.62899989576
+                }
+              },
+              "lxB_won": true
+            }
+          ]
+        },
+        "lp_cre_a": {
+          "pairs": 7,
+          "lxA": {
+            "median": 0.16309299499999952,
+            "min": 0.15091778299999703,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 0.15699872899999434,
+            "min": 0.14543969300000015,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 6,
+          "ratio_median": 0.9626331836017531,
+          "ratio_min": 0.9637014943428039,
+          "verdict": "lxB_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.16386141400000298,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1601672879999967,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 20774.045999999656,
+                  "symbolic": 1389.4100000015897,
+                  "refactor": 60143.59899999278,
+                  "triangular_solves": 14435.26200002765,
+                  "matvecs_residuals": 14679.4100000065,
+                  "other": 10522.798999971883
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.15091778299999703,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14571226300000006,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17927.71400000248,
+                  "symbolic": 1112.8099999950791,
+                  "refactor": 56026.64999997131,
+                  "triangular_solves": 14369.984999980545,
+                  "matvecs_residuals": 11419.723999964048,
+                  "other": 9725.30300008856
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1645332539999984,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.15384257800000256,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17788.40200000076,
+                  "symbolic": 1313.1149999949798,
+                  "refactor": 61612.95100000785,
+                  "triangular_solves": 14448.457999975517,
+                  "matvecs_residuals": 12910.064999950066,
+                  "other": 9984.271000071487
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1526160720000007,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.16329071299999498,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 18161.462999998435,
+                  "symbolic": 1110.0440000006984,
+                  "refactor": 59616.2220000025,
+                  "triangular_solves": 14521.575000024712,
+                  "matvecs_residuals": 18277.96999991449,
+                  "other": 10120.448000058957
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1573025269999988,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14543969300000015,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17667.43399999626,
+                  "symbolic": 1110.870000005093,
+                  "refactor": 55410.2090000157,
+                  "triangular_solves": 14227.88299997535,
+                  "matvecs_residuals": 12428.618999997809,
+                  "other": 9957.848000006208
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.17327666199999925,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.15806221100000073,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 19690.730999997184,
+                  "symbolic": 1311.9569999986425,
+                  "refactor": 60024.20299999045,
+                  "triangular_solves": 14474.530999940782,
+                  "matvecs_residuals": 16577.332999965223,
+                  "other": 10406.070000108513
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.16309299499999952,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.15699872899999434,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 18104.2539999936,
+                  "symbolic": 1475.6170000040925,
+                  "refactor": 60958.74699997239,
+                  "triangular_solves": 14751.671999952976,
+                  "matvecs_residuals": 14548.801999886507,
+                  "other": 10721.65100018907
+                }
+              },
+              "lxB_won": true
+            }
+          ]
+        },
+        "lp_pilot87": {
+          "pairs": 7,
+          "lxA": {
+            "median": 6.066652786999995,
+            "min": 4.723782323999998,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 5.674893231000006,
+            "min": 5.114787206000003,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 4,
+          "ratio_median": 0.9354241012705595,
+          "ratio_min": 1.0827736875201543,
+          "verdict": "lxB_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.723782323999998,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.674893231000006,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 154761.14399999828,
+                  "symbolic": 13633.997999995983,
+                  "refactor": 3799929.123000048,
+                  "triangular_solves": 982913.0190001223,
+                  "matvecs_residuals": 575865.688999734,
+                  "other": 111355.48300010356
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.066652786999995,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 7.668877648000006,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 154372.83200000707,
+                  "symbolic": 12729.99399999719,
+                  "refactor": 5302460.160000009,
+                  "triangular_solves": 1258458.7040001054,
+                  "matvecs_residuals": 791327.1209998669,
+                  "other": 122613.77800001582
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.651360467999993,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.121640209000006,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 176636.5780000001,
+                  "symbolic": 12668.687000001455,
+                  "refactor": 4141930.957999989,
+                  "triangular_solves": 1030609.0199999147,
+                  "matvecs_residuals": 616325.8570004473,
+                  "other": 108570.24999964438
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.969991719999996,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 9.212158637999991,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 248569.9620000048,
+                  "symbolic": 16375.275000001466,
+                  "refactor": 6299109.122999979,
+                  "triangular_solves": 1518527.030000314,
+                  "matvecs_residuals": 946157.8849999483,
+                  "other": 132768.56199975385
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.510710322999998,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.114787206000003,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 135469.09099999027,
+                  "symbolic": 11683.077000000707,
+                  "refactor": 3408431.257999993,
+                  "triangular_solves": 909385.0339998255,
+                  "matvecs_residuals": 523250.90499957127,
+                  "other": 97508.54400060404
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 6.119028285000013,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.177342836000008,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 157093.03699998144,
+                  "symbolic": 11507.718000018485,
+                  "refactor": 3449966.142999955,
+                  "triangular_solves": 917731.8260002494,
+                  "matvecs_residuals": 507621.89899978694,
+                  "other": 104008.74100000123
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.7441495749999945,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.417620983999996,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 128599.82999998465,
+                  "symbolic": 13163.033000012092,
+                  "refactor": 3630047.8140002214,
+                  "triangular_solves": 970250.8909996368,
+                  "matvecs_residuals": 540309.9339993389,
+                  "other": 107318.46200079077
+                }
+              },
+              "lxB_won": true
+            }
+          ]
+        }
+      },
+      "host_index": 1
+    },
+    {
+      "ref": "592d2c0fa45061271d4ff5de6baf640983277704",
+      "mode": "envab",
+      "use_snapshot": true,
+      "machine_info": {
+        "cpu_model": "unknown",
+        "cpu_count": 20,
+        "mem_total_kb": 395296480,
+        "loadavg": "0.00 0.00 0.00 0/0 0",
+        "modal_region": "us-west-2",
+        "modal_cloud": "CLOUD_PROVIDER_AWS",
+        "modal_task_id": "ta-01KXREBQNBE6THE93GWRHSKJFR"
+      },
+      "load_checks": {
+        "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+        "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+      },
+      "env_a": {},
+      "env_b": {
+        "LINPROGX_IPM_SLICE": "1"
+      },
+      "envab": {
+        "lp_woodw": {
+          "pairs": 7,
+          "lxA": {
+            "median": 0.18066344599999695,
+            "min": 0.16552039100000115,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 0.18065537500000062,
+            "min": 0.15437743500000067,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 3,
+          "ratio_median": 0.9999553257718978,
+          "ratio_min": 0.9326792552103118,
+          "verdict": "lxB_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.16552039100000115,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.18169906700000027,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8514.205000000886,
+                  "symbolic": 922.8440000015325,
+                  "refactor": 102056.24600000007,
+                  "triangular_solves": 15284.440000002065,
+                  "matvecs_residuals": 10779.222999996562,
+                  "other": 10554.948999999426
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1743951139999993,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.18065537500000062,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8393.6059999985,
+                  "symbolic": 809.8939999996446,
+                  "refactor": 100569.19499999851,
+                  "triangular_solves": 15244.873999975538,
+                  "matvecs_residuals": 10722.120999979268,
+                  "other": 10502.073000047574
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.18357231400000273,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.16315488100000053,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8353.73100000325,
+                  "symbolic": 907.7679999975885,
+                  "refactor": 87151.99100000603,
+                  "triangular_solves": 14227.585000007537,
+                  "matvecs_residuals": 9401.4790000152,
+                  "other": 9722.753999970024
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1779080040000025,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.18066185400000023,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8575.76099999946,
+                  "symbolic": 932.219999999262,
+                  "refactor": 101543.45200000492,
+                  "triangular_solves": 14705.787999986342,
+                  "matvecs_residuals": 10830.322000014547,
+                  "other": 10288.947999995911
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.183872252999997,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.188009117,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8316.634999999906,
+                  "symbolic": 898.0720000018039,
+                  "refactor": 105667.48699999451,
+                  "triangular_solves": 15367.80000001059,
+                  "matvecs_residuals": 12803.060000031508,
+                  "other": 11071.801999964493
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.18066344599999695,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15437743500000067,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8331.488999999692,
+                  "symbolic": 910.6589999987591,
+                  "refactor": 80930.90899998501,
+                  "triangular_solves": 12380.413999999008,
+                  "matvecs_residuals": 8942.37600001091,
+                  "other": 9224.324000005168
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1824935140000008,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.17862761900000024,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32,
+                "ipm_slice_us": {
+                  "setup_order": 8270.403000000926,
+                  "symbolic": 895.4089999981818,
+                  "refactor": 100647.79200000729,
+                  "triangular_solves": 15054.539000029621,
+                  "matvecs_residuals": 10464.719000005118,
+                  "other": 10297.420999958007
+                }
+              },
+              "lxB_won": true
+            }
+          ]
+        },
+        "lp_80bau3b": {
+          "pairs": 7,
+          "lxA": {
+            "median": 0.2471582060000017,
+            "min": 0.21523473999999965,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 0.24549367000000188,
+            "min": 0.21795366599999966,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 3,
+          "ratio_median": 0.993265301496808,
+          "ratio_min": 1.0126323752383097,
+          "verdict": "lxB_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.2474819420000003,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.24549367000000188,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 8768.227000000905,
+                  "symbolic": 998.0999999967821,
+                  "refactor": 115919.19900000391,
+                  "triangular_solves": 20887.70800001427,
+                  "matvecs_residuals": 15586.198000022478,
+                  "other": 26917.509999961454
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.22223945900000075,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.21795366599999966,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 8689.004999997253,
+                  "symbolic": 980.7790000024852,
+                  "refactor": 94526.33699999069,
+                  "triangular_solves": 18876.610000038596,
+                  "matvecs_residuals": 13375.616999972806,
+                  "other": 25347.551999995943
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.2471582060000017,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.25768494199999736,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 8742.44399999924,
+                  "symbolic": 957.281000005139,
+                  "refactor": 124029.70900001265,
+                  "triangular_solves": 21266.180000004908,
+                  "matvecs_residuals": 16230.90099992197,
+                  "other": 28438.873000055763
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.25312416799999937,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.25960294399999384,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9066.875000002028,
+                  "symbolic": 986.4680000006842,
+                  "refactor": 124850.0179999965,
+                  "triangular_solves": 21502.719999986653,
+                  "matvecs_residuals": 16560.86799994938,
+                  "other": 28063.35300006424
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.21523473999999965,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.24300741999999786,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9009.468000002129,
+                  "symbolic": 1000.3539999985378,
+                  "refactor": 113974.3080000315,
+                  "triangular_solves": 19193.746000006227,
+                  "matvecs_residuals": 14595.402999923124,
+                  "other": 26556.11400004432
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.2455610230000005,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.2696188430000035,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9428.53499999785,
+                  "symbolic": 1047.5390000053153,
+                  "refactor": 132671.77699994904,
+                  "triangular_solves": 22337.987000000227,
+                  "matvecs_residuals": 17724.08800007952,
+                  "other": 29190.134999964812
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.25777462199999945,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 987224.1945366068,
+                "seconds": 0.22003013300000163,
+                "residual": 1.3901674978260814e-11,
+                "backend": "ipm",
+                "iterations": 44,
+                "ipm_slice_us": {
+                  "setup_order": 9533.967999999504,
+                  "symbolic": 1163.8349999998354,
+                  "refactor": 91688.33000001797,
+                  "triangular_solves": 18165.038999946148,
+                  "matvecs_residuals": 13277.234000071303,
+                  "other": 25156.415999965986
+                }
+              },
+              "lxB_won": true
+            }
+          ]
+        },
+        "lp_cre_a": {
+          "pairs": 7,
+          "lxA": {
+            "median": 0.14093029,
+            "min": 0.13875378499999869,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 0.1420876050000004,
+            "min": 0.14125811000000255,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 1,
+          "ratio_median": 1.0082119677749928,
+          "ratio_min": 1.0180486968337756,
+          "verdict": "lxA_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.13875378499999869,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14441650199999856,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 16882.303000002707,
+                  "symbolic": 1226.1319999993248,
+                  "refactor": 56131.810000003665,
+                  "triangular_solves": 14492.622000013,
+                  "matvecs_residuals": 10825.500999963822,
+                  "other": 10585.733000020526
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.143833352999998,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14863445900000016,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17613.928999999473,
+                  "symbolic": 1238.57999999899,
+                  "refactor": 57922.48800002397,
+                  "triangular_solves": 14888.654999971606,
+                  "matvecs_residuals": 11468.76699999666,
+                  "other": 11286.640000008674
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14213318499999872,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14781166999999584,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17237.319999999556,
+                  "symbolic": 1259.0980000055652,
+                  "refactor": 57341.806000003715,
+                  "triangular_solves": 14556.80099997636,
+                  "matvecs_residuals": 10793.123999910393,
+                  "other": 11025.587000105475
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14063601200000164,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14198854600000033,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17728.759000000595,
+                  "symbolic": 1221.217000001218,
+                  "refactor": 54315.90600001357,
+                  "triangular_solves": 13967.325999978186,
+                  "matvecs_residuals": 9421.821999907821,
+                  "other": 9643.072000102393
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1607564520000011,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1419922939999978,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17238.879000004203,
+                  "symbolic": 1228.996999998344,
+                  "refactor": 55132.14600000538,
+                  "triangular_solves": 13755.124000006446,
+                  "matvecs_residuals": 9912.064000019427,
+                  "other": 9823.504999971534
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14093029,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.1420876050000004,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17672.579000006295,
+                  "symbolic": 1151.807999995924,
+                  "refactor": 55203.11000001499,
+                  "triangular_solves": 13995.337000032749,
+                  "matvecs_residuals": 10004.724000047816,
+                  "other": 9807.459999905177
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14074717599999786,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23595585.417344905,
+                "seconds": 0.14125811000000255,
+                "residual": 4.462208380573429e-12,
+                "backend": "ipm",
+                "iterations": 34,
+                "ipm_slice_us": {
+                  "setup_order": 17165.58800000456,
+                  "symbolic": 1230.3839999958655,
+                  "refactor": 54383.246000021754,
+                  "triangular_solves": 14335.01899998646,
+                  "matvecs_residuals": 9638.032999916391,
+                  "other": 9799.7020000804
+                }
+              },
+              "lxB_won": false
+            }
+          ]
+        },
+        "lp_pilot87": {
+          "pairs": 7,
+          "lxA": {
+            "median": 4.095426603000007,
+            "min": 3.905664480999995,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB": {
+            "median": 4.199157008,
+            "min": 4.048449155,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "lxB_wins": 3,
+          "ratio_median": 1.0253283516115288,
+          "ratio_min": 1.0365583563807423,
+          "verdict": "lxA_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.905664480999995,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.199157008,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 122660.66899999828,
+                  "symbolic": 11420.291999996834,
+                  "refactor": 2712186.1230000095,
+                  "triangular_solves": 822845.5989998906,
+                  "matvecs_residuals": 409013.45500009967,
+                  "other": 97355.00800000096
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 2,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.093336468000004,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.436719588999999,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 127483.89599999398,
+                  "symbolic": 11994.2450000039,
+                  "refactor": 2885851.9269999973,
+                  "triangular_solves": 866497.6949999428,
+                  "matvecs_residuals": 413870.0869996867,
+                  "other": 106074.69100037293
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 3,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 5.745051197999999,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.405457490999993,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 156774.06700000062,
+                  "symbolic": 11556.251000001794,
+                  "refactor": 2871349.4810000244,
+                  "triangular_solves": 847245.2159998624,
+                  "matvecs_residuals": 393328.86300032045,
+                  "other": 99539.30799979105
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 4,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.177698816000003,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.204021038000008,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 144002.52699999782,
+                  "symbolic": 11298.582999998529,
+                  "refactor": 2699781.4880000846,
+                  "triangular_solves": 839362.3169998819,
+                  "matvecs_residuals": 387565.0789998133,
+                  "other": 97813.79700021376
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 5,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.2868628619999924,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.196023901000004,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 142669.748000003,
+                  "symbolic": 11396.898000000987,
+                  "refactor": 2723124.511000023,
+                  "triangular_solves": 818666.5729999589,
+                  "matvecs_residuals": 378572.7159995673,
+                  "other": 97523.4680004462
+                }
+              },
+              "lxB_won": true
+            },
+            {
+              "pair": 6,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.056211712999996,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.188152635000009,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 133209.52800000896,
+                  "symbolic": 11578.872999990608,
+                  "refactor": 2705776.6250000554,
+                  "triangular_solves": 822004.8249999792,
+                  "matvecs_residuals": 394485.6320000838,
+                  "other": 97387.87999988574
+                }
+              },
+              "lxB_won": false
+            },
+            {
+              "pair": 7,
+              "lxA": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.095426603000007,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "lxB": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.048449155,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128,
+                "ipm_slice_us": {
+                  "setup_order": 133949.06599999956,
+                  "symbolic": 11172.897000008674,
+                  "refactor": 2594606.790999862,
+                  "triangular_solves": 802861.918999767,
+                  "matvecs_residuals": 384132.70599995996,
+                  "other": 97682.1150004099
+                }
+              },
+              "lxB_won": true
+            }
+          ]
+        }
+      },
+      "host_index": 2
+    }
+  ],
+  "v3": {
+    "protocol": "v3",
+    "hosts": 3,
+    "envab": {
+      "lp_80bau3b": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 0.993265301496808,
+        "ratio_min_host": 0.8801596103881552,
+        "ratio_max_host": 1.0152270770988572,
+        "lxB_wins_by_host": [
+          4,
+          6,
+          3
+        ],
+        "lxB_wins_total": 13,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "lxB_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 195132220,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREAT3199XK5P81CT1DGM6R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 0.23723200300000258,
+              "min": 0.23199408800000043,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 0.24084435299999996,
+              "min": 0.23232044999999601,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 4,
+            "ratio_median": 1.0152270770988572,
+            "ratio_min": 1.0014067686069466,
+            "verdict": "lxA_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 195132220,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREB97CWE36XW7G02RD9YPR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 0.3355618679999992,
+              "min": 0.246888773000002,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 0.29534800300000086,
+              "min": 0.24856677600000054,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 6,
+            "ratio_median": 0.8801596103881552,
+            "ratio_min": 1.006796594999476,
+            "verdict": "lxB_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296480,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREBQNBE6THE93GWRHSKJFR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 0.2471582060000017,
+              "min": 0.21523473999999965,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 0.24549367000000188,
+              "min": 0.21795366599999966,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 3,
+            "ratio_median": 0.993265301496808,
+            "ratio_min": 1.0126323752383097,
+            "verdict": "lxB_faster"
+          }
+        ]
+      },
+      "lp_cre_a": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 0.9649206942026335,
+        "ratio_min_host": 0.9626331836017531,
+        "ratio_max_host": 1.0082119677749928,
+        "lxB_wins_by_host": [
+          4,
+          6,
+          1
+        ],
+        "lxB_wins_total": 11,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "lxB_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 195132220,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREAT3199XK5P81CT1DGM6R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 0.1666932360000004,
+              "min": 0.14902199799999494,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 0.1608457530000038,
+              "min": 0.14368579000000636,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 4,
+            "ratio_median": 0.9649206942026335,
+            "ratio_min": 0.9641918101246452,
+            "verdict": "lxB_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 195132220,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREB97CWE36XW7G02RD9YPR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 0.16309299499999952,
+              "min": 0.15091778299999703,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 0.15699872899999434,
+              "min": 0.14543969300000015,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 6,
+            "ratio_median": 0.9626331836017531,
+            "ratio_min": 0.9637014943428039,
+            "verdict": "lxB_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296480,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREBQNBE6THE93GWRHSKJFR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 0.14093029,
+              "min": 0.13875378499999869,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 0.1420876050000004,
+              "min": 0.14125811000000255,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 1,
+            "ratio_median": 1.0082119677749928,
+            "ratio_min": 1.0180486968337756,
+            "verdict": "lxA_faster"
+          }
+        ]
+      },
+      "lp_pilot87": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 1.0253283516115288,
+        "ratio_min_host": 0.9354241012705595,
+        "ratio_max_host": 1.1507842821828795,
+        "lxB_wins_by_host": [
+          3,
+          4,
+          3
+        ],
+        "lxB_wins_total": 10,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "lxA_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 195132220,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREAT3199XK5P81CT1DGM6R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 5.587213500000004,
+              "min": 4.190430769000002,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 6.4296774769999985,
+              "min": 4.5140862899999945,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 3,
+            "ratio_median": 1.1507842821828795,
+            "ratio_min": 1.0772368137887716,
+            "verdict": "lxA_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 195132220,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREB97CWE36XW7G02RD9YPR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 6.066652786999995,
+              "min": 4.723782323999998,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 5.674893231000006,
+              "min": 5.114787206000003,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 4,
+            "ratio_median": 0.9354241012705595,
+            "ratio_min": 1.0827736875201543,
+            "verdict": "lxB_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296480,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREBQNBE6THE93GWRHSKJFR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 4.095426603000007,
+              "min": 3.905664480999995,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 4.199157008,
+              "min": 4.048449155,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 3,
+            "ratio_median": 1.0253283516115288,
+            "ratio_min": 1.0365583563807423,
+            "verdict": "lxA_faster"
+          }
+        ]
+      },
+      "lp_woodw": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 0.9999553257718978,
+        "ratio_min_host": 0.981176379067613,
+        "ratio_max_host": 1.0576078689013786,
+        "lxB_wins_by_host": [
+          5,
+          3,
+          3
+        ],
+        "lxB_wins_total": 11,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "lxB_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 195132220,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREAT3199XK5P81CT1DGM6R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 0.15417931600000045,
+              "min": 0.15171256700000058,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 0.15127710300000174,
+              "min": 0.1488958029999985,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 5,
+            "ratio_median": 0.981176379067613,
+            "ratio_min": 0.9814335486130027,
+            "verdict": "lxB_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 195132220,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREB97CWE36XW7G02RD9YPR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 0.155559199999999,
+              "min": 0.15129678999999996,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 0.16452063400000227,
+              "min": 0.15310210599999863,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 3,
+            "ratio_median": 1.0576078689013786,
+            "ratio_min": 1.0119322822381007,
+            "verdict": "lxA_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296480,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXREBQNBE6THE93GWRHSKJFR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lxA": {
+              "median": 0.18066344599999695,
+              "min": 0.16552039100000115,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB": {
+              "median": 0.18065537500000062,
+              "min": 0.15437743500000067,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "lxB_wins": 3,
+            "ratio_median": 0.9999553257718978,
+            "ratio_min": 0.9326792552103118,
+            "verdict": "lxB_faster"
+          }
+        ]
+      }
+    }
+  },
+  "env_a": {},
+  "env_b": {
+    "LINPROGX_IPM_SLICE": "1"
+  }
+}

@@ -2024,6 +2024,20 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   ITERATION LOG (runtime output, not source) for crash-basis size
   and bound-flip counts to locate the missing 1,500 pivots.
 
+- ON-HOST IPM SLICE CENSUS — REFACTOR IS THE BANDWIDTH SLICE
+  (2026-07-17, instrument ship + envab capture at 592d2c0,
+  assets/modal_bench_592d2c0fa450_envab_hosts3.json): per-phase
+  on-host/local inflation — refactor x1.73 woodw / x2.22 80bau3b /
+  x1.60 cre_a / x1.50 pilot87, vs x1.2-1.5 for every other phase;
+  refactor is 51-67% of on-host IPM wall. woodw's entire 1.20 loss
+  is the refactor slice's host-bandwidth behavior (its local board
+  is near parity). THE SCOPED UNIT is the AGENTS.md frontier:
+  bandwidth-lean numeric factorization (panel-blocked dense tail /
+  true supernodal numeric factor) — a ~25% cut in refactor traffic
+  flips woodw (needs ~17%) and deepens 80bau3b/cre_a/pilot87.
+  Instrument: LINPROGX_IPM_SLICE result-embedded, flows through the
+  bench harness (envab arm B overhead ~0.6%).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
