@@ -15483,6 +15483,7 @@ typedef struct {
 #define PS_REC_DOUBLETON 1
 #define PS_REC_COLUMN_SINGLETON 2
 #define PS_REC_DUPLICATE_COLUMN 3
+#define PS_REC_AGGREGATION 5
 
 typedef struct { Py_ssize_t col; double val; } PSTerm;
 
@@ -15857,6 +15858,120 @@ static int ps_rec_duplicate(
     return 0;
 }
 
+/* General equality-row aggregation record (tag 5). Marshals like a column
+ * singleton (eliminated column, pivot coefficient, rhs, and the pivot row's
+ * other terms in reduced-column space); postsolve recovers the eliminated
+ * column from the pivot equality residual. */
+static int ps_rec_aggregation(
+    PSRec **recs, Py_ssize_t *n, Py_ssize_t *cap,
+    Py_ssize_t eliminated, double coef_eliminated, double rhs,
+    const PSTerm *terms, Py_ssize_t n_terms
+) {
+    if (ps_rec_reserve(recs, cap, *n + 1) != 0) return -1;
+    PSTerm *copy = NULL;
+    if (n_terms > 0) {
+        copy = (PSTerm *)malloc((size_t)n_terms * sizeof(PSTerm));
+        if (!copy) return -1;
+        memcpy(copy, terms, (size_t)n_terms * sizeof(PSTerm));
+    }
+    PSRec *r = &(*recs)[(*n)++];
+    r->type = PS_REC_AGGREGATION;
+    r->idx1 = eliminated; r->idx2 = 0;
+    r->v1 = coef_eliminated; r->v2 = rhs; r->v3 = r->v4 = 0.0;
+    r->terms = copy; r->n_terms = n_terms;
+    return 0;
+}
+
+/* One O(degree) pass over a whole row returning its cached activity summary
+ * (lo_fin, hi_fin, lo_unb, hi_unb, row_max). Mirrors _row_activity in
+ * presolve.py: iteration follows PSRow insertion order, matching the Python
+ * dict, so the floating-point accumulation is bit-identical. */
+static void ps_row_activity(
+    PSRow *r, const double *lo, const double *hi,
+    double *lo_fin, double *hi_fin,
+    Py_ssize_t *lo_unb, Py_ssize_t *hi_unb, double *row_max
+) {
+    double lof = 0.0, hif = 0.0, rmax = 0.0;
+    Py_ssize_t lou = 0, hiu = 0;
+    for (Py_ssize_t k = 0; k < r->total; k++) {
+        Py_ssize_t col = r->entries[k].col;
+        if (col < 0) continue;
+        double coef = r->entries[k].val;
+        double av = coef < 0.0 ? -coef : coef;
+        if (av > rmax) rmax = av;
+    }
+    for (Py_ssize_t k = 0; k < r->total; k++) {
+        Py_ssize_t col = r->entries[k].col;
+        if (col < 0) continue;
+        double coef = r->entries[k].val;
+        double lok = lo[col], hik = hi[col];
+        if (coef >= 0.0) {
+            if (isfinite(lok)) lof += coef * lok; else lou++;
+            if (isfinite(hik)) hif += coef * hik; else hiu++;
+        } else {
+            if (isfinite(hik)) lof += coef * hik; else lou++;
+            if (isfinite(lok)) hif += coef * lok; else hiu++;
+        }
+    }
+    *lo_fin = lof; *hi_fin = hif; *lo_unb = lou; *hi_unb = hiu; *row_max = rmax;
+}
+
+/* O(1) implied-free test from a cached whole-row activity summary: the same
+ * decision as ps_column_bounds_are_redundant but derived by subtracting column
+ * j's own contribution. Mirrors _implied_free_from_activity in presolve.py. */
+static int ps_implied_free_from_activity(
+    Py_ssize_t j, double coef, double rhs,
+    const double *lo, const double *hi,
+    double lo_fin, double hi_fin, Py_ssize_t lo_unb, Py_ssize_t hi_unb
+) {
+    double loj = lo[j], hij = hi[j];
+    int loj_fin = isfinite(loj), hij_fin = isfinite(hij);
+    if (!loj_fin && !hij_fin) return 1;
+    double j_lo_fin, j_hi_fin;
+    Py_ssize_t j_lo_unb, j_hi_unb;
+    if (coef >= 0.0) {
+        j_lo_fin = loj_fin ? coef * loj : 0.0; j_lo_unb = loj_fin ? 0 : 1;
+        j_hi_fin = hij_fin ? coef * hij : 0.0; j_hi_unb = hij_fin ? 0 : 1;
+    } else {
+        j_lo_fin = hij_fin ? coef * hij : 0.0; j_lo_unb = hij_fin ? 0 : 1;
+        j_hi_fin = loj_fin ? coef * loj : 0.0; j_hi_unb = loj_fin ? 0 : 1;
+    }
+    int rest_lo_inf = (lo_unb - j_lo_unb) > 0;
+    int rest_hi_inf = (hi_unb - j_hi_unb) > 0;
+    double rest_lo = lo_fin - j_lo_fin;
+    double rest_hi = hi_fin - j_hi_fin;
+    int implied_lo_inf, implied_hi_inf;
+    double implied_lo, implied_hi;
+    if (coef > 0.0) {
+        implied_lo_inf = rest_hi_inf;
+        implied_hi_inf = rest_lo_inf;
+        implied_lo = rest_hi_inf ? -INFINITY : (rhs - rest_hi) / coef;
+        implied_hi = rest_lo_inf ? INFINITY : (rhs - rest_lo) / coef;
+    } else {
+        implied_lo_inf = rest_lo_inf;
+        implied_hi_inf = rest_hi_inf;
+        implied_lo = rest_lo_inf ? -INFINITY : (rhs - rest_lo) / coef;
+        implied_hi = rest_hi_inf ? INFINITY : (rhs - rest_hi) / coef;
+    }
+    if (loj_fin) {
+        if (implied_lo_inf) return 0;
+        if (implied_lo < loj - PRESOLVE_BOUND_EPS * fmax(1.0, fmax(fabs(loj), fabs(implied_lo))))
+            return 0;
+    }
+    if (hij_fin) {
+        if (implied_hi_inf) return 0;
+        if (implied_hi > hij + PRESOLVE_BOUND_EPS * fmax(1.0, fmax(fabs(hij), fabs(implied_hi))))
+            return 0;
+    }
+    return 1;
+}
+
+static int ps_ssize_cmp(const void *a, const void *b) {
+    Py_ssize_t ra = *(const Py_ssize_t *)a;
+    Py_ssize_t rb = *(const Py_ssize_t *)b;
+    return (ra > rb) - (ra < rb);
+}
+
 /* Count rows and columns that the Python V2 pass can remove immediately.
  * This keeps low-yield problems on the native presolve path. */
 static PyObject *csparse_presolve_v2_candidates(PyObject *self, PyObject *args) {
@@ -16098,19 +16213,23 @@ static PyObject *csparse_presolve_v2_candidates(PyObject *self, PyObject *args) 
 
 /* ---- the main presolve function --------------------------------------- */
 
-static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
+static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mode) {
     PyObject *matrix_obj;
     const char *b_buf, *c_buf, *lo_buf, *hi_buf;
     Py_ssize_t b_len, c_len, lo_len, hi_len;
     int max_fill = 5;
+    Py_ssize_t fill_budget = -1;  /* agg-only: cumulative-fill early-abort cap */
+    Py_ssize_t orig_nnz = -1;     /* agg-only: base nnz for the fill-gate       */
 
-    if (!PyArg_ParseTuple(args, "Oy#y#y#y#|i",
+    if (!PyArg_ParseTuple(args, "Oy#y#y#y#|inn",
                           &matrix_obj,
                           &b_buf, &b_len,
                           &c_buf, &c_len,
                           &lo_buf, &lo_len,
                           &hi_buf, &hi_len,
-                          &max_fill))
+                          &max_fill,
+                          &fill_budget,
+                          &orig_nnz))
         return NULL;
 
     if (!PyObject_TypeCheck(matrix_obj, &CSRMatrixType)) {
@@ -16160,6 +16279,18 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
     Py_ssize_t  *act_rows    = NULL;
     Py_ssize_t  *act_cols    = NULL;
     Py_ssize_t  *col_map     = NULL;
+    /* agg-only working storage */
+    Py_ssize_t  *agg_queue   = NULL;   /* FIFO ring buffer of columns          */
+    char        *agg_inq     = NULL;   /* membership flag for agg_queue        */
+    Py_ssize_t  *agg_rows_j  = NULL;   /* sorted active rows of a pivot column */
+    double      *ract_lo     = NULL;   /* per-row cached activity lo_fin       */
+    double      *ract_hi     = NULL;   /* per-row cached activity hi_fin        */
+    double      *ract_max    = NULL;   /* per-row cached max|coef|              */
+    Py_ssize_t  *ract_lou    = NULL;   /* per-row cached lo_unb count           */
+    Py_ssize_t  *ract_hiu    = NULL;   /* per-row cached hi_unb count           */
+    Py_ssize_t  *ract_gen    = NULL;   /* per-row cache generation stamp        */
+    Py_ssize_t  *colpos_gen  = NULL;   /* per-column O(1)-membership gen stamp  */
+    Py_ssize_t  *colpos_idx  = NULL;   /* per-column entry index within a row   */
     PSEntry     *sort_buf    = NULL;
     Py_ssize_t  *o_indptr    = NULL;
     Py_ssize_t  *o_indices   = NULL;
@@ -16271,6 +16402,45 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
         dup_buf_b = (PSDupPair *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(PSDupPair));
         if (!fix_cols || !fix_vals || !term_buf || !dup_buf_a || !dup_buf_b) goto oom;
     }
+
+    /* ---- agg-only working storage + parameters ------------------------- */
+    int agg_max_fill = 30;
+    double agg_pivot_tol = 0.01;
+    Py_ssize_t agg_fill_delta = 0;
+    int agg_aborted = 0;
+    Py_ssize_t ract_generation = 0;
+    Py_ssize_t colpos_stamp = 0;
+    Py_ssize_t agg_q_cap = 0, agg_q_head = 0, agg_q_tail = 0;
+    if (agg_mode) {
+        const char *e_mf = getenv("LINPROGX_AGG_MAX_FILL");
+        if (e_mf && e_mf[0]) agg_max_fill = atoi(e_mf);
+        const char *e_pt = getenv("LINPROGX_AGG_PIVOT_TOL");
+        if (e_pt && e_pt[0]) agg_pivot_tol = atof(e_pt);
+        /* term_buf holds the pivot row's non-pivot entries (up to a full row). */
+        term_buf = (PSTerm *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(PSTerm));
+        agg_q_cap = cols + 1;  /* ring buffer; pending distinct cols <= cols */
+        agg_queue = (Py_ssize_t *)malloc((size_t)(agg_q_cap > 0 ? agg_q_cap : 1) * sizeof(Py_ssize_t));
+        agg_inq   = (char *)calloc((size_t)(cols > 0 ? cols : 1), 1);
+        agg_rows_j = (Py_ssize_t *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(Py_ssize_t));
+        ract_lo  = (double *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(double));
+        ract_hi  = (double *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(double));
+        ract_max = (double *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(double));
+        ract_lou = (Py_ssize_t *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(Py_ssize_t));
+        ract_hiu = (Py_ssize_t *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(Py_ssize_t));
+        ract_gen = (Py_ssize_t *)calloc((size_t)(rows > 0 ? rows : 1), sizeof(Py_ssize_t));
+        colpos_gen = (Py_ssize_t *)calloc((size_t)(cols > 0 ? cols : 1), sizeof(Py_ssize_t));
+        colpos_idx = (Py_ssize_t *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(Py_ssize_t));
+        if (!term_buf || !agg_queue || !agg_inq || !agg_rows_j || !ract_lo ||
+            !ract_hi || !ract_max || !ract_lou || !ract_hiu || !ract_gen ||
+            !colpos_gen || !colpos_idx) goto oom;
+        /* Seed the worklist with every column, in order (matches Python
+         * ``agg_worklist.extend(range(cols))``). */
+        for (Py_ssize_t j = 0; j < cols; j++) {
+            agg_queue[agg_q_tail++] = j;
+            agg_inq[j] = 1;
+        }
+    }
+    Py_ssize_t count_aggregations = 0;
 
     /* ==== fixpoint loop ================================================ */
     int changed = 1;
@@ -16389,8 +16559,23 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
             }
         }
 
+        if (agg_mode) {
+            /* ---- agg-only cleanup: fix columns aggregation emptied ----- */
+            for (Py_ssize_t j = 0; j < cols; j++) {
+                if (rem_col[j] || col_sets[j].count != 0) continue;
+                int ok = 0;
+                double value = ps_choose_empty_column_value(j, c_arr, lo_arr, hi_arr, &ok);
+                if (!ok) continue;
+                if (ps_rec_fixed(&recs, &recs_n, &recs_cap, j, value) != 0) goto oom;
+                obj_off += c_arr[j] * value;
+                rem_col[j] = 1; n_rem_cols++;
+                count_empty_columns++;
+                changed = 1;
+            }
+        }
+
         /* ---- pass 2: singleton rows ----------------------------------- */
-        for (Py_ssize_t i = 0; i < rows; i++) {
+        for (Py_ssize_t i = 0; !agg_mode && i < rows; i++) {
             if (rem_row[i] || row_data[i].count != 1) continue;
             Py_ssize_t j = -1; double coef = 0.0;
             ps_row_get_one(&row_data[i], &j, &coef);
@@ -16466,7 +16651,7 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
         }
 
         /* ---- pass 3: doubleton rows ----------------------------------- */
-        for (Py_ssize_t i = 0; i < rows; i++) {
+        for (Py_ssize_t i = 0; !agg_mode && i < rows; i++) {
             if (rem_row[i] || row_data[i].count != 2) continue;
 
             Py_ssize_t jp, jq; double ap, dq;
@@ -16548,6 +16733,190 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
             changed = 1;
         }
 
+        if (agg_mode && !agg_aborted) {
+            /* ---- agg scan: general equality-row aggregation ------------ */
+            /* Worklist-driven scan; only columns whose incident rows were
+             * rewritten (or the initial seed) are examined. The per-row
+             * activity cache is invalidated wholesale each outer wave by
+             * bumping the generation stamp (mirrors row_act_cache.clear()). */
+            ract_generation++;
+            while (agg_q_head != agg_q_tail) {
+                Py_ssize_t j = agg_queue[agg_q_head];
+                agg_q_head = (agg_q_head + 1) % agg_q_cap;
+                agg_inq[j] = 0;
+                if (rem_col[j]) continue;
+
+                /* Active rows of column j, sorted ascending (canonical order
+                 * shared with the Python reference for bit-identity). */
+                Py_ssize_t nrj = 0;
+                for (Py_ssize_t s = 0; s < col_sets[j].count; s++) {
+                    Py_ssize_t i = col_sets[j].items[s];
+                    if (!rem_row[i]) agg_rows_j[nrj++] = i;
+                }
+                if (nrj == 0) continue;
+                /* Insertion sort: nrj is the pivot column's active-row count
+                 * (tiny for sparse LPs), so this beats a qsort call, which
+                 * matters because the cascade re-pops columns frequently. */
+                for (Py_ssize_t x = 1; x < nrj; x++) {
+                    Py_ssize_t v = agg_rows_j[x], y = x - 1;
+                    while (y >= 0 && agg_rows_j[y] > v) { agg_rows_j[y + 1] = agg_rows_j[y]; y--; }
+                    agg_rows_j[y + 1] = v;
+                }
+
+                /* Choose the implied-free, numerically safe, lowest-fill pivot
+                 * row (first-wins on ties -> lowest row index). */
+                int have_best = 0;
+                Py_ssize_t best_i = -1, best_fill = 0;
+                double best_coef = 0.0;
+                for (Py_ssize_t a = 0; a < nrj; a++) {
+                    Py_ssize_t i = agg_rows_j[a];
+                    PSRow *row_i = &row_data[i];
+                    PSEntry *pe = ps_row_find(row_i, j);
+                    if (!pe) continue;
+                    double coef = pe->val;
+                    if (fabs(coef) < PRESOLVE_PIVOT_EPS || row_i->count < 2) continue;
+
+                    double lo_fin, hi_fin, row_max; Py_ssize_t lo_unb, hi_unb;
+                    if (ract_gen[i] == ract_generation) {
+                        lo_fin = ract_lo[i]; hi_fin = ract_hi[i];
+                        lo_unb = ract_lou[i]; hi_unb = ract_hiu[i]; row_max = ract_max[i];
+                    } else {
+                        ps_row_activity(row_i, lo_arr, hi_arr,
+                                        &lo_fin, &hi_fin, &lo_unb, &hi_unb, &row_max);
+                        ract_lo[i] = lo_fin; ract_hi[i] = hi_fin;
+                        ract_lou[i] = lo_unb; ract_hiu[i] = hi_unb; ract_max[i] = row_max;
+                        ract_gen[i] = ract_generation;
+                    }
+                    if (fabs(coef) < agg_pivot_tol * row_max) continue;
+                    if (!ps_implied_free_from_activity(
+                            j, coef, b_arr[i], lo_arr, hi_arr,
+                            lo_fin, hi_fin, lo_unb, hi_unb))
+                        continue;
+
+                    /* terms = pivot row's other entries (insertion order). */
+                    Py_ssize_t nt = 0;
+                    for (Py_ssize_t k = 0; k < row_i->total; k++) {
+                        Py_ssize_t col = row_i->entries[k].col;
+                        if (col >= 0 && col != j) {
+                            term_buf[nt].col = col;
+                            term_buf[nt].val = row_i->entries[k].val;
+                            nt++;
+                        }
+                    }
+                    /* Fill guard: nonzeros newly created across j's other rows
+                     * (conservative -- cancellations not credited). Stamp the
+                     * term columns, then count each other row's present terms in
+                     * O(row degree) instead of O(nt x degree) linear finds. */
+                    colpos_stamp++;
+                    for (Py_ssize_t t = 0; t < nt; t++)
+                        colpos_gen[term_buf[t].col] = colpos_stamp;
+                    Py_ssize_t fill = 0; int ok = 1;
+                    for (Py_ssize_t a2 = 0; a2 < nrj && ok; a2++) {
+                        Py_ssize_t r = agg_rows_j[a2];
+                        if (r == i) continue;
+                        PSRow *rr = &row_data[r];
+                        Py_ssize_t present = 0;
+                        for (Py_ssize_t e = 0; e < rr->total; e++) {
+                            Py_ssize_t col = rr->entries[e].col;
+                            if (col >= 0 && colpos_gen[col] == colpos_stamp) present++;
+                        }
+                        fill += nt - present;
+                        if (fill > agg_max_fill) { ok = 0; }
+                    }
+                    if (!ok) continue;
+                    if (!have_best || fill < best_fill) {
+                        have_best = 1; best_fill = fill; best_i = i; best_coef = coef;
+                    }
+                }
+                if (!have_best) continue;
+
+                /* Commit the aggregation on the chosen pivot row. */
+                Py_ssize_t i = best_i;
+                double coef = best_coef;
+                PSRow *row_i = &row_data[i];
+                Py_ssize_t nt = 0;
+                for (Py_ssize_t k = 0; k < row_i->total; k++) {
+                    Py_ssize_t col = row_i->entries[k].col;
+                    if (col >= 0 && col != j) {
+                        term_buf[nt].col = col;
+                        term_buf[nt].val = row_i->entries[k].val;
+                        nt++;
+                    }
+                }
+                if (ps_rec_aggregation(&recs, &recs_n, &recs_cap,
+                                       j, coef, b_arr[i], term_buf, nt) != 0)
+                    goto oom;
+                obj_off += c_arr[j] * b_arr[i] / coef;
+                double cost_scale = c_arr[j] / coef;
+                for (Py_ssize_t t = 0; t < nt; t++)
+                    c_arr[term_buf[t].col] -= cost_scale * term_buf[t].val;
+
+                Py_ssize_t delta = -row_i->count;
+                for (Py_ssize_t a = 0; a < nrj; a++) {
+                    Py_ssize_t r = agg_rows_j[a];
+                    if (r == i || rem_row[r]) continue;
+                    PSRow *rr = &row_data[r];
+                    /* Stamp rr's columns for O(1) membership: each term and the
+                     * pivot column j is looked up at most once per row r. */
+                    colpos_stamp++;
+                    for (Py_ssize_t e = 0; e < rr->total; e++) {
+                        Py_ssize_t col = rr->entries[e].col;
+                        if (col >= 0) { colpos_gen[col] = colpos_stamp; colpos_idx[col] = e; }
+                    }
+                    if (colpos_gen[j] != colpos_stamp) continue;
+                    PSEntry *arje = &rr->entries[colpos_idx[j]];
+                    double mult = arje->val / coef;
+                    b_arr[r] -= mult * b_arr[i];
+                    for (Py_ssize_t t = 0; t < nt; t++) {
+                        Py_ssize_t k = term_buf[t].col;
+                        double value = term_buf[t].val;
+                        PSEntry *ke = (colpos_gen[k] == colpos_stamp)
+                                      ? &rr->entries[colpos_idx[k]] : NULL;
+                        double merged = (ke ? ke->val : 0.0) - mult * value;
+                        if (fabs(merged) < PRESOLVE_DROP_EPS) {
+                            if (ke) {
+                                ps_row_delete(rr, k);
+                                ps_colset_discard(&col_sets[k], r);
+                                delta -= 1;
+                                if (!agg_inq[k] && !rem_col[k]) {
+                                    agg_inq[k] = 1;
+                                    agg_queue[agg_q_tail] = k;
+                                    agg_q_tail = (agg_q_tail + 1) % agg_q_cap;
+                                }
+                            }
+                        } else {
+                            if (!ke) {
+                                if (ps_row_set(rr, k, merged) != 0) goto oom;
+                                if (ps_colset_add(&col_sets[k], r) != 0) goto oom;
+                                delta += 1;
+                            } else {
+                                ke->val = merged;
+                            }
+                        }
+                    }
+                    ps_row_delete(rr, j);
+                    delta -= 1;
+                    ract_gen[r] = 0;  /* rewritten row: cached activity stale */
+                }
+                for (Py_ssize_t t = 0; t < nt; t++)
+                    ps_colset_discard(&col_sets[term_buf[t].col], i);
+                ract_gen[i] = 0;
+                rem_row[i] = 1; n_rem_rows++;
+                rem_col[j] = 1; n_rem_cols++;
+                ps_colset_clear(&col_sets[j]);
+                count_aggregations++;
+                changed = 1;
+                agg_fill_delta += delta;
+                if (fill_budget >= 0 && agg_fill_delta > fill_budget) {
+                    /* Fill grew past budget: fill-positive instance. Stop; the
+                     * composed fill-gate rejects it. */
+                    agg_aborted = 1;
+                    agg_q_head = agg_q_tail = 0;
+                    break;
+                }
+            }
+        }
+
         if (enable_v2) {
             /* ---- V2 pass: duplicate bounded columns -------------------- */
             size_t hash_cap = 1;
@@ -16623,6 +16992,27 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
     if (n_rem_rows == 0 && n_rem_cols == 0) {
         result = Py_None; Py_INCREF(result);
         goto cleanup;
+    }
+
+    /* ---- agg-only fill-gate: reject WITHOUT materializing the output --- */
+    /* The composed re-stage keeps the aggregation only when it did not grow
+     * nnz. Deciding this here (from the cheap active-row-count sum) lets a
+     * fill-positive instance -- greenbea, cre_a -- return None immediately,
+     * skipping the O(nnz) output CSR/CSC build and the record marshalling that
+     * would be thrown away. Mirrors the fill-gate in presolve.py's
+     * _maybe_aggregate; LINPROGX_AGG_FILLGATE=0 disables it (always compose). */
+    if (agg_mode && orig_nnz >= 0) {
+        const char *fg_env = getenv("LINPROGX_AGG_FILLGATE");
+        int fillgate = !(fg_env && fg_env[0] == '0' && fg_env[1] == '\0');
+        if (fillgate) {
+            Py_ssize_t onnz_est = 0;
+            for (Py_ssize_t i = 0; i < rows; i++)
+                if (!rem_row[i]) onnz_est += row_data[i].count;
+            if (onnz_est > orig_nnz) {
+                result = Py_None; Py_INCREF(result);
+                goto cleanup;
+            }
+        }
     }
 
     /* ---- build compacted output --------------------------------------- */
@@ -16778,6 +17168,18 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2) {
                 tup = Py_BuildValue("(nnddO)",
                     (Py_ssize_t)2, recs[x].idx1, recs[x].v1, recs[x].v2, terms);
                 Py_DECREF(terms);
+            } else if (recs[x].type == PS_REC_AGGREGATION) {
+                PyObject *terms = PyTuple_New(recs[x].n_terms);
+                if (!terms) goto cleanup;
+                for (Py_ssize_t t = 0; t < recs[x].n_terms; t++) {
+                    PyObject *term = Py_BuildValue("(nd)",
+                        recs[x].terms[t].col, recs[x].terms[t].val);
+                    if (!term) { Py_DECREF(terms); goto cleanup; }
+                    PyTuple_SET_ITEM(terms, t, term);
+                }
+                tup = Py_BuildValue("(nnddO)",
+                    (Py_ssize_t)5, recs[x].idx1, recs[x].v1, recs[x].v2, terms);
+                Py_DECREF(terms);
             } else {
                 tup = Py_BuildValue("(nnndddd)",
                     (Py_ssize_t)3, recs[x].idx1, recs[x].idx2,
@@ -16827,17 +17229,26 @@ cleanup:
     free(dup_buf_a); free(dup_buf_b); free(dup_hash_cols); free(dup_hash_values);
     free(act_rows); free(act_cols); free(col_map); free(sort_buf);
     free(o_indptr); free(o_indices); free(o_data); free(o_b);
+    free(agg_queue); free(agg_inq); free(agg_rows_j);
+    free(ract_lo); free(ract_hi); free(ract_max);
+    free(ract_lou); free(ract_hiu); free(ract_gen);
+    free(colpos_gen); free(colpos_idx);
     return result;
 }
 
 static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
     (void)self;
-    return csparse_presolve_impl(args, 0);
+    return csparse_presolve_impl(args, 0, 0);
+}
+
+static PyObject *csparse_presolve_agg(PyObject *self, PyObject *args) {
+    (void)self;
+    return csparse_presolve_impl(args, 0, 1);
 }
 
 static PyObject *csparse_presolve_v2(PyObject *self, PyObject *args) {
     (void)self;
-    return csparse_presolve_impl(args, 1);
+    return csparse_presolve_impl(args, 1, 0);
 }
 
 static PyMethodDef module_methods[] = {
@@ -16853,6 +17264,8 @@ static PyMethodDef module_methods[] = {
      "C presolve for equality-plus-bounds LP (mirrors Python presolve_eq_box)."},
     {"presolve_v2", csparse_presolve_v2, METH_VARARGS,
      "C V2 presolve for equality-plus-bounds LP (fixed columns, forcing, column singletons, duplicates)."},
+    {"presolve_agg", csparse_presolve_agg, METH_VARARGS,
+     "C agg-only re-stage: general equality-row aggregation (mirrors the agg_only Python path)."},
     {"presolve_v2_candidates", csparse_presolve_v2_candidates, METH_VARARGS,
      "Count immediately removable V2 rows and columns."},
     {NULL, NULL, 0, NULL}

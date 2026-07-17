@@ -182,7 +182,7 @@ class SparseSolver:
         matrix = problem.A_eq
         reduction = None
         if self.presolve:
-            reduction = presolve_matrix(matrix, b, c, lo, hi)
+            reduction = presolve_matrix(matrix, b, c, lo, hi, algorithm=algorithm)
         if reduction is not None:
             if reduction._matrix is not None:
                 matrix = reduction._matrix

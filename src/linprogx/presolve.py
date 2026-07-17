@@ -59,11 +59,13 @@ try:
     _c_presolve = _csparse.presolve_eq_box  # type: ignore[attr-defined]
     _c_presolve_v2 = _csparse.presolve_v2  # type: ignore[attr-defined]
     _c_v2_candidates = _csparse.presolve_v2_candidates  # type: ignore[attr-defined]
+    _c_presolve_agg = getattr(_csparse, "presolve_agg", None)  # type: ignore[attr-defined]
 except (ImportError, AttributeError):  # pragma: no cover - source tree before extension build
     _csparse = None
     _c_presolve = None
     _c_presolve_v2 = None
     _c_v2_candidates = None
+    _c_presolve_agg = None
 
 _SSZ = struct.calcsize("n")  # sizeof(Py_ssize_t)
 
@@ -243,16 +245,19 @@ def _agg_enabled() -> bool:
 
 
 def _agg_restage_enabled() -> bool:
-    """Solver-path aggregation re-stage. DEFAULT OFF.
+    """Solver-path aggregation re-stage. DEFAULT ON (native, fill-gated).
 
-    Investigation verdict (2026-07-17): equality-row aggregation is fill-negative
-    and cuts IPM iterations on 80bau3b (47->44), but the pure-Python re-stage cost
-    (best measured ~34ms over base after an 11x optimization) swamps the ~9ms
-    solve-side saving, netting a wall regression. A net win needs the re-stage at
-    <=~4ms, i.e. a native (_csparse.c) implementation. Until then the ship default
-    stays OFF; ``LINPROGX_PRESOLVE_AGG=1`` enables the (correct, fill-gated)
-    machinery for the native port to build on. See docs/HANDOFF.md."""
-    return os.environ.get("LINPROGX_PRESOLVE_AGG", "0") != "0"
+    Verdict (2026-07-17): equality-row aggregation is fill-negative on the shapes
+    the structural fill-gate accepts, and cuts IPM iterations (80bau3b 47->44,
+    d2q06c 48->47), for a measured solve-side saving of ~14ms on 80bau3b. The
+    pure-Python re-stage (~34ms) swamped that, so the re-stage stayed OFF until the
+    native ``_csparse`` port (``presolve_agg``) drove the pass cost to ~2-3ms while
+    reproducing the Python reference bit-for-bit. With the native pass the re-stage
+    nets a wall win on every fill-gate accept (80bau3b -7.9%, d2q06c -19.7%,
+    ken_07 -7.7%) and is now the ship default. The fill-gate structurally rejects
+    every other board instance; ``LINPROGX_PRESOLVE_AGG=0`` restores the
+    byte-identical no-re-stage behavior. See docs/HANDOFF.md."""
+    return os.environ.get("LINPROGX_PRESOLVE_AGG", "1") != "0"
 
 
 def _agg_fillgate_enabled() -> bool:
@@ -425,30 +430,59 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
         nnz = len(result.data)
     if nnz > _agg_max_nnz():
         return result
-    if result._matrix is not None:
-        r_indptr, r_indices, r_data = result._matrix.to_components()
+    # Early-abort budget: aggregation stops once its cumulative fill exceeds this,
+    # so a fill-positive instance bails after a handful of substitutions instead
+    # of paying the whole cascade before the fill-gate rejects it. The board's
+    # fill-negative accepts peak at a tiny transient excursion before diving
+    # negative (measured cumulative-fill peaks: 80bau3b +20, d2q06c -2, ken_07 -2),
+    # while the fill-positive rejects climb monotonically (greenbea, cre_a). A tight
+    # constant cap cleanly separates them: it never triggers on the accepts (so they
+    # complete bit-identically) yet aborts the rejects within a few aggregations,
+    # which is what keeps the reject-path pass cost negligible. The previous
+    # max(256, nnz//40) cap was far too loose -- cre_a ran ~1026 aggregations before
+    # crossing 418, making the reject path expensive.
+    fill_budget = 48
+    # Prefer the native (_csparse) aggregation re-stage: it reproduces the
+    # agg_only Python path bit-for-bit (the reduced problem and the record
+    # stream) but at ~10-30x lower pass cost, which is what lets the re-stage
+    # net a wall win. The Python path remains the reference and the fallback
+    # when the extension is unavailable.
+    if _c_presolve_agg is not None and result._matrix is not None:
+        # Pass ``nnz`` so the native pass can apply the fill-gate internally and
+        # return None on a fill-positive reject WITHOUT materializing the reduced
+        # matrix/records it would only throw away (unless the gate is disabled).
+        gate_nnz = nnz if _agg_fillgate_enabled() else -1
+        raw = _c_presolve_agg(
+            result._matrix,
+            _pack_dbls(result.b),
+            _pack_dbls(result.c),
+            _pack_dbls(result.lo),
+            _pack_dbls(result.hi),
+            max_fill,
+            fill_budget,
+            gate_nnz,
+        )
+        second = None if raw is None else _result_from_c(raw)
     else:
-        r_indptr, r_indices, r_data = result.indptr, result.indices, result.data
-    # Early-abort budget: aggregation is stopped once its cumulative fill exceeds
-    # this, so fill-positive instances (greenbea) bail after a handful of
-    # substitutions instead of paying the whole cascade before the fill-gate
-    # rejects them. Fill-negative instances (80bau3b nets -287) never approach it.
-    fill_budget = max(256, nnz // 40)
-    second = _presolve_eq_box_python(
-        result.rows,
-        result.cols,
-        r_indptr,
-        r_indices,
-        r_data,
-        list(result.b),
-        list(result.c),
-        list(result.lo),
-        list(result.hi),
-        max_fill=max_fill,
-        agg=True,
-        agg_fill_budget=fill_budget,
-        agg_only=True,
-    )
+        if result._matrix is not None:
+            r_indptr, r_indices, r_data = result._matrix.to_components()
+        else:
+            r_indptr, r_indices, r_data = result.indptr, result.indices, result.data
+        second = _presolve_eq_box_python(
+            result.rows,
+            result.cols,
+            r_indptr,
+            r_indices,
+            r_data,
+            list(result.b),
+            list(result.c),
+            list(result.lo),
+            list(result.hi),
+            max_fill=max_fill,
+            agg=True,
+            agg_fill_budget=fill_budget,
+            agg_only=True,
+        )
     if second is None or not _fixpoint_reduction_is_substantial(
         second.removed_rows, second.removed_cols, result.rows, result.cols
     ):
@@ -972,7 +1006,13 @@ def _presolve_eq_box_python(
                 agg_in_queue.discard(j)
                 if j in removed_cols:
                     continue
-                rows_j = [i for i in col_rows[j] if i not in removed_rows]
+                # Sorted iteration (ascending row index) makes the pivot
+                # tie-break and the worklist append order deterministic and
+                # reproducible by the native _csparse aggregation port. Set
+                # iteration order is not portable to C, so it is canonicalized
+                # here; ``col_rows[j]`` is unchanged between this scan and the
+                # substitution loop below, so the same order is reused there.
+                rows_j = sorted(i for i in col_rows[j] if i not in removed_rows)
                 if not rows_j:
                     continue
                 # Choose the pivot equality row for column j that is (a) implied
@@ -1029,7 +1069,7 @@ def _presolve_eq_box_python(
                 # other row loses its (r, j) entry, and term substitution adds or
                 # cancels fill. The running total drives the early-abort budget.
                 delta = -len(row_entries[i])
-                for r in list(col_rows[j]):
+                for r in rows_j:
                     if r == i or r in removed_rows:
                         continue
                     arj = row_entries[r].get(j)
@@ -1265,6 +1305,7 @@ def presolve_matrix(
     hi: list[float],
     *,
     max_fill: int = 5,
+    algorithm: str = "auto",
 ) -> PresolveResult | None:
     """Fast presolve accepting a CSRMatrix directly.
 
@@ -1285,7 +1326,11 @@ def presolve_matrix(
         def _agg(res: PresolveResult | None) -> PresolveResult | None:
             # General equality-row aggregation lives only in the Python reducer;
             # inject it as a composed re-stage over whatever the C path produced.
-            if res is not None and _agg_restage_enabled():
+            # Aggregation is validated for the IPM route only: aggregated
+            # shapes raise DS pivot counts and can push PDHG past its
+            # iteration limit even when fill-negative, so explicit
+            # simplex/dual_simplex/pdhg requests skip the re-stage.
+            if res is not None and algorithm in ("ipm", "auto") and _agg_restage_enabled():
                 return _maybe_aggregate(res, max_fill)
             return res
 

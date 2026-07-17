@@ -19,11 +19,13 @@ from scipy.optimize import linprog
 import linprogx.presolve as presolve_module
 from linprogx.presolve import (
     PresolveResult,
+    _Aggregation,
     _c_v2_candidates,
     _ColumnSingleton,
     _Doubleton,
     _DuplicateColumn,
     _FixedVar,
+    _maybe_aggregate,
     _pack_dbls,
     _presolve_eq_box_python,
     _v2_enabled,
@@ -117,8 +119,8 @@ def _assert_results_identical(
             )
             assert cr.coef_kept == pr.coef_kept, f"record {k} coef_kept mismatch{msg}"
             assert cr.rhs == pr.rhs, f"record {k} rhs mismatch{msg}"
-        elif isinstance(pr, _ColumnSingleton):
-            assert isinstance(cr, _ColumnSingleton)
+        elif isinstance(pr, (_ColumnSingleton, _Aggregation)):
+            assert isinstance(cr, (_ColumnSingleton, _Aggregation))
             assert cr.eliminated == pr.eliminated, f"record {k} eliminated mismatch{msg}"
             assert cr.coef_eliminated == pr.coef_eliminated, (
                 f"record {k} coef_eliminated mismatch{msg}"
@@ -297,8 +299,12 @@ def test_v2_zero_opportunity_path_packs_vectors_once(
 
 
 def test_matrix_v2_uses_direct_high_yield_path_and_postsolves_exactly(
-    v2_enabled: None,
+    v2_enabled: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Characterizes the V2 direct-path reduction structure; the (default-on)
+    # aggregation re-stage would further eliminate the free column x0, so pin it
+    # off to isolate the V2 records under test.
+    monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "0")
     matrix = csr_matrix(
         3,
         6,
@@ -731,6 +737,89 @@ def test_lpnetlib_fixture_native_v2_bit_equivalence(fixture_name: str, v2_enable
         hi,
         label=fixture_name,
     )
+
+
+@pytest.mark.skipif(not Path("/tmp/lpsuite").exists(), reason="/tmp/lpsuite fixtures unavailable")
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "lp_80bau3b",
+        "lp_cre_a",
+        "lp_cre_b",
+        "lp_cre_d",
+        "lp_d2q06c",
+        "lp_degen3",
+        "lp_fit2p",
+        "lp_greenbea",
+        "lp_ken_07",
+        "lp_ken_11",
+        "lp_ken_13",
+        "lp_ken_18",
+        "lp_maros_r7",
+        "lp_osa_14",
+        "lp_osa_30",
+        "lp_osa_60",
+        "lp_pds_10",
+        "lp_pds_20",
+        "lp_pilot87",
+        "lp_qap12",
+        "lp_qap15",
+        "lp_stocfor3",
+        "lp_truss",
+        "lp_woodw",
+    ],
+)
+def test_lpnetlib_fixture_native_agg_bit_equivalence(
+    fixture_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The native (_csparse) aggregation re-stage must reproduce the pure-Python
+    agg_only re-stage bit-for-bit -- the composed reduced problem, its records,
+    and the accept/reject (fill-gate) decision -- on every LPnetlib fixture.
+
+    Extends the V2 bit-equivalence pattern above to the aggregation port. The
+    ``_maybe_aggregate`` re-stage runs over whatever the base C presolve produced,
+    so both arms share the same base reduction; only the aggregation pass differs
+    (native vs Python fallback)."""
+    if presolve_module._c_presolve_agg is None:
+        pytest.skip("native aggregation extension unavailable")
+
+    path = Path("/tmp/lpsuite") / f"{fixture_name}.mat"
+    raw = loadmat(path)["Problem"][0, 0]
+    aux = raw["aux"][0, 0]
+    A = raw["A"].tocsr().astype(float)
+    b = raw["b"].ravel().astype(float).tolist()
+    c_vec = aux["c"].ravel().astype(float).tolist()
+    lo = aux["lo"].ravel().astype(float).tolist()
+    hi = aux["hi"].ravel().astype(float).tolist()
+
+    # Force the aggregation re-stage on (the ship default is env-driven).
+    monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "1")
+    matrix = from_scipy_sparse(A)
+
+    def base() -> PresolveResult | None:
+        return presolve_matrix(matrix, list(b), list(c_vec), list(lo), list(hi))
+
+    base_result = base()
+    if base_result is None:
+        pytest.skip(f"{fixture_name}: base presolve reduces nothing; re-stage never runs")
+
+    # Native aggregation pass.
+    base_native = base()
+    assert base_native is not None
+    native = _maybe_aggregate(base_native, 5)
+    # Python fallback aggregation pass (same code path with the extension hidden).
+    monkeypatch.setattr(presolve_module, "_c_presolve_agg", None)
+    base_reference = base()
+    assert base_reference is not None
+    reference = _maybe_aggregate(base_reference, 5)
+
+    native_accepted = native is not None and native.removed_rows != base_result.removed_rows
+    ref_accepted = reference is not None and reference.removed_rows != base_result.removed_rows
+    assert native_accepted == ref_accepted, (
+        f"{fixture_name}: accept/reject decision mismatch native={native_accepted} "
+        f"python={ref_accepted}"
+    )
+    _assert_results_identical(native, reference, label=f"{fixture_name}-agg")
 
 
 # ---------------------------------------------------------------------------

@@ -229,14 +229,20 @@ def test_compose_offset_and_counts() -> None:
 # --------------------------------------------------------------------------- #
 
 
+# These characterize the classic+fixpoint reduction, which composes strictly
+# before the (now default-on) aggregation re-stage. Pin the aggregation knob off
+# so the goldens isolate the fixpoint shapes; the aggregation port has its own
+# bit-equivalence suite in test_presolve_equivalence.py.
 @pytest.mark.skipif(not REPO_CRE_A.exists(), reason="in-repo cre_a fixture missing")
 def test_cre_a_off_path_is_pre_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "0")
     monkeypatch.setenv("LINPROGX_PRESOLVE_FIXPOINT", "0")
     assert _shape(REPO_CRE_A) == GOLDEN_OFF["cre_a"]
 
 
 @pytest.mark.skipif(not REPO_CRE_A.exists(), reason="in-repo cre_a fixture missing")
 def test_cre_a_on_path_reaches_second_fixpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "0")
     monkeypatch.setenv("LINPROGX_PRESOLVE_FIXPOINT", "1")
     assert _shape(REPO_CRE_A) == EXPECT_ON["cre_a"]
 
@@ -255,6 +261,7 @@ def test_cre_a_reconstruction_matches_oracle(monkeypatch: pytest.MonkeyPatch) ->
 @pytest.mark.skipif(not SUITE.exists(), reason="/tmp/lpsuite fixtures unavailable")
 @pytest.mark.parametrize("name", sorted(GOLDEN_OFF))
 def test_off_path_byte_identical(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "0")
     monkeypatch.setenv("LINPROGX_PRESOLVE_FIXPOINT", "0")
     assert _shape(SUITE / f"lp_{name}.mat") == GOLDEN_OFF[name]
 
@@ -262,6 +269,7 @@ def test_off_path_byte_identical(name: str, monkeypatch: pytest.MonkeyPatch) -> 
 @pytest.mark.skipif(not SUITE.exists(), reason="/tmp/lpsuite fixtures unavailable")
 @pytest.mark.parametrize("name", sorted(EXPECT_ON))
 def test_on_path_second_fixpoint(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "0")
     monkeypatch.setenv("LINPROGX_PRESOLVE_FIXPOINT", "1")
     assert _shape(SUITE / f"lp_{name}.mat") == EXPECT_ON[name]
 
@@ -305,5 +313,6 @@ def test_tiny_second_reduction_is_discarded(name: str, monkeypatch: pytest.Monke
     # These trigger the second pass (classic >= 2%) but the second reduction is
     # too small to keep; the acceptance gate must fall back to the classic shape
     # (keeping it regressed the solve by up to 41% in measurement).
+    monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "0")
     monkeypatch.setenv("LINPROGX_PRESOLVE_FIXPOINT", "1")
     assert _shape(SUITE / f"lp_{name}.mat") == GOLDEN_OFF[name]
