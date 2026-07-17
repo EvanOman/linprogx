@@ -1929,6 +1929,28 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   presolve-V2 playbook. Kill criteria: greenbea rows <1000, DS
   pivots -20%, wall -25%, 2e-5 oracle gate. BUILD DISPATCHED.
 
+- THIRTY-FIRST SETTLED — AGGREGATION SHAPE != OUR PIVOT WIN
+  (2026-07-17, opus worker; machinery shipped default-OFF at
+  b7dde85): general equality-row aggregation is CORRECT and hits
+  the HiGHS-ablation shape targets (greenbea 936 rows < HiGHS 951;
+  80bau3b 1569 ~ 1537; woodw 0 aggregations — its singletons are
+  genuinely not implied-free) with oracle equivalence everywhere —
+  but the performance thesis is REFUTED FOR OUR SOLVER: our Dantzig
+  DS does MORE pivots on the aggregated greenbea (fill-guard
+  frontier: best -7% pivots at FILL=15/1234 rows; +24% at the
+  936-row target; no setting achieves rows<1000 AND pivots<3520).
+  HiGHS's 2,836-pivot behavior on that shape belongs to ITS pricing,
+  not to the shape — census H4-adjacent projections from another
+  solver's realized behavior are not transferable. METHOD DOCTRINE:
+  shape parity is not pivot parity. LIVE RESIDUE: on 80bau3b
+  aggregation is FILL-NEGATIVE (nnz 21798->21511) with IPM iters
+  47->43 (-8.5%) and the cell needs only ~6% — blocked purely by
+  the Python pass cost (~0.5s, _column_bounds_are_redundant
+  dominates, 211k calls). Native IPM-gated port targeting 80bau3b
+  dispatched. greenbea's presolve frontier is CLOSED; its remaining
+  gap is pricing-side (HiGHS-class dual steepest edge is published
+  literature — candidate future unit, paper-based only).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
