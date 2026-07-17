@@ -20,14 +20,17 @@ Where the two axes stand:
   certified optimality.
 - **Runtime: aggregate EXCEEDED, per-instance majority WON.** The suite total and
   geometric-mean time ratio have favored linprogx since early in the campaign; the
-  paired head-to-head is now **20W-1P-3L**, including the `qap15` coverage win,
-  on the 2026-07-17 AWS `us-west-2` protocol-v3 aggregation-era board. A loss census
-  plus two presolve ships (H0, H1) took the board to 20W-0P-4L, and a native
+  paired head-to-head is now **21W-1P-2L**, including the `qap15` coverage win,
+  on the 2026-07-17 AWS `us-west-2` protocol-v3 a2-era board. A loss census
+  plus two presolve ships (H0, H1) took the board to 20W-0P-4L; a native
   equality-row aggregation ship then flipped `80bau3b` to a win while reclassifying
-  `cre_a` to an honest coin flip — dropping the loss column to three and opening a
-  one-cell parity column. The three remaining losses are greenbea 1.74, pds_10
-  1.26–1.57 (host-dependent), and woodw 1.20; the single parity cell is cre_a
-  (see [Current certified scoreboard](#current-certified-scoreboard)).
+  `cre_a` to an honest coin flip (20W-1P-3L); and an on-host slice census then
+  isolated the memory-bandwidth **refactor slice**, whose cache-sized-tail
+  single-thread scheduling ship flipped `woodw` to a win and deepened `80bau3b`,
+  dropping the loss column to two. The two remaining losses are greenbea ~1.7 and
+  pds_10 1.26–1.57 (host-dependent), both now formally requiring new idea classes;
+  the single parity cell is cre_a (see
+  [Current certified scoreboard](#current-certified-scoreboard)).
 
 ## The arc
 
@@ -37,9 +40,12 @@ twenty substantive ship commits to presolve V2 shipping on 2026-07-14, followed
 by the setup fast path, native presolve port, and protocol-v3 certification wave
 on 2026-07-15 and 2026-07-16, a loss-census-driven presolve wave
 (H0's O(nnz) row-build fix and H1's fixpoint re-stage) that flipped four cells to
-a **20W-0P-4L** board on 2026-07-17, and finally a native equality-row aggregation
+a **20W-0P-4L** board on 2026-07-17, a native equality-row aggregation
 ship the same day that flipped `80bau3b` to a win and reclassified `cre_a` to a
-coin flip, settling the **20W-1P-3L** aggregation-era board. The through-line:
+coin flip (**20W-1P-3L**), and finally an on-host slice census that isolated the
+memory-bandwidth **refactor slice**, whose cache-sized-tail single-thread
+scheduling ship flipped `woodw` and deepened `80bau3b` to settle the
+**21W-1P-2L** a2-era board. The through-line:
 the IPM factor path, dual-simplex LU path, presolve layer, and measurement
 protocol were each tightened under paired certification, closing whole classes
 of hypotheses along the way. The final pre-V2 ships came out of a joint
@@ -407,39 +413,124 @@ setuptools 83.0.0, advancing the exclude-newer pin 06-20 → 07-10; both release
 The flip and the reclassification net to **20W-1P-3L**: the loss column drops to
 three (greenbea, pds_10, woodw) and a one-cell parity column (cre_a) opens.
 
+### The bandwidth slice and the greenbea closure
+
+With the aggregation win settled, `woodw` (1.20) was the last loss that still
+looked like a numerics problem rather than a missing idea class. The endgame
+turned to a **measurement method** to locate exactly where its wall went:
+instrument the IPM phases on-host and difference them against the same phases
+run locally.
+
+**The on-host IPM slice census (the bandwidth slice, isolated).** The instrument
+(`LINPROGX_IPM_SLICE`, result-embedded, flowing through the bench harness at
+~0.6% overhead) was captured with an **envab** A/B on three us-west-2 hosts at
+`592d2c0` (`assets/modal_bench_592d2c0fa450_envab_hosts3.json`, stored as
+artifact-only envab metadata, not paired rows). The census read a clean signal:
+the **refactor** phase inflates ×1.73 on `woodw`, ×2.22 on `80bau3b`, ×1.60 on
+`cre_a`, and ×1.50 on `pilot87` from local to on-host, versus ×1.2–1.5 for every
+other phase — and refactor is **51–67% of on-host IPM wall**. `woodw`'s *entire*
+1.20 loss is that slice's host-bandwidth behavior; its local board is near
+parity. This is the campaign's **bandwidth slice**, and it is precisely the
+`AGENTS.md` forward frontier: bandwidth-lean numeric factorization.
+
+**The a2 mechanism (fork-join contention on cache-sized tails).** The refactor
+slice was losing to memory-bandwidth **fork-join contention** on the small,
+cache-sized dense tails: parallelizing a tail that already fits in cache pays
+thread-scheduling and bandwidth-sharing costs with no compute win. The a2 ship
+(`b394c7e`) runs the cache-sized dense-tail `dpotrf` **single-threaded** with
+cache-aware scheduling — refactor **−19.9% local**, amplified on the
+bandwidth-tight certification hosts.
+
+**The woodw flip and the honest cumulative accounting.** The a2 certification
+(`c5517a2`, v3, three us-west-2 hosts × seven pairs,
+`assets/modal_bench_c5517a23f370_paired_hosts3.json`):
+
+- `woodw` **1.20 → 0.962** [0.884, 0.970], **21/21** — the flip.
+- `80bau3b` **0.881 → 0.793** [0.756, 0.811], 21/21 — deepened.
+- `cre_a` **0.995**, 13/21 — the coin flip trending our side
+  (**0.939 / 1.021 / 0.995** across three waves).
+- `pilot87` printed **1.027** [0.914, 1.292], but its code path is
+  byte-identical under a2 (its 10 MiB tail is above the single-thread
+  threshold), iterations are **128 in every pair of both waves**, and HiGHS
+  walls were flat while ours swung 3.76 → 6.13s with the host hardware. This is
+  a **host lottery**, the same class as `pds_10`'s documented PDHG swings, so
+  `pilot87` is scored from its 0.826 first-v3 win, not this print. Honest
+  cumulative accounting across all v3 waves: **30/42 pair wins, median of six
+  host-medians 0.927 = host-conditional WIN**.
+
+The flip nets to **21W-1P-2L**: the loss column drops to two (greenbea, pds_10),
+`cre_a` holds parity.
+
+**The greenbea closure (a best-in-class negative result).** In parallel, the
+last presolve-side hope for `greenbea` was closed by a **three-stage anatomy**
+of its 1,563-pivot gap to HiGHS, decomposing it into **1,090 simplex-internal +
+473 presolve-geometry** pivots. Neither transfers. Chasing HiGHS's presolve
+geometry is non-transferable **both directions**: running our dual simplex on
+*their* reduction costs 5,222 pivots — **823 worse** than on our own. And our
+Dantzig already beats their Dantzig **2.8×** on identical input (4,399 vs 12,279
+pivots); their edge is the DSE machinery our exact-DSE implementation does not
+reproduce (settled separately). The decisive kill was a **basis transfer**
+experiment: HiGHS's own Phase-1 basis, injected into our dual simplex (the
+mapping validated by a 0/4-pivot optimal-basis sanity check), yields 3,529
+pivots but a **flat wall** (0.399 vs 0.390s) — the transferred basis
+**densifies** our solves (88.8 → 113.1 µs/pivot). Even 2,836 pivots at that
+density projects 0.321s against HiGHS's 0.266s. **Pivot parity requires
+per-pivot parity, and the two trade against each other.** Every lever family —
+presolve, leaving rules, starting basis, ratio test, crash, and the per-pivot
+slice — is now settled; `greenbea` (~1.7) needs an idea class the campaign has
+not found. The only residue shipped default-off: a native basis-injection
+warm-start hook, kept as research tooling. Both remaining losses — `greenbea`
+and `pds_10` — are therefore formally **out of scoped levers**; each requires a
+new idea class (HiGHS-class dual steepest edge and ranged-row support,
+respectively).
+
 ## Current certified scoreboard
 
 The **certified** standing uses the protocol-v3 median-of-hosts method in
 `docs/HANDOFF.md` and the Modal artifacts replayed into `assets/campaign.db`;
 the single-shot replay table below is narrative-grade only. The board of record
 combines the stable prior cells with the 2026-07-17 AWS `us-west-2`
-aggregation-era certification (three hosts × seven pairs), which re-certifies the
-five instances the native equality-row aggregation touched, layered over the
-census-wave and prior v3 certifications:
+a2-era certification (three hosts × seven pairs), which re-certifies the
+four instances the cache-sized-tail single-thread scheduling ship touched, layered
+over the aggregation, census-wave, and prior v3 certifications:
 
-- **Aggregation-era board of record: 20W-1P-3L**, including `qap15` as a coverage win.
-- **The aggregation flip:** `80bau3b` 1.062 → **0.881** [0.840, 0.948] (20/21),
-  the native equality-row aggregation win — with `d2q06c` **0.371** (21/21) and
-  `ken_07` **0.410** (21/21) deepened on the same wave.
-- **Parity (1):** `cre_a` is honestly a coin flip — **0.939** and **1.021**
-  across the two waves. Decomposed by bit-identical iterations (34 both waves):
-  our +4ms (~the 2.75ms reject scan) vs HiGHS's −6ms of host luck, on a cell
-  whose true margin is ±3% around parity. Scored as parity, not the census win.
-- **Carried-over flips and wins:** `osa_60` **0.280** (21/21), `osa_14`
+- **a2-era board of record: 21W-1P-2L**, including `qap15` as a coverage win.
+- **The a2 flip:** `woodw` 1.20 → **0.962** [0.884, 0.970] (21/21), the
+  cache-sized dense-tail single-thread `dpotrf` scheduling win — with `80bau3b`
+  deepened **0.881 → 0.793** [0.756, 0.811] (21/21) on the same wave. The slice
+  census (`592d2c0` envab) that scoped this ship measured the refactor phase
+  inflating ×1.6–2.2 on the certification host class: the campaign's bandwidth
+  slice.
+- **Parity (1):** `cre_a` is honestly a coin flip, now trending our side —
+  **0.939 / 1.021 / 0.995** across three waves (13/21 at 0.995 on the a2 wave).
+  The ~2% reject scan is real on a cell whose true margin is ±3% around parity,
+  so it scores as parity, not a win.
+- **Carried-over flips and wins:** `80bau3b` and `cre_a` from the a2 wave above;
+  `greenbea` (sentinel), `d2q06c` **0.371** (21/21), and `ken_07` **0.410**
+  (21/21) from the aggregation wave; `osa_60` **0.280** (21/21), `osa_14`
   **0.912** (17/21), and `stocfor3` **0.962** (17/21) from the census wave;
   `pilot87` 0.826 (21/21) and `pds_20` 0.824 (20/21) from the first v3 wave;
   plus the stable structural-win core (qap12, ken_18, maros_r7, cre_b, cre_d, …).
-- **Losses (3):** `greenbea` 1.74 (sentinel: 4399 iters identical, our wall +1%,
-  HiGHS −2.5% host drift), `pds_10` 1.26–1.57 (host-dependent PDHG swing;
-  iterations flat across pairs), and `woodw` 1.20.
+- **Losses (2):** `greenbea` ~1.7 (pivot frontier **closed** — the three-stage
+  anatomy proves pivot parity and per-pivot parity trade against each other) and
+  `pds_10` 1.26–1.57 (host-dependent PDHG swing; iterations flat across pairs).
+  Both now formally require new idea classes.
+- **Host lottery (not a loss):** `pilot87` printed **1.027** [0.914, 1.292] on
+  the a2 wave, but its code path is byte-identical under a2 (10 MiB tail above
+  the single-thread threshold), iterations are 128 in every pair of both waves,
+  and HiGHS walls were flat while ours swung 3.76 → 6.13s with the host hardware.
+  It is scored from its 0.826 first-v3 win. Cumulative v3 accounting: **30/42
+  pair wins, median of six host-medians 0.927 = host-conditional WIN**.
 - **Backfill pending:** the per-commit replay trajectory in `assets/campaign.db`
   does not yet include rows for the ship commits `d727389` (H0), `928399c` (H1),
-  or `54e9232` (native aggregation); the board is certified from the Modal
-  artifacts, and the single-shot trajectory table below still ends at `82cd31d`.
+  `54e9232` (native aggregation), or `b394c7e` (a2 scheduling); the board is
+  certified from the Modal artifacts, and the single-shot trajectory table below
+  still ends at `82cd31d`.
 
-The aggregation-era board supersedes the 20W-0P-4L census-wave board, which
-superseded the 16W-2P-6L v3 board, which in turn superseded the single-host pin4
-board. The important certification waypoints since presolve V2 shipped:
+The a2-era board supersedes the 20W-1P-3L aggregation-era board, which superseded
+the 20W-0P-4L census-wave board, which superseded the 16W-2P-6L v3 board, which
+in turn superseded the single-host pin4 board. The important certification
+waypoints since presolve V2 shipped:
 
 - **Clean-box certification at `1f4351d` (2026-07-14, AWS `us-west-2`,
   `assets/modal_bench_1f4351dcfa96_{suite,paired}.json`):** 13W-11L; geomean
@@ -495,6 +586,23 @@ board. The important certification waypoints since presolve V2 shipped:
   the 0.939 wave via 34 bit-identical iterations both times — was reclassified to
   an honest coin flip and scored as parity. `greenbea` sentinel 1.741 held clean
   (iters identical, host drift only). The board settled at **20W-1P-3L**.
+- **On-host IPM slice census (`592d2c0`, 2026-07-17, AWS `us-west-2`,
+  `assets/modal_bench_592d2c0fa450_envab_hosts3.json`):** an envab A/B that
+  measured per-phase local→on-host inflation. The **refactor** phase inflates
+  ×1.73 (`woodw`), ×2.22 (`80bau3b`), ×1.60 (`cre_a`), ×1.50 (`pilot87`) versus
+  ×1.2–1.5 elsewhere, and is 51–67% of on-host IPM wall — the bandwidth slice.
+  Stored as envab metadata (artifact-only, ~0.6% instrument overhead), not as
+  paired rows; it scoped the a2 scheduling ship.
+- **a2 certification (`c5517a2`, 2026-07-17, AWS `us-west-2`,
+  `assets/modal_bench_c5517a23f370_paired_hosts3.json`):** `woodw` flipped
+  **1.20 → 0.962** [0.884, 0.970] (21/21) on the cache-sized-tail single-thread
+  scheduling ship (`b394c7e`), with `80bau3b` deepened **0.881 → 0.793**
+  [0.756, 0.811] (21/21). `cre_a` 0.995 (13/21), the coin flip trending our
+  side. `pilot87` printed 1.027 [0.914, 1.292] but on a byte-identical code path
+  with 128 iterations in every pair of both waves and HiGHS walls flat while ours
+  swung 3.76 → 6.13s — a host lottery, scored from its 0.826 first-v3 win.
+  Cumulative v3 record 30/42 pair wins, median of six host-medians 0.927. The
+  board settled at **21W-1P-2L**.
 
 ## Headline per-instance trajectories
 
