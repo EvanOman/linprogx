@@ -98,8 +98,8 @@ V3_BOARD = {
     },
 }
 
-# Board of record after the H0+H1 census wave (four flips off the v3 board).
-CANONICAL_BOARD = {
+# Prior board of record after the H0+H1 census wave (four flips off the v3 board).
+CENSUS_BOARD = {
     "date": "2026-07-17",
     "label": "Protocol v3 census-wave board (2026-07-17)",
     # The census-wave artifact re-certifies the seven instances H0+H1 touched;
@@ -147,6 +147,67 @@ CANONICAL_BOARD = {
         "pds_10": "1.26-1.57 (host-dependent PDHG swing)",
         "woodw": 1.20,
         "80bau3b": 1.062,
+    },
+}
+
+# Board of record after the native equality-row aggregation certification:
+# 80bau3b flips to a win and cre_a is reclassified to honest coin-flip parity.
+CANONICAL_BOARD = {
+    "date": "2026-07-17",
+    "label": "Protocol v3 aggregation-era board (2026-07-17)",
+    # The aggregation artifact re-certifies the five instances the native
+    # equality-row aggregation touched (80bau3b/cre_a/greenbea/d2q06c/ken_07);
+    # osa_60/osa_14/stocfor3/pds_10 carry from the census wave, pds_20/pilot87
+    # (wins) from the first v3 wave, and woodw (loss) from the v3 knife-edge.
+    "artifacts": [
+        "modal_bench_70203c413cea_paired_hosts3.json",
+        "modal_bench_928399cf5fea_paired_hosts3.json",
+        "modal_bench_c34417761bb6_paired_hosts3.json",
+        "modal_bench_b656ef3f8915_paired_hosts3.json",
+    ],
+    "agg_artifact": "modal_bench_70203c413cea_paired_hosts3.json",
+    "census_artifact": "modal_bench_928399cf5fea_paired_hosts3.json",
+    "prior_core_artifact": "modal_bench_c34417761bb6_paired_hosts3.json",
+    "prior_woodw_artifact": "modal_bench_b656ef3f8915_paired_hosts3.json",
+    "summary": "20W-1P-3L",
+    "wins": [
+        "qap12",
+        "ken_18",
+        "d2q06c",
+        "fit2p",
+        "truss",
+        "ken_07",
+        "ken_11",
+        "ken_13",
+        "cre_b",
+        "maros_r7",
+        "cre_d",
+        "degen3",
+        "pds_20",
+        "osa_30",
+        "pilot87",
+        "osa_60",
+        "osa_14",
+        "stocfor3",
+        "80bau3b",
+    ],
+    "coverage_wins": ["qap15"],
+    # The native-aggregation flip off the 20W-0P-4L census-wave board.
+    "flips": {
+        "80bau3b": "1.062 -> 0.881 (20/21 wins) via native equality-row aggregation",
+    },
+    "deepened": {
+        "d2q06c": "0.371 (21/21 wins)",
+        "ken_07": "0.410 (21/21 wins)",
+    },
+    # cre_a reclassified from the census-wave win to an honest coin flip.
+    "parity": {
+        "cre_a": "coin flip (0.939 and 1.021 across waves); ~2% reject scan is real on a +-3% cell",
+    },
+    "losses": {
+        "greenbea": 1.741,
+        "pds_10": "1.26-1.57 (host-dependent PDHG swing)",
+        "woodw": 1.20,
     },
 }
 
@@ -298,7 +359,7 @@ data = {
     "aggregate": agg,
     "generated": "2026-07-17",
     "canonical_board": CANONICAL_BOARD,
-    "prior_boards": [V3_BOARD, PIN4_BOARD],
+    "prior_boards": [CENSUS_BOARD, V3_BOARD, PIN4_BOARD],
 }
 
 if table_exists("bench_artifacts"):
@@ -366,12 +427,15 @@ if table_exists("modal_v3_pairs"):
             SELECT artifact, instance, hosts_observed, pairs_total, lx_wins_total,
                    ratio_median_of_hosts, ratio_min_host, ratio_max_host, verdict
             FROM modal_v3_pairs
-            WHERE artifact = :census
+            WHERE artifact = :agg
+               OR (artifact = :census
+                   AND instance IN ('lp_osa_60', 'lp_osa_14', 'lp_stocfor3', 'lp_pds_10'))
                OR (artifact = :prior_core AND instance IN ('lp_pds_20', 'lp_pilot87'))
                OR (artifact = :prior_woodw AND instance = 'lp_woodw')
             ORDER BY ratio_median_of_hosts
             """,
             {
+                "agg": CANONICAL_BOARD["agg_artifact"],
                 "census": CANONICAL_BOARD["census_artifact"],
                 "prior_core": CANONICAL_BOARD["prior_core_artifact"],
                 "prior_woodw": CANONICAL_BOARD["prior_woodw_artifact"],
@@ -431,18 +495,21 @@ if table_exists("bench_artifacts"):
         )
 
 if table_exists("modal_v3_pairs"):
-    print(f"\n=== CANONICAL BOARD PAIRS ({CANONICAL_BOARD['summary']} census-wave) ===")
+    print(f"\n=== CANONICAL BOARD PAIRS ({CANONICAL_BOARD['summary']} aggregation-era) ===")
     for r in conn.execute(
         """
         SELECT instance, pairs_total, lx_wins_total, ratio_median_of_hosts,
                verdict, artifact
         FROM modal_v3_pairs
-        WHERE artifact = :census
+        WHERE artifact = :agg
+           OR (artifact = :census
+               AND instance IN ('lp_osa_60', 'lp_osa_14', 'lp_stocfor3', 'lp_pds_10'))
            OR (artifact = :prior_core AND instance IN ('lp_pds_20', 'lp_pilot87'))
            OR (artifact = :prior_woodw AND instance = 'lp_woodw')
         ORDER BY ratio_median_of_hosts
         """,
         {
+            "agg": CANONICAL_BOARD["agg_artifact"],
             "census": CANONICAL_BOARD["census_artifact"],
             "prior_core": CANONICAL_BOARD["prior_core_artifact"],
             "prior_woodw": CANONICAL_BOARD["prior_woodw_artifact"],

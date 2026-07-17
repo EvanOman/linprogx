@@ -20,11 +20,13 @@ Where the two axes stand:
   certified optimality.
 - **Runtime: aggregate EXCEEDED, per-instance majority WON.** The suite total and
   geometric-mean time ratio have favored linprogx since early in the campaign; the
-  paired head-to-head is now **20W-0P-4L**, including the `qap15` coverage win,
-  on the 2026-07-17 AWS `us-west-2` protocol-v3 census-wave board. A loss census
-  plus two presolve ships (H0, H1) flipped four cells off the prior 16W-2P-6L
-  board and closed the parity column entirely; the four remaining losses are
-  greenbea 1.69, pds_10 1.26–1.57 (host-dependent), woodw 1.20, and 80bau3b 1.062
+  paired head-to-head is now **20W-1P-3L**, including the `qap15` coverage win,
+  on the 2026-07-17 AWS `us-west-2` protocol-v3 aggregation-era board. A loss census
+  plus two presolve ships (H0, H1) took the board to 20W-0P-4L, and a native
+  equality-row aggregation ship then flipped `80bau3b` to a win while reclassifying
+  `cre_a` to an honest coin flip — dropping the loss column to three and opening a
+  one-cell parity column. The three remaining losses are greenbea 1.74, pds_10
+  1.26–1.57 (host-dependent), and woodw 1.20; the single parity cell is cre_a
   (see [Current certified scoreboard](#current-certified-scoreboard)).
 
 ## The arc
@@ -33,9 +35,11 @@ The campaign narrative (fully dated in `docs/HANDOFF.md`) runs from a **14-10**
 paired head-to-head at the session-start baseline (`a1a355d`, 2026-07-04) through
 twenty substantive ship commits to presolve V2 shipping on 2026-07-14, followed
 by the setup fast path, native presolve port, and protocol-v3 certification wave
-on 2026-07-15 and 2026-07-16, and finally a loss-census-driven presolve wave
+on 2026-07-15 and 2026-07-16, a loss-census-driven presolve wave
 (H0's O(nnz) row-build fix and H1's fixpoint re-stage) that flipped four cells to
-a **20W-0P-4L** board on 2026-07-17. The through-line:
+a **20W-0P-4L** board on 2026-07-17, and finally a native equality-row aggregation
+ship the same day that flipped `80bau3b` to a win and reclassified `cre_a` to a
+coin flip, settling the **20W-1P-3L** aggregation-era board. The through-line:
 the IPM factor path, dual-simplex LU path, presolve layer, and measurement
 protocol were each tightened under paired certification, closing whole classes
 of hypotheses along the way. The final pre-V2 ships came out of a joint
@@ -338,32 +342,104 @@ from bounded-singleton elimination; the cause is unknown and under measurement
 structural unit behind both remaining big losses — an architecture project, not
 a presolve probe, if the ceiling is judged worth it.
 
+### The aggregation arc: one rule family, a refuted thesis, and one real win
+
+The census had named greenbea's 574-row HiGHS reduction as an unknown cause. A
+HiGHS 1.14.0 `presolve_rule_off` **ablation** found it: **one rule family** —
+the Aggregator (rule 12) plus free-column substitution (rule 8), i.e. general
+equality-row aggregation, the *k>2 generalization of our doubleton* — accounts
+for the entire presolve deficit on **three of the four remaining losses**.
+Disabling it lands HiGHS on our shapes within 0–5 rows: greenbea 951 → 1521 (vs
+our 1525), woodw 557 → 707 (vs our 707 **exactly**), 80bau3b 1537 → 1997 (vs our
+1992). We already remove *more* forcing rows than HiGHS (351 vs 190); what we
+lack is the substitution that consumes rows first.
+
+**The transferability lesson (shape parity is not pivot parity).** Building the
+aggregation was straightforward and correct — it hit every ablation shape target
+with oracle equivalence everywhere (greenbea 936 rows < HiGHS 951; 80bau3b 1569 ~
+1537; woodw 0 aggregations, its singletons genuinely not implied-free). But the
+performance thesis was **refuted for our solver**: our Dantzig dual simplex does
+*more* pivots on the aggregated greenbea. The fill-guard frontier peaked at −7%
+pivots (FILL=15 at 1234 rows) and hit +24% at the 936-row target; **no setting
+achieved rows<1000 AND pivots<3520**. HiGHS's 2,836-pivot behavior on that shape
+belongs to *its* pricing, not to the shape — a projection from another solver's
+realized behavior is not transferable. greenbea's presolve frontier is therefore
+**closed**; its remaining gap is pricing-side (HiGHS-class dual steepest edge,
+published literature, paper-only). The live residue was **80bau3b**: there the
+aggregation is fill-*negative* (nnz 21798 → 21511) with IPM iters 47 → 43, and
+the cell needed only ~6% — blocked purely by the Python pass cost.
+
+**The native port economics.** The pure-Python pass could not net the win: even
+driven from 465ms to 42ms (11×), its floor was ~6ms build + ~30ms scan against a
+~4ms budget. The C port closed it: general equality-row aggregation as
+`PS_REC_AGGREGATION` (tag 5), **bit-identical on all 24 fixtures**, **2.23ms
+accept / sub-2ms rejects** (Python was **465ms**), RSS-flat over 1200 iterations.
+Shipped default-**on** at `54e9232`, **double-gated**:
+
+- **Fill-non-positive** (structural): the aggregation is accepted only where it
+  cannot grow the working matrix — on the board that is 80bau3b, d2q06c, ken_07.
+- **IPM-route-only** (the status-semantics save): aggregated shapes raise DS
+  pivots (per the transferability lesson) *and* can push PDHG past convergence.
+  The worker found the `cycle` benchmark going **optimal → iteration_limit** when
+  fill-gate-accepted — a status regression. The route gate fixes it, and the
+  `cycle` test now runs **unpinned** against the shipped default.
+
+Local A/B: **80bau3b −6.8%** (IPM 47 → 44), **d2q06c −19.7%**, **ken_07 −7.7%**;
+`cre_a` pays a ~3% reject scan (no cheap discriminator exists — fill-trajectory
+minima overlap between accepts and rejects). `just ci` fully green (coverage
+88.87%); fresh PYSEC advisories were remediated en route (pillow 12.3.0,
+setuptools 83.0.0, advancing the exclude-newer pin 06-20 → 07-10; both releases
+13–16 days old, the machine's 7-day gate still applies) at `8697483`.
+
+**The certification (`70203c4`, v3, three us-west-2 hosts × seven pairs).**
+
+- `80bau3b` **1.062 → 0.881** [0.840, 0.948], 20/21 — the native aggregation flip.
+- `d2q06c` **0.371** (21/21) and `ken_07` **0.410** (21/21), both deepened.
+- `greenbea` sentinel **1.741**: iters 4399 identical, our wall +1%, HiGHS −2.5%
+  — host drift, clean.
+- `cre_a` **1.021** [1.010, 1.052], 7/21 — but decomposed against the prior 0.939
+  wave via **bit-identical iterations** (34 both waves): our side +4ms (~the
+  2.75ms reject scan), HiGHS side −6ms (host luck). The scan's ~2% is real on a
+  cell whose true margin is ±3% around parity, so `cre_a` is **honestly a coin
+  flip** (0.939 and 1.021 across the two waves) and is **scored as parity**, not
+  as the census-wave win.
+
+The flip and the reclassification net to **20W-1P-3L**: the loss column drops to
+three (greenbea, pds_10, woodw) and a one-cell parity column (cre_a) opens.
+
 ## Current certified scoreboard
 
 The **certified** standing uses the protocol-v3 median-of-hosts method in
 `docs/HANDOFF.md` and the Modal artifacts replayed into `assets/campaign.db`;
 the single-shot replay table below is narrative-grade only. The board of record
-combines the stable prior cells with the 2026-07-17 AWS `us-west-2` census-wave
-certification (three hosts × seven pairs), which re-certifies the seven instances
-the H0+H1 presolve ships touched over the two prior v3 certifications:
+combines the stable prior cells with the 2026-07-17 AWS `us-west-2`
+aggregation-era certification (three hosts × seven pairs), which re-certifies the
+five instances the native equality-row aggregation touched, layered over the
+census-wave and prior v3 certifications:
 
-- **Census-wave board of record: 20W-0P-4L**, including `qap15` as a coverage win.
-- **Four flips off the prior 16W-2P-6L board:** `osa_60` 1.29 → **0.280**
-  (21/21), `osa_14` 1.42 → **0.912** (17/21), `cre_a` 1.002 → **0.939**
-  (18/21), and `stocfor3` 0.999 → **0.962** (17/21). The parity column is empty.
-- **Carried-over wins:** `pilot87` 0.826 (21/21) and `pds_20` 0.824 (20/21),
+- **Aggregation-era board of record: 20W-1P-3L**, including `qap15` as a coverage win.
+- **The aggregation flip:** `80bau3b` 1.062 → **0.881** [0.840, 0.948] (20/21),
+  the native equality-row aggregation win — with `d2q06c` **0.371** (21/21) and
+  `ken_07` **0.410** (21/21) deepened on the same wave.
+- **Parity (1):** `cre_a` is honestly a coin flip — **0.939** and **1.021**
+  across the two waves. Decomposed by bit-identical iterations (34 both waves):
+  our +4ms (~the 2.75ms reject scan) vs HiGHS's −6ms of host luck, on a cell
+  whose true margin is ±3% around parity. Scored as parity, not the census win.
+- **Carried-over flips and wins:** `osa_60` **0.280** (21/21), `osa_14`
+  **0.912** (17/21), and `stocfor3` **0.962** (17/21) from the census wave;
+  `pilot87` 0.826 (21/21) and `pds_20` 0.824 (20/21) from the first v3 wave;
   plus the stable structural-win core (qap12, ken_18, maros_r7, cre_b, cre_d, …).
-- **Losses (4):** `greenbea` 1.69, `pds_10` 1.26–1.57 (host-dependent PDHG
-  swing; 8576 iterations in every pair of both waves), `woodw` 1.20, and
-  `80bau3b` 1.062.
+- **Losses (3):** `greenbea` 1.74 (sentinel: 4399 iters identical, our wall +1%,
+  HiGHS −2.5% host drift), `pds_10` 1.26–1.57 (host-dependent PDHG swing;
+  iterations flat across pairs), and `woodw` 1.20.
 - **Backfill pending:** the per-commit replay trajectory in `assets/campaign.db`
-  does not yet include rows for the two ship commits `d727389` (H0) and
-  `928399c` (H1); the census-wave board is certified from the Modal artifact,
-  and the single-shot trajectory table below still ends at `82cd31d`.
+  does not yet include rows for the ship commits `d727389` (H0), `928399c` (H1),
+  or `54e9232` (native aggregation); the board is certified from the Modal
+  artifacts, and the single-shot trajectory table below still ends at `82cd31d`.
 
-The census-wave board supersedes the 16W-2P-6L v3 board, which in turn
-superseded the single-host pin4 board. The important certification waypoints
-since presolve V2 shipped:
+The aggregation-era board supersedes the 20W-0P-4L census-wave board, which
+superseded the 16W-2P-6L v3 board, which in turn superseded the single-host pin4
+board. The important certification waypoints since presolve V2 shipped:
 
 - **Clean-box certification at `1f4351d` (2026-07-14, AWS `us-west-2`,
   `assets/modal_bench_1f4351dcfa96_{suite,paired}.json`):** 13W-11L; geomean
@@ -411,6 +487,14 @@ since presolve V2 shipped:
   `stocfor3` 0.962 (17/21) — took the board to **20W-0P-4L**. `80bau3b` narrowed
   to 1.062 (7/21) without flipping; `greenbea` 1.69 and `pds_10` (host-dependent
   PDHG swing) held as the remaining structural losses alongside `woodw` 1.20.
+- **Native aggregation certification (`70203c4`, 2026-07-17, AWS `us-west-2`,
+  `assets/modal_bench_70203c413cea_paired_hosts3.json`):** `80bau3b` flipped
+  **1.062 → 0.881** [0.840, 0.948] (20/21) on the native equality-row
+  aggregation ship, with `d2q06c` 0.371 and `ken_07` 0.410 (both 21/21)
+  deepened. `cre_a` printed 1.021 [1.010, 1.052] (7/21) and — decomposed against
+  the 0.939 wave via 34 bit-identical iterations both times — was reclassified to
+  an honest coin flip and scored as parity. `greenbea` sentinel 1.741 held clean
+  (iters identical, host drift only). The board settled at **20W-1P-3L**.
 
 ## Headline per-instance trajectories
 
