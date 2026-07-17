@@ -85,6 +85,8 @@ ARTIFACT_DATES = {
     "bda0579": "2026-07-16",
     "928399c": "2026-07-17",
     "70203c4": "2026-07-17",
+    "592d2c0": "2026-07-17",
+    "c5517a2": "2026-07-17",
 }
 
 ARTIFACT_LABELS = {
@@ -100,6 +102,8 @@ ARTIFACT_LABELS = {
     "bda0579": "dense-U on-host envab A/B",
     "928399c": "H0+H1 census-wave certification",
     "70203c4": "native aggregation certification",
+    "592d2c0": "on-host IPM slice census",
+    "c5517a2": "a2 refactor certification",
 }
 
 

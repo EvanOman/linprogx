@@ -211,6 +211,75 @@ CANONICAL_BOARD = {
     },
 }
 
+# Board of record after the a2 cache-sized-tail single-thread scheduling ship:
+# woodw flips to a win and 80bau3b deepens, taking the board to 21W-1P-2L.
+A2_BOARD = {
+    "date": "2026-07-17",
+    "label": "Protocol v3 a2-era board (2026-07-17)",
+    # The a2 certification re-certifies the four instances the cache-sized-tail
+    # single-thread scheduling ship touched (80bau3b/cre_a/woodw/pilot87). woodw
+    # now comes from the a2 artifact; greenbea/d2q06c/ken_07 carry from the
+    # aggregation wave, osa_60/osa_14/stocfor3/pds_10 from the census wave, and
+    # pds_20/pilot87 (wins) from the first v3 wave. pilot87's a2 print (1.027) is
+    # a documented host lottery on a byte-identical code path, so it is scored
+    # from its first v3 certification (0.826), not from the a2 artifact.
+    "artifacts": [
+        "modal_bench_c5517a23f370_paired_hosts3.json",
+        "modal_bench_70203c413cea_paired_hosts3.json",
+        "modal_bench_928399cf5fea_paired_hosts3.json",
+        "modal_bench_c34417761bb6_paired_hosts3.json",
+    ],
+    "a2_artifact": "modal_bench_c5517a23f370_paired_hosts3.json",
+    "agg_artifact": "modal_bench_70203c413cea_paired_hosts3.json",
+    "census_artifact": "modal_bench_928399cf5fea_paired_hosts3.json",
+    "prior_core_artifact": "modal_bench_c34417761bb6_paired_hosts3.json",
+    "summary": "21W-1P-2L",
+    "wins": [
+        "qap12",
+        "ken_18",
+        "d2q06c",
+        "fit2p",
+        "truss",
+        "ken_07",
+        "ken_11",
+        "ken_13",
+        "cre_b",
+        "maros_r7",
+        "cre_d",
+        "degen3",
+        "pds_20",
+        "osa_30",
+        "pilot87",
+        "osa_60",
+        "osa_14",
+        "stocfor3",
+        "80bau3b",
+        "woodw",
+    ],
+    "coverage_wins": ["qap15"],
+    # The a2 flip off the 20W-1P-3L aggregation-era board.
+    "flips": {
+        "woodw": "1.20 -> 0.962 [0.884, 0.970] (21/21) via cache-sized-tail single-thread scheduling (b394c7e)",
+    },
+    "deepened": {
+        "80bau3b": "0.881 -> 0.793 [0.756, 0.811] (21/21) — refactor -19.9% local, amplified on bandwidth-tight hosts",
+    },
+    # cre_a remains an honest coin flip, now trending our side across three waves.
+    "parity": {
+        "cre_a": "coin flip trending our side (0.939 / 1.021 / 0.995 across waves); 13/21 at 0.995 on the a2 wave",
+    },
+    "losses": {
+        "greenbea": "~1.7 (pivot frontier closed; needs a new idea class — 35th settled)",
+        "pds_10": "1.26-1.57 (host-dependent PDHG swing; needs a new idea class — 29th settled)",
+    },
+    # pilot87's a2 print was a host lottery on a byte-identical code path.
+    "host_lottery": {
+        "pilot87": "a2 print 1.027 [0.914, 1.292]; 128 iters in every pair of both waves, HiGHS walls flat while ours swung 3.76->6.13s — scored from the 0.826 first-v3 win",
+    },
+    # Cumulative honest accounting across all v3 host-medians.
+    "cumulative": "30/42 pair wins; median of 6 host-medians 0.927 = host-conditional WIN",
+}
+
 # Canonical ship order (baseline first, then chronological ship commits).
 ORDER_SHORT = [
     "a1a355d",  # baseline
@@ -358,8 +427,8 @@ data = {
     "final_ratio": {k: (round(v, 3) if v else None) for k, v in final_ratio.items()},
     "aggregate": agg,
     "generated": "2026-07-17",
-    "canonical_board": CANONICAL_BOARD,
-    "prior_boards": [CENSUS_BOARD, V3_BOARD, PIN4_BOARD],
+    "canonical_board": A2_BOARD,
+    "prior_boards": [CANONICAL_BOARD, CENSUS_BOARD, V3_BOARD, PIN4_BOARD],
 }
 
 if table_exists("bench_artifacts"):
@@ -427,18 +496,20 @@ if table_exists("modal_v3_pairs"):
             SELECT artifact, instance, hosts_observed, pairs_total, lx_wins_total,
                    ratio_median_of_hosts, ratio_min_host, ratio_max_host, verdict
             FROM modal_v3_pairs
-            WHERE artifact = :agg
+            WHERE (artifact = :a2
+                   AND instance IN ('lp_80bau3b', 'lp_cre_a', 'lp_woodw'))
+               OR (artifact = :agg
+                   AND instance IN ('lp_greenbea', 'lp_d2q06c', 'lp_ken_07'))
                OR (artifact = :census
                    AND instance IN ('lp_osa_60', 'lp_osa_14', 'lp_stocfor3', 'lp_pds_10'))
                OR (artifact = :prior_core AND instance IN ('lp_pds_20', 'lp_pilot87'))
-               OR (artifact = :prior_woodw AND instance = 'lp_woodw')
             ORDER BY ratio_median_of_hosts
             """,
             {
-                "agg": CANONICAL_BOARD["agg_artifact"],
-                "census": CANONICAL_BOARD["census_artifact"],
-                "prior_core": CANONICAL_BOARD["prior_core_artifact"],
-                "prior_woodw": CANONICAL_BOARD["prior_woodw_artifact"],
+                "a2": A2_BOARD["a2_artifact"],
+                "agg": A2_BOARD["agg_artifact"],
+                "census": A2_BOARD["census_artifact"],
+                "prior_core": A2_BOARD["prior_core_artifact"],
             },
         )
     ]
@@ -495,24 +566,26 @@ if table_exists("bench_artifacts"):
         )
 
 if table_exists("modal_v3_pairs"):
-    print(f"\n=== CANONICAL BOARD PAIRS ({CANONICAL_BOARD['summary']} aggregation-era) ===")
+    print(f"\n=== CANONICAL BOARD PAIRS ({A2_BOARD['summary']} a2-era) ===")
     for r in conn.execute(
         """
         SELECT instance, pairs_total, lx_wins_total, ratio_median_of_hosts,
                verdict, artifact
         FROM modal_v3_pairs
-        WHERE artifact = :agg
+        WHERE (artifact = :a2
+               AND instance IN ('lp_80bau3b', 'lp_cre_a', 'lp_woodw'))
+           OR (artifact = :agg
+               AND instance IN ('lp_greenbea', 'lp_d2q06c', 'lp_ken_07'))
            OR (artifact = :census
                AND instance IN ('lp_osa_60', 'lp_osa_14', 'lp_stocfor3', 'lp_pds_10'))
            OR (artifact = :prior_core AND instance IN ('lp_pds_20', 'lp_pilot87'))
-           OR (artifact = :prior_woodw AND instance = 'lp_woodw')
         ORDER BY ratio_median_of_hosts
         """,
         {
-            "agg": CANONICAL_BOARD["agg_artifact"],
-            "census": CANONICAL_BOARD["census_artifact"],
-            "prior_core": CANONICAL_BOARD["prior_core_artifact"],
-            "prior_woodw": CANONICAL_BOARD["prior_woodw_artifact"],
+            "a2": A2_BOARD["a2_artifact"],
+            "agg": A2_BOARD["agg_artifact"],
+            "census": A2_BOARD["census_artifact"],
+            "prior_core": A2_BOARD["prior_core_artifact"],
         },
     ):
         name = r["instance"].replace("lp_", "")
