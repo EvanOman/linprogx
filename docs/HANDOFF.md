@@ -2005,6 +2005,25 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   UNIT: cre_a reject-scan cost — target <0.5ms or a proven a-priori
   discriminator (fill-trajectory minima proven non-separating).
 
+- THIRTY-THIRD SETTLED — EXACT DSE ON GREENBEA (2026-07-17, codex
+  falsifier, killed on the pre-registered gate; probe shipped
+  default-off as leaving_rule=5): exact Forrest-Goldfarb dual
+  steepest edge (correct crash-basis gamma init, exact update with
+  the extra FTRAN, objectives oracle-equal) gives greenbea 4,675
+  pivots vs Dantzig 4,399 — WORSE, and far from the 3,500 gate.
+  Combined with the earlier sweep (Devex 6,807, rules 2-4 worse or
+  failing), the ENTIRE leaving-rule family is now closed for
+  greenbea: Dantzig is its optimum, and HiGHS's 2,836 pivots come
+  from something we have not identified (different crash basis,
+  bound-flip ratio test, or presolve interplay — all speculative).
+  RESIDUE (board-irrelevant, repo value): exact DSE crushes cre_d's
+  direct-DS route (46,048 -> 10,530 pivots, wall -82%) and cuts
+  woodw/80bau3b DS pivots 24-27%, but every such cell routes IPM
+  publicly and stays faster there. greenbea remains ~1.7 with no
+  live scoped lever; next honest angle: measure HiGHS's greenbea
+  ITERATION LOG (runtime output, not source) for crash-basis size
+  and bound-flip counts to locate the missing 1,500 pivots.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
