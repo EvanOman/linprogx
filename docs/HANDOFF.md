@@ -1769,6 +1769,19 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   (greenbea+woodw+80bau3b+stocfor3), one run. cre_a fresh-eyes
   census remains queued.
 
+- TWENTY-SEVENTH SETTLED — DENSE-U ON-HOST (2026-07-16, envab mode
+  first use, 3 hosts x 7 pairs, us-west-2,
+  assets/modal_bench_bda057900a4d_envab_hosts3.json): the bandwidth
+  hypothesis is FALSIFIED on the host class that scores the board.
+  LINPROGX_DS_FT_DENSE_U on-host: greenbea 0.982 [0.981,0.982] 18/21
+  (real but -1.8%, bar was 5%), woodw 0.999, stocfor3 1.002, 80bau3b
+  0.989 with wild spread [0.946,1.127]. The family's full story:
+  -16% under 3-worker local contention, -1.8% on Modal hosts, 0% on
+  a quiet box — Modal's bandwidth pressure is far milder than
+  colocated benchmark load. DENSE-U CLOSED EVERYWHERE. Tooling
+  residue that outlives it: envab mode (on-host env-knob A/B,
+  composes with --hosts) is now available for any future knob.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
