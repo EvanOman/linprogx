@@ -40,7 +40,7 @@ def _basis_summary(basis: Any) -> dict[str, Any]:
 
 
 def _basis_columns(basis: Any, num_cols: int, num_rows: int) -> list[int]:
-    import highspy
+    import highspy  # ty: ignore[unresolved-import]
 
     columns = [
         j for j, status in enumerate(basis.col_status) if status == highspy.HighsBasisStatus.kBasic
@@ -57,7 +57,7 @@ def _basis_columns(basis: Any, num_cols: int, num_rows: int) -> list[int]:
 
 def _basis_bound_status(basis: Any, num_cols: int, num_rows: int) -> list[int]:
     """Map public HiGHS statuses to linprogx's diagnostic status codes."""
-    import highspy
+    import highspy  # ty: ignore[unresolved-import]
 
     status_map = {
         highspy.HighsBasisStatus.kLower: 0,
@@ -83,7 +83,7 @@ def _new_highs(
     basis: Any | None = None,
     verbose: bool = True,
 ) -> Any:
-    import highspy
+    import highspy  # ty: ignore[unresolved-import]
 
     log_path = OUT_DIR / f"{tag}.log"
     log_path.unlink(missing_ok=True)
@@ -263,7 +263,7 @@ def run_linprogx(
 
 
 def _highs_basis_from_linprogx(export: dict[str, Any], num_cols: int, num_rows: int) -> Any:
-    import highspy
+    import highspy  # ty: ignore[unresolved-import]
 
     basis_columns = set(export["basis"])
     bound_status = export["bound_status"]

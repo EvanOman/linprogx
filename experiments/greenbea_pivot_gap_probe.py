@@ -66,7 +66,7 @@ def prepare() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def _pass_highs_model(h: Any, model: dict[str, Any]) -> None:
-    import highspy
+    import highspy  # ty: ignore[unresolved-import]
 
     A = model["A_scipy"].tocsc()
     m, n = A.shape
@@ -100,7 +100,7 @@ def run_highs(
     options: dict[str, Any] | None = None,
     verbose: bool = False,
 ) -> dict[str, Any]:
-    import highspy
+    import highspy  # ty: ignore[unresolved-import]
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     log_path = OUT_DIR / f"{tag}.log"
@@ -226,7 +226,7 @@ def run_linprogx(original: dict[str, Any], prepared: dict[str, Any]) -> dict[str
 
 def run_reverse_cross(original: dict[str, Any]) -> dict[str, Any]:
     """Run linprogx DS directly on HiGHS's public presolved LP export."""
-    import highspy
+    import highspy  # ty: ignore[unresolved-import]
 
     h = highspy.Highs()
     h.setOptionValue("output_flag", False)
