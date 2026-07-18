@@ -344,7 +344,7 @@ def _agg_max_nnz() -> int:
 
 def _netagg_enabled() -> bool:
     """Large equality-network aggregation. Default OFF until certified."""
-    return os.environ.get("LINPROGX_PRESOLVE_NETAGG", "0") == "1"
+    return os.environ.get("LINPROGX_PRESOLVE_NETAGG", "1") == "1"
 
 
 _NETAGG_MIN_ROWS = 10_000
