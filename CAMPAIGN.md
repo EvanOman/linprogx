@@ -596,6 +596,141 @@ against every tested perturbation. `greenbea` is **accepted as the campaign's
 standing loss** pending a genuinely new idea class; its settled axes are not to be
 re-probed.
 
+### The greenbea research campaign
+
+Accepting `greenbea` as the standing loss was not the end of the inquiry — it was
+the start of the campaign's most disciplined piece of science. "It needs a
+genuinely new idea class" is a testable claim, and 2026-07-18 spent it in full.
+The board did not move (**21W-2P-1L** throughout), and this arc changed no ship;
+its product is knowledge — the most complete negative-results dossier on the
+board, **45 dated verdicts across six idea classes and four model families, with
+one long-standing mechanism finally identified**.
+
+**The fan-out: hypotheses in tension across model families.** A shared evidence
+dossier (every measured-dead axis, the per-pivot wall census, the structural
+facts) was handed to four *independent* ideation threads with no
+cross-contamination — codex gpt-5.5 twice (a standard mandate and a contrarian
+one), claude-opus, and GLM-5.2, all network-audited clean. The convergence was
+striking: **six idea classes, each proposed by two or three threads
+independently**, and three bet-carrying primaries that were genuinely in tension
+because each claimed the −41% flip alone and each had an *independent* falsifier.
+(A) **block/rank-k dual pivoting** (gpt5 and the contrarian both bet here):
+the trajectory is fine, amortize its linear algebra across a panel of `k`
+pivots. (B) **the precision family** (opus's bet): the trajectory is fine, but
+the arithmetic is twice as expensive as a 2e-5-tolerance problem needs — run an
+fp32 body under an fp64 certificate. (C) **active-set reduction** (GLM's bet):
+the trajectory is too *long* because the problem is too *big* — predict the
+bound-active set from a cheap partial IPM, fix it, and solve the small problem
+cold. Plus (D) a **behavioral-tomography probe** for the unidentified
+1,090-pivot machinery, proposed by three of the four threads, and two held
+stack-multipliers — (E) locality/SIMD reordering and (F) Schur/bordered-block
+factorization. Three theories of where the −41% lived, mutually exclusive on
+mechanism, each falsifiable in an afternoon. The plan funded all four probes in
+parallel with pre-registered kill criteria.
+
+**The kill discipline: one verdict at a time, on measurement.** The probe wave
+retired every class, and it did so honestly — including two probes where the
+proposing model *killed its own bet*:
+
+- **Active-set (P-C) — killed, over-determined (39th settled).** GLM's own bet.
+  Five independent failures at once: the reduced LPs came back *infeasible*
+  (the predicted set over-fixed), end-to-end wall was **0.89s against a 0.30s
+  bar**, and the structural prediction ceiling was only ~0.76 — the IPM primal
+  simply cannot separate optimal-nonbasic from degenerate-basic columns sitting
+  at their bounds. Prediction-based fixing died as a class.
+- **The 1,090-pivot mechanism — identified (40th settled).** See below; this is
+  the crown jewel and the one *positive* result of the wave.
+- **Precision (P-B) — killed (41st settled).** The fp32-rounded trajectory ran
+  116 pivots identical to fp64 and then *diverged at pivot 117*; the scout
+  variant's fp32 terminal basis was worthless (fp64 recovery needed 4,288 pivots,
+  100.8% of a cold solve). The deeper kill was quieter and more damning:
+  measured fp32 kernel gains were only **0.98–1.18×**, not the theoretical 2× —
+  greenbea's working set is small enough to be cache-resident, so conversion
+  overhead eats the bandwidth win. Projected end-to-end 6.8% against a 20% bar.
+- **Block-DS (P-A) — killed (42nd settled).** Panel survival was catastrophic:
+  a width-4 shadow panel survived only **1.281 consecutive pivots** on average
+  (2.30% of candidates survived three intervening pivots), so a favorable 1.434×
+  batching collapsed to 0.564× after survival — a projected *slowdown* against a
+  2.8× bar.
+- **Schur/bordered factorization (P-F) — killed on an invariant (43rd
+  settled).** Opus killing its own family's idea, and the cleanest kill of the
+  wave. `rho = B⁻ᵀe_r` is the *unique* solution fixed by the basis and the
+  leaving row, so its sparsity is **factorization-independent** — verified at
+  zero nnz disagreement across NATURAL / COLAMD / MMD orderings on real
+  trajectory bases at pivots 500 / 2000 / 3500. greenbea's 59–94% dense solve
+  vectors are the *true* BTRAN results on the rows the dual simplex visits, not
+  a symptom of border-induced fill. (The real bases are one giant connected
+  component, 88.7–95.7% — there is no thin border to strip, and bordered
+  orderings carry +30% *more* factor fill than COLAMD.)
+- **Locality (P-E) — killed; the campaign closes (45th settled).** The DS
+  kernels' indirect accesses already hit a touched cache line **95.9–96.9%** of
+  the time; the best feasible hot-pack layout modeled 0.81% *slower*, and an
+  impossible per-call oracle permutation ceilinged at **1.26%** against a 15%
+  gate. The access pattern is already near-optimal.
+
+**Two self-corrections to the campaign's own records.** A campaign that only
+confirms itself is not doing science. The active-set probe forced two honest
+revisions of the ledger: (1) the dossier's headline "83.2% of variables are
+active at optimum" was **corrected to 61.6%** — the earlier figure had counted
+681 degenerate-*basic* columns that merely sit at bounds by value, which no
+predictor can distinguish from truly-nonbasic columns. (2) The research plan had
+adjudicated a timing dispute *against* opus's skepticism, trusting a k-sweep that
+measured partial IPM at 0.117–0.128s; the probe found that number was an
+**artifact of a `LINPROGX_IPM_CROSSOVER_SLICE` gate** present in the old probe
+build but absent from current source — the real cost to k=60 is **0.630s**.
+opus's ideation-thread skepticism was right and the plan's adjudication was
+wrong, and the ledger now says so.
+
+**The crown jewel: the 1,090-pivot mystery, solved.** For weeks the record had
+carried a precise but *unexplained* fact — on the identical presolved reduction,
+HiGHS finishes in 3,309 pivots where our exact Forrest-Goldfarb DSE takes 4,675,
+a 1,090-pivot simplex-internal gap that survived every leaving-rule swap and
+every basis-transfer attempt. The tomography probe (P-D, opus, fusing three
+threads' probe designs into four experiments, HiGHS driven purely as a black box)
+finally named the mechanism, with **four mutually corroborating behavioral
+lines**: (E1) the gap is robust to tiny cost perturbation — *not* a
+tie-breaking accident; (E2) lagging our own DSE weights *triples* our pivots — so
+HiGHS's edge is not an approximation we are missing; (E3) HiGHS diverges from
+pivot 1 and spends **50% of its pivots (1,655) in an explicit dual phase-1** that
+minimizes summed dual infeasibility to a *geometrically good* dual-feasible
+basis, after which its phase-2-equivalent work is just 1,633 pivots against our
+whole 4,675; and (E4) of every documented HiGHS option, only
+`dual_feasibility_tolerance` and `scale_strategy` move the 3,309 — and both act on
+the phase-1 count, never phase-2. The verdict: **our big-M unified crash starts
+dual-feasible-by-penalty but geometrically poor; HiGHS builds a better starting
+basis in a phase we do not run.** This also overturned one of the plan's own
+adjudications — the contrarian thread had excluded dual phase-1, but it had
+conflated a *transferred* foreign phase-1 basis (rightly killed for solve
+densification) with a *native* one; the distinction is load-bearing.
+
+**But the mechanism, identified, could not be replicated.** Science demands the
+follow-through, and the follow-through failed honestly. A native dual phase-1
+built from published textbook formulations (U-P1, 44th settled) was tried both
+permitted ways and **failed 0-for-2**: the boxed-auxiliary-optimum construction
+took **11,377 pivots** — 2.6× *worse* than running no phase at all — and the
+early-dual-feasible handoff reached 11,379 total while densifying phase-2 solves
++16.5%, the trade-against curse a fifth time. HiGHS's own phase-1 does 1,655; its
+construction is far more refined than any formulation the campaign could derive
+without reading source. The 40th entry's identification *stands* — it is
+behaviorally proven to be phase architecture — but its replication is closed
+under the two-attempt rule. We know exactly what HiGHS does and exactly why it
+wins, and we cannot reproduce it within the campaign's constraints.
+
+**The honest terminal state.** With every class measured dead, `greenbea`'s
+account is complete and unusually clean. The **per-pivot** side sits at a
+*proven hard floor*: the solve vectors are intrinsically dense on the visited
+rows (a factorization invariant, not a fixable fill problem), the memory access
+is already cache-optimal, there is no amortizable cross-pivot structure (panels
+die in 1.28 pivots), and there is no precision headroom (the kernels are
+cache-resident, so fp32 buys nothing). The **pivot-count** side is
+architecturally *explained* — HiGHS's refined dual phase-1 — but *unreplicable*
+from published formulations. The cell stays ~1.69. Reopening it now requires
+one of exactly two things: a novel phase-1 formulation from future literature, or
+an idea class that none of four model families has yet named. That is a far
+stronger and more useful place to stand than "we ran out of ideas" — it is a map
+of precisely where the remaining performance is, and precisely why every road the
+campaign can currently see is closed.
+
 ## Current certified scoreboard
 
 The **certified** standing uses the protocol-v3 median-of-hosts method in
