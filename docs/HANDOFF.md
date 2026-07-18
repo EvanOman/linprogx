@@ -2222,6 +2222,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   the netagg-reduced shape is the follow-up falsifier (the old
   3.3% census ceiling was pre-netagg on other instances).
 
+- PARALLEL-COLS CERTIFICATION — PDS_10 CROSSES PARITY, BOARD
+  21W-2P-1L (2026-07-18, v3 3 hosts x 7 pairs, us-west-2, at
+  31b197a, assets/modal_bench_31b197afe7f4_paired_hosts3.json):
+  **pds_10 0.985** [0.891,1.030] 9/21 — sub-1.0 median-of-hosts;
+  the arc ran 1.26-1.57 (commissioning) -> 1.109 (netagg) -> 0.985
+  (parallel-merge + endpoint dominance). By the cre_a precedent
+  (0.995 = coin flip) pds_10 is PARITY TRENDING WINWARD. pds_20
+  holds 0.499 (20/21); qap12 sentinel clean. **V3 BOARD OF RECORD:
+  21W-2P-1L** — parity cre_a 0.995 and pds_10 0.985 (both decided
+  by host lottery, no engineered lever outstanding), sole loss
+  greenbea ~1.7 (totally closed frontier, 38th settled). The
+  ranged-row commissioning is COMPLETE: its final form was two
+  clean-room presolve units (multi-row implied-bound aggregation +
+  parallel/dominance merging) requiring no architecture change —
+  the falsifier chain corrected the premise twice en route.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
