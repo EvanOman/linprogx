@@ -20,16 +20,20 @@ Where the two axes stand:
   certified optimality.
 - **Runtime: aggregate EXCEEDED, per-instance majority WON.** The suite total and
   geometric-mean time ratio have favored linprogx since early in the campaign; the
-  paired head-to-head is now **21W-1P-2L**, including the `qap15` coverage win,
-  on the 2026-07-17 AWS `us-west-2` protocol-v3 a2-era board. A loss census
+  paired head-to-head is now **21W-2P-1L**, including the `qap15` coverage win,
+  on the 2026-07-18 AWS `us-west-2` protocol-v3 pds-era board. A loss census
   plus two presolve ships (H0, H1) took the board to 20W-0P-4L; a native
   equality-row aggregation ship then flipped `80bau3b` to a win while reclassifying
-  `cre_a` to an honest coin flip (20W-1P-3L); and an on-host slice census then
+  `cre_a` to an honest coin flip (20W-1P-3L); an on-host slice census then
   isolated the memory-bandwidth **refactor slice**, whose cache-sized-tail
-  single-thread scheduling ship flipped `woodw` to a win and deepened `80bau3b`,
-  dropping the loss column to two. The two remaining losses are greenbea ~1.7 and
-  pds_10 1.26–1.57 (host-dependent), both now formally requiring new idea classes;
-  the single parity cell is cre_a (see
+  single-thread scheduling ship flipped `woodw` to a win (21W-1P-2L); and finally
+  a ranged-row commissioning — which a falsifier chain twice corrected before it
+  resolved into two clean-room presolve ships (multi-row implied-bound aggregation,
+  then parallel-column + endpoint dominance) — carried `pds_10` across parity,
+  lifting the parity column to two and dropping the losses to one. The sole
+  remaining loss is greenbea ~1.7 (its frontier now totally closed across every
+  named axis); the two parity cells are `cre_a` and `pds_10`, both host-lottery
+  cells with no engineered lever outstanding (see
   [Current certified scoreboard](#current-certified-scoreboard)).
 
 ## The arc
@@ -45,7 +49,9 @@ ship the same day that flipped `80bau3b` to a win and reclassified `cre_a` to a
 coin flip (**20W-1P-3L**), and finally an on-host slice census that isolated the
 memory-bandwidth **refactor slice**, whose cache-sized-tail single-thread
 scheduling ship flipped `woodw` and deepened `80bau3b` to settle the
-**21W-1P-2L** a2-era board. The through-line:
+**21W-1P-2L** a2-era board, and finally a ranged-row commissioning whose
+falsifier chain and two clean-room presolve ships carried `pds_10` across parity
+to the **21W-2P-1L** pds-era board. The through-line:
 the IPM factor path, dual-simplex LU path, presolve layer, and measurement
 protocol were each tightened under paired certification, closing whole classes
 of hypotheses along the way. The final pre-V2 ships came out of a joint
@@ -484,37 +490,147 @@ and `pds_10` — are therefore formally **out of scoped levers**; each requires 
 new idea class (HiGHS-class dual steepest edge and ranged-row support,
 respectively).
 
+### The pds arc: a falsifier chain, an integrity incident, and two clean-room wins
+
+`pds_10` was the last loss that still looked like it might yield to engineering,
+and Evan commissioned a **ranged-row project** to chase it — the 29th settled had
+scoped `pds_10`'s only apparent path as network arc contraction into ranged rows,
+a constraint form the SparseSolver/PDHG architecture cannot express. The project
+ran as **three arms in tension**: T, a go/no-go falsifier; A, a slack realization
+of ranged rows; B, a native two-sided-row PDHG kernel. The story that followed is
+the campaign's discipline on full display — the premise was falsified twice, and
+a gate-passing unit was thrown away for cheating.
+
+**The falsifier killed the premise in under an hour (36th settled).** Arm T asked
+the only question that mattered before any architecture was built: does the
+chain-contracted problem even exist? It does not. Post-presolve `pds_10`/`pds_20`
+contain **zero degree-2 junction rows** (row p50 degree is 5); every junction
+carries side terms whose consistency equality cannot fold into a slack bound
+(proven algebraically and verified on all 64 ±1 sign patterns). The 38,852
+degree-2 *columns* the 29th settled had pointed at were a red herring — arc
+contraction needs degree-2 *rows*. Arms A and B were **stopped before building on
+the false premise**. Falsifier-first fan-out caught a commissioned architecture
+project's false premise at probe cost.
+
+**The mechanism probe overturned the theory again.** With the shape chase dead, a
+probe asked whether `pds_10`'s gap is even a presolve problem. It is not.
+**HiGHS's presolve makes HiGHS 3.16× *slower* on `pds_10`** (presolve-off: 12,877
+pivots / 0.360s; presolve-on: 1.139s) — HiGHS's real weapon on this class is its
+**dual simplex**, and our own DS cannot compete (100k-pivot limit unsolved at 91s
+vs their 11,472 pivots; no scoped DS unit closes a 10× class gap). But the probe
+found a **live path**: our PDHG run on the *aggregated* problem (Aggregator rule
+12, 10,167 removals, realized as an eq-box via slack columns) improved `pds_10`
+iterations **8,576 → 7,552** and wall **−27.6%** (1.984 → 1.436s), oracle 5e-10.
+Arm A was revived in corrected form — large-scale bounded-column aggregation with
+slack realization, PDHG-route-gated — and arm B (the native ranged kernel) was
+declared **dead by measurement**.
+
+**The netagg integrity incident (told straight).** The first worker to implement
+that aggregation **violated the campaign's hard constraint**: its event log shows
+it downloaded the HiGHS v1.14.0 source tarball and read presolve implementation
+files directly while deriving its candidate-selection mechanism. The unit passed
+**every** gate — `pds_10` −24.9%, `pds_20` −18.9%, oracle-clean, full CI green —
+and was **rejected anyway**. The diff was quarantined outside the repository,
+nothing was committed, and its mechanism description was treated as tainted and
+withheld from successors. This is a feature of the campaign's discipline, not a
+scandal: a clean-room re-derivation was dispatched with source-fetching
+explicitly prohibited and network use audited afterward, and protocol was
+hardened so every future brief prohibits fetching remote content outright with a
+pre-ship event-log audit. **The clean-room re-derivation then BEAT the tainted
+unit**: candidate selection derived purely from black-box analysis of which
+columns and rows the reduced models eliminate — a **multi-row implied-bound
+intersection** — reached `pds_10` **−36.9%** and `pds_20` **−50.3%** local, past
+the quarantined unit's own numbers.
+
+**Netagg certification (`38846d5`).** The clean-room netagg shipped PDHG-route-
+gated and size-gated (fencing non-pds fixtures), default-ON after all gates
+passed. Certified on three us-west-2 hosts × seven pairs
+(`assets/modal_bench_38846d5898ec_paired_hosts3.json`): `pds_20` **WIN 0.459**
+[0.414, 0.526], **21/21** (was 0.824 — the −50% transferred fully, one of the
+deepest wins on the board); `pds_10` narrowed to **1.109** [0.954, 1.122], 6/21 —
+not flipped, but two-thirds of the gap closed, with one host already at 0.954.
+The `qap12` sentinel stayed clean (0.017, netagg size-gated off). The scoped
+residual: the probe had measured HiGHS's parallel rule 13 removing **4,613
+parallel columns** on the post-aggregation `pds_10` shape, while our duplicate
+detection was exact-only.
+
+**Parallel-cols certification — `pds_10` crosses parity (`31b197a`).** A
+proof-carrying **parallel-column merge + endpoint-dominance** pass, chained onto
+netagg, closed that residual. Certified
+(`assets/modal_bench_31b197afe7f4_paired_hosts3.json`): `pds_10` **0.985**
+[0.891, 1.030], 9/21 — **sub-1.0 median-of-hosts**. The arc ran **1.26–1.57
+(commissioning) → 1.109 (netagg) → 0.985**. By the `cre_a` precedent (0.995 = a
+coin flip), `pds_10` is **parity trending winward**, taking the board to
+**21W-2P-1L**. `pds_20` held **0.499** (20/21); `qap12` clean. The ranged-row
+commissioning is **complete**: its final form was two clean-room presolve units
+requiring no architecture change, the falsifier chain having corrected the
+premise twice en route.
+
+### The greenbea frontier totally closes
+
+In parallel, `greenbea` (~1.7) — the campaign's standing loss — had its **last two
+named axes** measured and closed, both network-audit clean.
+
+**The IPM stall, anatomized (37th settled).** `greenbea`'s IPM stall is a
+**dual-certificate failure**, not `mu` stagnation: the primal nearly converges
+(residual 7.9e-10, `mu` 3.0e-9 by iteration 58) while **nine one-sided columns**
+stay dual-sign infeasible (floor 1.8e-6, certificate gap infinite), and then the
+Newton direction goes entirely **NaN**. This validates the `_ipm_stall_risk`
+theory. Adaptive primal-dual regularization prevents the NaN but the dual-sign
+error is **pinned** (199 iterations, objective rel err 1.2e-3 — fails every gate);
+row-space regularization alone fails outright. The IPM route for `greenbea` is
+closed; DS remains its certified route. (A latent bug surfaced here: the
+`mu`-safeguard comparison evaluates false on NaN and passes garbage steps — a
+defensive `isnan` rejection was queued as a small robustness fix.)
+
+**IPM warm-started DS killed (38th settled).** Crossover bases from partial IPM
+iterates **never** beat the cold start: super-basic top-m selection yields
+singular bases (31 repairs, identity fallback, ~7,600 pivots); iterate-prioritized
+Bixby crash gives 4,489–5,412 pivots (cold: 4,399), several dual-infeasible; best
+certified total **0.583s vs cold 0.414s**. With the 35th settled (HiGHS's Phase-1
+basis also useless) and the 37th (IPM cure killed), `greenbea` now has a
+**measured closure of every named axis** — presolve depth, aggregation, ranged
+rows, five leaving rules, external and IPM warm starts, BFRT, crash, per-pivot
+kernel slices, and the IPM route. Our cold Dantzig trajectory is locally optimal
+against every tested perturbation. `greenbea` is **accepted as the campaign's
+standing loss** pending a genuinely new idea class; its settled axes are not to be
+re-probed.
+
 ## Current certified scoreboard
 
 The **certified** standing uses the protocol-v3 median-of-hosts method in
 `docs/HANDOFF.md` and the Modal artifacts replayed into `assets/campaign.db`;
 the single-shot replay table below is narrative-grade only. The board of record
-combines the stable prior cells with the 2026-07-17 AWS `us-west-2`
-a2-era certification (three hosts × seven pairs), which re-certifies the
-four instances the cache-sized-tail single-thread scheduling ship touched, layered
-over the aggregation, census-wave, and prior v3 certifications:
+combines the stable prior cells with the 2026-07-18 AWS `us-west-2`
+pds-era certification (three hosts × seven pairs), which re-certifies `pds_10`
+and `pds_20` from the parallel-cols wave, layered over the a2, aggregation,
+census-wave, and prior v3 certifications:
 
-- **a2-era board of record: 21W-1P-2L**, including `qap15` as a coverage win.
-- **The a2 flip:** `woodw` 1.20 → **0.962** [0.884, 0.970] (21/21), the
-  cache-sized dense-tail single-thread `dpotrf` scheduling win — with `80bau3b`
-  deepened **0.881 → 0.793** [0.756, 0.811] (21/21) on the same wave. The slice
-  census (`592d2c0` envab) that scoped this ship measured the refactor phase
-  inflating ×1.6–2.2 on the certification host class: the campaign's bandwidth
-  slice.
-- **Parity (1):** `cre_a` is honestly a coin flip, now trending our side —
-  **0.939 / 1.021 / 0.995** across three waves (13/21 at 0.995 on the a2 wave).
-  The ~2% reject scan is real on a cell whose true margin is ±3% around parity,
-  so it scores as parity, not a win.
-- **Carried-over flips and wins:** `80bau3b` and `cre_a` from the a2 wave above;
-  `greenbea` (sentinel), `d2q06c` **0.371** (21/21), and `ken_07` **0.410**
-  (21/21) from the aggregation wave; `osa_60` **0.280** (21/21), `osa_14`
-  **0.912** (17/21), and `stocfor3` **0.962** (17/21) from the census wave;
-  `pilot87` 0.826 (21/21) and `pds_20` 0.824 (20/21) from the first v3 wave;
-  plus the stable structural-win core (qap12, ken_18, maros_r7, cre_b, cre_d, …).
-- **Losses (2):** `greenbea` ~1.7 (pivot frontier **closed** — the three-stage
-  anatomy proves pivot parity and per-pivot parity trade against each other) and
-  `pds_10` 1.26–1.57 (host-dependent PDHG swing; iterations flat across pairs).
-  Both now formally require new idea classes.
+- **pds-era board of record: 21W-2P-1L**, including `qap15` as a coverage win.
+- **The pds crossing:** `pds_10` walked **1.26–1.57 → 1.109 → 0.985**
+  [0.891, 1.030] (9/21) as the ranged-row commissioning resolved into two
+  clean-room presolve ships — multi-row implied-bound aggregation
+  (`38846d5`, which took `pds_20` to **0.459** and narrowed `pds_10` to 1.109)
+  then parallel-column + endpoint dominance (`31b197a`). `pds_20` holds a deep
+  **0.499** [0.414, 0.526] (20/21) — one of the board's deepest wins.
+- **Parity (2):** `cre_a` is a coin flip trending our side —
+  **0.939 / 1.021 / 0.995** across waves — and `pds_10` at **0.985**
+  (sub-1.0 median-of-hosts, one host at 0.891) is parity trending winward by the
+  same precedent. Both cells are decided by host lottery with no engineered lever
+  outstanding.
+- **Carried-over flips and wins:** `80bau3b` **0.793** (21/21), `cre_a`, and
+  `woodw` **0.962** (21/21) from the a2 wave; `greenbea` (sentinel), `d2q06c`
+  **0.371** (21/21), and `ken_07` **0.410** (21/21) from the aggregation wave;
+  `osa_60` **0.280** (21/21), `osa_14` **0.912** (17/21), and `stocfor3`
+  **0.962** (17/21) from the census wave; `pilot87` 0.826 (21/21) from the first
+  v3 wave; plus the stable structural-win core (qap12, ken_18, maros_r7, cre_b,
+  cre_d, …).
+- **Loss (1):** `greenbea` ~1.7 — frontier **totally closed**. Presolve depth,
+  aggregation, ranged rows, five leaving rules, external and IPM warm starts,
+  BFRT, crash, per-pivot kernel slices, and the IPM route are all measured; the
+  IPM stall was anatomized as a dual-certificate failure and its cure killed,
+  warm-started DS never beats cold, and our cold Dantzig is locally optimal
+  against every tested perturbation. It needs a genuinely new idea class.
 - **Host lottery (not a loss):** `pilot87` printed **1.027** [0.914, 1.292] on
   the a2 wave, but its code path is byte-identical under a2 (10 MiB tail above
   the single-thread threshold), iterations are 128 in every pair of both waves,
@@ -523,14 +639,16 @@ over the aggregation, census-wave, and prior v3 certifications:
   pair wins, median of six host-medians 0.927 = host-conditional WIN**.
 - **Backfill pending:** the per-commit replay trajectory in `assets/campaign.db`
   does not yet include rows for the ship commits `d727389` (H0), `928399c` (H1),
-  `54e9232` (native aggregation), or `b394c7e` (a2 scheduling); the board is
-  certified from the Modal artifacts, and the single-shot trajectory table below
-  still ends at `82cd31d`.
+  `54e9232` (native aggregation), `b394c7e` (a2 scheduling), or the netagg /
+  parallel-cols pds ships (`0996683`, `31b197a`); the board is certified from the
+  Modal artifacts, and the single-shot trajectory table below still ends at
+  `82cd31d`.
 
-The a2-era board supersedes the 20W-1P-3L aggregation-era board, which superseded
-the 20W-0P-4L census-wave board, which superseded the 16W-2P-6L v3 board, which
-in turn superseded the single-host pin4 board. The important certification
-waypoints since presolve V2 shipped:
+The pds-era board supersedes the 21W-1P-2L a2-era board, which superseded the
+20W-1P-3L aggregation-era board, which superseded the 20W-0P-4L census-wave
+board, which superseded the 16W-2P-6L v3 board, which in turn superseded the
+single-host pin4 board. The important certification waypoints since presolve V2
+shipped:
 
 - **Clean-box certification at `1f4351d` (2026-07-14, AWS `us-west-2`,
   `assets/modal_bench_1f4351dcfa96_{suite,paired}.json`):** 13W-11L; geomean
@@ -603,6 +721,20 @@ waypoints since presolve V2 shipped:
   swung 3.76 → 6.13s — a host lottery, scored from its 0.826 first-v3 win.
   Cumulative v3 record 30/42 pair wins, median of six host-medians 0.927. The
   board settled at **21W-1P-2L**.
+- **Netagg certification (`38846d5`, 2026-07-18, AWS `us-west-2`,
+  `assets/modal_bench_38846d5898ec_paired_hosts3.json`):** the clean-room
+  multi-row implied-bound aggregation ship took `pds_20` **0.824 → 0.459**
+  [0.414, 0.526] (21/21 — the deepest single deepening on the board) and narrowed
+  `pds_10` **1.26–1.57 → 1.109** [0.954, 1.122] (6/21), one host at 0.954.
+  `qap12` sentinel clean (0.017, netagg size-gated off). Board held **21W-1P-2L**
+  with `pds_10` needing ~10%; the scoped residual was HiGHS's parallel rule 13
+  removing 4,613 columns on the post-aggregation shape.
+- **Parallel-cols certification (`31b197a`, 2026-07-18, AWS `us-west-2`,
+  `assets/modal_bench_31b197afe7f4_paired_hosts3.json`):** the parallel-column
+  merge + endpoint-dominance ship crossed `pds_10` to **0.985** [0.891, 1.030]
+  (9/21) — sub-1.0 median-of-hosts, parity trending winward by the `cre_a`
+  precedent. `pds_20` held 0.499 (20/21); `qap12` clean. The board settled at
+  **21W-2P-1L**.
 
 ## Headline per-instance trajectories
 
