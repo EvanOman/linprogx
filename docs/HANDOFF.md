@@ -2172,6 +2172,24 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   remote content outright; orchestrator audits event logs for
   network access on any externally-informed unit before shipping.
 
+- THIRTY-SEVENTH SETTLED — GREENBEA IPM STALL ANATOMIZED, CURE
+  KILLED (2026-07-18, codex G1, network-audit clean;
+  experiments/greenbea_ipm_stall_2026_07_18.md): the stall is a
+  DUAL-CERTIFICATE failure, not mu stagnation — primal nearly
+  converges (residual 7.9e-10, mu 3.0e-9 by iter 58) while nine
+  one-sided columns stay dual-sign infeasible (floor 1.8e-6,
+  certificate gap inf), then the Newton direction goes entirely
+  NaN. Validates the _ipm_stall_risk theory. Adaptive primal-dual
+  regularization prevents the NaN but the dual-sign error is
+  PINNED (199 iters, obj rel err 1.2e-3 — fails every gate);
+  row-space regularization alone fails outright. The IPM route for
+  greenbea is closed; DS remains its certified route. LATENT BUG
+  FOUND: the mu-safeguard comparison evaluates false on NaN and
+  passes garbage steps — a defensive isnan rejection is queued as
+  a small robustness fix. IMPLICATION FOR G2 (in flight): the
+  primal iterate near iter ~55 is nearly on the optimal face —
+  crossover quality should be high.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
