@@ -2131,6 +2131,24 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   METHOD VINDICATION: falsifier-first fan-out caught a
   commissioned architecture project's false premise at probe cost.
 
+- PDS MECHANISM SETTLED + AGGREGATED-PDHG LIVE (2026-07-17, codex,
+  experiments/pds_mechanism_2026_07_17.md): (1) HiGHS's presolve
+  makes HiGHS 3.16x SLOWER on pds_10 (presolve-off 12,877 pivots /
+  0.360s vs presolve-on 1.139s) — the shape chase was never the
+  story; HiGHS's weapon is its dual simplex on this class. (2) Our
+  DS cannot compete there: 100k-pivot limit unsolved (91s) vs their
+  11,472 pivots — no scoped DS unit closes a 10x class gap. (3) The
+  reduction mechanism is Aggregator rule 12 (10,167 removals) +
+  parallel rule 13. (4) THE LIVE PATH: our PDHG on the aggregated
+  problem (realized eq-box via slack columns) — pds_10 iterations
+  IMPROVE 8,576->7,552, wall -27.6% measured (1.984->1.436s),
+  oracle 5e-10; pds_20 iterations regress 21,696->24,704 but wall
+  still -18.1%. COMMISSIONED UNIT (arm A revived, corrected):
+  large-scale bounded-column aggregation with slack realization,
+  PDHG-route-gated, pds_20 trajectory guard. Ranged-row native
+  kernel (arm B) is DEAD by measurement — slack realization wins;
+  design doc preserved for posterity.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,

@@ -173,3 +173,96 @@ dual simplex competitive on pds.
 - **Routing implication:** dual simplex is the right algorithm class, but
   linprogx's current implementation cannot be routed there until its
   pds-specific pivot economics improve by orders of magnitude.
+
+## 5. Final falsifier: Aggregator-only model under linprogx PDHG
+
+### Verdict: LIVE
+
+The Aggregator-only `pds_10` model makes linprogx PDHG **both smaller and
+better conditioned**. Iterations drop loudly from **8,576 to 7,552** (-11.9%),
+not toward the documented 10,688-iteration failure trajectory. Combined with
+the nnz reduction, `iterations * nnz` falls **23.36%** and measured wall falls
+**27.60%**. The objective and reduced-model equality/bound residuals pass the
+`2e-5` gates.
+
+This clears the stated >=15% gate and commissions extending linprogx's native
+aggregation to pds scale. `pds_20` is a necessary caution rather than a kill:
+its iterations rise 13.9% and erase the nnz work-proxy gain, but its measured
+wall still falls 18.1% because the much smaller matrix is cheaper per
+iteration. The native project needs separate `pds_10` and `pds_20` trajectory,
+proxy, wall, and certificate gates; it must not assume aggregation is
+iteration-neutral across the family.
+
+### Export and eq-box conversion
+
+The highspy 1.14.0 export used `presolve_rule_off=126912`: every toggleable bit
+from 6 through 16 was disabled except rule 12, `Aggregator`. Untoggleable basic
+rules remained active as required.
+
+| Fixture | Raw model | Aggregator-only HiGHS export | HiGHS attributed removals |
+| --- | ---: | ---: | --- |
+| `pds_10` | 16,558 x 49,932 x 107,605 | 4,592 x 37,966 x 89,839 | Singleton row 580; Aggregator 11,386 |
+| `pds_20` | 33,874 x 108,175 x 232,647 | 9,821 x 84,198 x 197,820 | Empty row 76; singleton row 851; Aggregator 23,126 |
+
+Both exported models contain equalities only: 4,592 equality rows for
+`pds_10`, 9,821 for `pds_20`, and zero ranged, one-sided, or free rows. Thus
+the implemented ranged-row conversion added zero slack columns on these two
+exports. The general conversion used by the probe is exact: for
+`lower_i <= a_i x <= upper_i`, add a zero-cost column `s_i` and equality
+`a_i x - s_i = 0` with `s_i in [lower_i, upper_i]`; infinite endpoints remain
+infinite. Equality rows are retained directly without a fixed slack.
+
+The solve used the exported column costs and bounds, plus HiGHS's exported
+objective offset. Both PDHG legs used the existing
+`SparseSolver(algorithm="pdhg", presolve=False, eps=2e-5,
+max_iterations=50_000, check_interval=50_000)` so no linprogx re-presolve
+perturbed either trajectory.
+
+### Shape, iterations, wall, and work proxy
+
+| Fixture | Model | Shape `m x n x nnz` | PDHG iterations | Wall | `iterations * nnz` | Proxy gain vs baseline | Wall gain vs baseline |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pds_10` | linprogx baseline presolved | 14,438 x 47,812 x 103,230 | 8,576 | 1.984s | 885,300,480 | — | — |
+| `pds_10` | Aggregator-only | 4,592 x 37,966 x 89,839 | **7,552** | **1.436s** | 678,464,128 | **23.36%** | **27.60%** |
+| `pds_20` | linprogx baseline presolved | 30,202 x 104,579 x 225,131 | 21,696 | 11.299s | 4,884,442,176 | — | — |
+| `pds_20` | Aggregator-only | 9,821 x 84,198 x 197,820 | **24,704** | **9.255s** | 4,886,945,280 | **-0.05%** | **18.09%** |
+
+The `pds_10` iteration count itself improves by 1,024. This is not merely a
+projection from fewer nonzeros. On `pds_20`, iterations increase by 3,008;
+the 12.1% nnz reduction almost exactly cancels that regression in the simple
+proxy, while reduced row/column dimensions and locality still produce the
+measured wall win.
+
+### Objective and reduced-model residual gates
+
+The oracle is HiGHS dual simplex on the original raw model with presolve off.
+For the Aggregator-only legs, objective is the linprogx solution's reduced
+cost plus `HighsLp.offset_`, compared directly with HiGHS's original-model
+optimum as requested.
+
+| Fixture | Model | Status | Objective incl. offset | Oracle objective | Absolute delta | Relative delta | Equality residual | Bound residual |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pds_10` | baseline | optimal | 26,727,095,083.27369 | 26,727,094,976 | 107.27369 | 4.014e-9 | 1.323e-5 | 2.217e-12 |
+| `pds_10` | Aggregator-only | optimal | 26,727,094,962.55593 | 26,727,094,976 | 13.44407 | 5.030e-10 | 2.501e-6 | 2.103e-12 |
+| `pds_20` | baseline | optimal | 23,821,658,161.13005 | 23,821,658,640 | 478.86995 | 2.010e-8 | 1.806e-5 | 2.137e-11 |
+| `pds_20` | Aggregator-only | optimal | 23,821,658,684.21210 | 23,821,658,640 | 44.21210 | 1.856e-9 | 1.782e-5 | 2.842e-14 |
+
+All four runs certify under the scale-normalized objective gate and the
+`2e-5` equality/bound gates. The Aggregator-only objectives are closer to the
+oracle than the baseline PDHG objectives on both fixtures.
+
+### Final pds path
+
+`pds_10` does have a presolve path: **large-scale equality aggregation before
+PDHG**. It clears the work-proxy, measured-wall, objective, and residual gates,
+and its PDHG iterations improve rather than blow up. This is now the first
+implementation priority for the remaining `pds_10` loss.
+
+The dual-simplex route remains a separate, much larger program: linprogx's
+current DS hit 100,000 pivots and 91.248s without solving, versus HiGHS at
+11,472 pivots and 0.343s on linprogx's presolved input. A
+bound-flipping-ratio-test/pricing/basis-update-class DS unit remains relevant
+to the solver's longer-term algorithm portfolio, but it is no longer the only
+open `pds_10` path. Raw PDHG kernel bandwidth remains near its documented
+floor; aggregation wins by removing work and, on `pds_10`, improving the
+trajectory.
