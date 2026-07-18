@@ -2111,6 +2111,26 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   arms; oracle 2e-5 everywhere. Whichever realization wins on
   measured wall ships; T can kill both.
 
+- THIRTY-SIXTH SETTLED — SERIES-CHAIN CONTRACTION IS VACUOUS ON PDS
+  (2026-07-17, codex falsifier T of the ranged-row project, killed
+  in under an hour before any architecture was built —
+  experiments/rr_falsifier_2026_07_17.md): post-presolve pds_10/
+  pds_20 contain ZERO degree-2 junction rows (row p50 degree is 5);
+  every junction carries side terms whose consistency equality
+  cannot fold into a slack bound (proven algebraically + verified
+  on all 64 +-1 sign patterns). The 38,852 degree-2 COLUMNS were a
+  red herring — arc contraction needs degree-2 ROWS. The 29th
+  settled's mechanism attribution ("HiGHS's shape via arc
+  contraction/ranged rows") was an unverified assumption; HiGHS's
+  actual 10,346-row pds reduction mechanism is UNIDENTIFIED.
+  Realization arms A (slack) and B (native ranged PDHG) were
+  STOPPED before building on the false premise. Mechanism probe
+  dispatched (HiGHS rule ablation + the decisive cross + the
+  route question: is pds's gap even presolve, or is dual simplex
+  simply the right algorithm — and if so can OUR DS run it?).
+  METHOD VINDICATION: falsifier-first fan-out caught a
+  commissioned architecture project's false premise at probe cost.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
