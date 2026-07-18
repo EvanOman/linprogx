@@ -30,15 +30,18 @@ current era).
 1. Coin flips (cre_a 0.995, pds_10 0.985): occasionally re-certify
    (one v3 wave, both instances); a friendly host draw certifies
    either as a win. No engineering.
-2. greenbea: THE RESEARCH CAMPAIGN IS CLOSED (39th-45th settled,
-   2026-07-18). Terminal account: per-pivot work at a proven hard
-   floor (rho density factorization-invariant; kernels 96%
-   cache-line-reuse optimal; panels die in 1.28 pivots; fp32 gains
-   0.98-1.18x); pivot gap identified as HiGHS's refined dual
-   Phase-1 but replication 0-for-2 (11,377 vs their 1,655).
-   Reopening requires a novel Phase-1 formulation or an unnamed
-   idea class. Read experiments/greenbea_dossier + the probe
-   reports before proposing ANYTHING.
+2. greenbea: CLOSED WITH THE FULL SCIENTIFIC ACCOUNT (39th-47th
+   settled). The phase-1 mechanism was identified AND independently
+   derived (experiments/dual_phase1_derivation_2026_07_18.md:
+   Fenchel auxiliary, confirmed by exact b-invariance + a
+   zero-violation dual-feasible B*; 3,334 native pivots = pivot
+   parity with HiGHS). The wall obeys a measured CONSERVATION LAW:
+   pivots x us/pivot ~0.38-0.40s across every start (cold/foreign/
+   native B*); dense-regime kernels gain ~1% there; the auxiliary's
+   own cost makes every pipeline lose to the cold crash. Reopening
+   requires breaking the conservation law itself (a kernel
+   architecture with ~72us/pivot on dense trajectories) — nothing
+   less. Read the dossier + phase1_predictions before proposing.
 3. Supernodal sparse front (refactor lever c): optional
    general-value unit; not board-critical.
 4. Chronicle round 7 (research-campaign story) may be committed/
