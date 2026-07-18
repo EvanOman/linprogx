@@ -2190,6 +2190,23 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   primal iterate near iter ~55 is nearly on the optimal face —
   crossover quality should be high.
 
+- THIRTY-EIGHTH SETTLED — IPM WARM-STARTED DS KILLED; GREENBEA
+  FRONTIER TOTALLY CLOSED (2026-07-18, codex G2, network-audit
+  clean; experiments/greenbea_warmstart_2026_07_18.md): crossover
+  bases from partial IPM iterates NEVER beat the cold start —
+  super-basic top-m selection yields singular bases (31 repairs,
+  identity fallback, ~7,600 pivots); iterate-prioritized Bixby
+  crash gives 4,489-5,412 pivots (cold: 4,399), several
+  dual_infeasible, best certified total 0.583s vs cold 0.414s.
+  With the 35th settled (HiGHS's Phase-1 basis also useless) and
+  37th (IPM cure killed), greenbea now has a MEASURED closure of
+  every named axis: presolve depth, aggregation, ranged rows,
+  five leaving rules, external + IPM warm starts, BFRT, crash,
+  per-pivot kernel slices, IPM route. Our cold Dantzig trajectory
+  is locally optimal against every tested perturbation. greenbea
+  (~1.7) is accepted as the campaign's standing loss pending a
+  genuinely new idea class; do not re-probe settled axes.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
