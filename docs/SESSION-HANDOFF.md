@@ -10,13 +10,14 @@ current era).
   session-backup-20260702 tracks HEAD. Main checkout /home/evan/dev/linprogx
   belongs to another session (web-demo) — never touch it.
 - BOARD OF RECORD (protocol v3: 3 hosts x 7 pairs median-of-hosts, AWS
-  us-west-2): **21W-1P-2L** (incl. qap15 coverage win).
-  - Parity: cre_a — TRUE coin flip (0.939/1.021/0.995 across waves).
-  - Losses: greenbea ~1.7 (EVERY scoped family settled — 35th settled;
-    needs a new idea class) and pds_10 1.26-1.57 (ranged-row
-    architecture, 29th settled).
-  - woodw flipped 0.962 21/21 (a2 refactor scheduling, b394c7e);
-    pilot87 is a host-conditional win (cumulative 30/42, 0.927).
+  us-west-2): **21W-2P-1L** (incl. qap15 coverage win).
+  - Parity coin flips (host-lottery, no engineered lever outstanding):
+    cre_a 0.995 and pds_10 0.985 [0.891,1.030] — periodic re-certs may
+    flip either; do not build units for them.
+  - Sole loss: greenbea ~1.7 — frontier TOTALLY closed (38 settled
+    verdicts; see 35th/37th/38th). Needs a genuinely new idea class.
+  - The 07-18 pds arc: clean-room netagg + parallel/dominance merging
+    took pds_10 1.26-1.57 -> 0.985 and pds_20 0.824 -> 0.499.
 - This session shipped and certified: protocol v3 + envab harness modes,
   DS solve-slice instrument, H0 quadratic presolve row-build fix
   (osa_60 0.280!, osa_14 0.912), H1 presolve fixpoint re-stage (cre_a,
@@ -26,23 +27,19 @@ current era).
 - GOAL (user's /goal hook): beat HiGHS on ALL 24 LPnetlib instances.
 
 ## Immediate queue
-1. pds_10 (1.26-1.57): the ONLY loss with a scoped path — ranged-row/
-   inequality support end-to-end (29th settled): presolve records +
-   PDHG/IPM kernels + postsolve, ~25% ceiling (HiGHS's arc-contraction
-   shape). An architecture project; commission deliberately.
-2. greenbea (~1.7): NO live scoped lever (35th settled closed the
-   pivot frontier: pivot parity and per-pivot parity trade against
-   each other; presolve/leaving-rules/basis/ratio-test/crash/slice
-   families ALL settled 20th-35th). Needs a new idea class. Do not
-   re-probe settled families.
-3. cre_a (0.995 coin flip, 13/21): no engineered lever left (34th
-   settled). Optionally re-certify occasionally; it may certify on a
-   friendly wave. The a2 ship did not move its path.
-4. Supernodal sparse front (lever c of the refactor unit): needs a
-   ~57% front-time cut for a further woodw-class gate; woodw already
-   flipped, so commission only for pilot87-robustness/general value.
-5. Chronicle round 5 (21W-1P-2L) may be committed/published — verify
-   gh-pages and the Claude artifact match before re-publishing.
+1. Coin flips (cre_a 0.995, pds_10 0.985): occasionally re-certify
+   (one v3 wave, both instances); a friendly host draw certifies
+   either as a win. No engineering.
+2. mu-safeguard NaN guard (37th settled found the comparison passes
+   NaN steps): small defensive C fix, characterization-first.
+3. greenbea: closed. Only a genuinely new idea class reopens it —
+   re-read the 35th/37th/38th settled entries before proposing
+   anything; every named axis is measured dead.
+4. Supernodal sparse front (refactor lever c): optional general-value
+   unit (~57% front-time cut needed for further gates); not board-
+   critical.
+5. Chronicle round 6 (21W-2P-1L) may already be committed/published —
+   verify gh-pages + artifact match before re-publishing.
 
 ## Orchestration protocol (hard lessons, do not relearn)
 - Overmind mode: Fable plans/reviews; workers implement. NEVER
