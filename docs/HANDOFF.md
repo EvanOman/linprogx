@@ -2251,6 +2251,27 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   periodic re-cert only) and greenbea (closed frontier, awaiting a
   new idea class).
 
+- GREENBEA IDEATION FAN-OUT + RESEARCH PLAN (2026-07-18, four
+  independent model-family threads on the shared dossier, all
+  network-audited: codex gpt-5.5 x2 [standard + contrarian mandate],
+  claude-opus, GLM-5.2; gpt-5.6 unavailable on the plan — API 400):
+  STRONG CROSS-FAMILY CONVERGENCE — six idea classes with 2-3
+  independent proposals each. Three bet-carrying primaries in
+  tension: (A) block/rank-k dual pivoting with shadow panels
+  (amortize the trajectory's linear algebra), (B) precision family
+  (fp32 body with fp64 certificate / low-precision scout — the
+  2e-5 eps leaves two orders of headroom and solve vectors are
+  59-94% dense), (C) active-set reduction (partial IPM at measured
+  0.117-0.128s predicts the 83.2%-active set; solve the ~650-var
+  reduced LP cold — sidesteps the trade-against evidence since
+  nothing is transferred). Plus (D) a thrice-proposed behavioral
+  tomography probe for the unidentified 1,090-pivot machinery, and
+  held stack-multipliers (locality/SIMD, Schur-block). Synthesis,
+  adjudications (incl. a timing-discrepancy ruling for C against
+  the primary G2 measurement), and four funded falsifier probes
+  with kill criteria: experiments/greenbea_research_plan_2026_07_18
+  .md + the four greenbea_ideas_* files. PROBES DISPATCHED.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
