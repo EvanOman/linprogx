@@ -2315,6 +2315,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   or certificate/oracle disagreement. Stacks with P-B precision
   toward ~0.21s local = flip.
 
+- FORTY-FIRST SETTLED — PRECISION FAMILY (P-B) KILLED (2026-07-18,
+  codex, audit clean; experiments/probe_precision_2026_07_18.md):
+  both variants dead on measurement. In-loop: the fp32-rounded
+  trajectory diverges at pivot 117 (zero FTRAN pivot, stall) after
+  116 identical pivots. Scout: the fp32 terminal basis is worthless
+  — fp64 recovery needs 4,288 pivots (100.8% of cold); total scout
+  cost 1.251s vs 0.42 baseline. THE DEEPER KILL: measured fp32
+  kernel gains are only 0.98-1.18x (BTRAN 0.98, FTRAN 1.14,
+  pivot-row 1.18, rc 1.14) — greenbea's working set is cache-
+  resident enough that conversion overhead eats the theoretical 2x;
+  projected end-to-end 6.8% vs the 20% bar. STACK IMPLICATION: the
+  research plan's B-x-pivot-trim path is dead; the flip now
+  requires native dual Phase-1 (40th entry) PLUS either P-A block
+  batching (pending) or the held locality/Schur multipliers
+  (2-thread convergence, unprobed).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
