@@ -60,12 +60,14 @@ try:
     _c_presolve_v2 = _csparse.presolve_v2  # type: ignore[attr-defined]
     _c_v2_candidates = _csparse.presolve_v2_candidates  # type: ignore[attr-defined]
     _c_presolve_agg = getattr(_csparse, "presolve_agg", None)  # type: ignore[attr-defined]
+    _c_presolve_netagg = getattr(_csparse, "presolve_netagg", None)  # type: ignore[attr-defined]
 except (ImportError, AttributeError):  # pragma: no cover - source tree before extension build
     _csparse = None
     _c_presolve = None
     _c_presolve_v2 = None
     _c_v2_candidates = None
     _c_presolve_agg = None
+    _c_presolve_netagg = None
 
 _SSZ = struct.calcsize("n")  # sizeof(Py_ssize_t)
 
@@ -132,6 +134,22 @@ class _Aggregation:
 
 
 @dataclass(frozen=True)
+class _NetAggregation:
+    """Equality aggregation certified by all incident rows together.
+
+    Each incident equality supplies a valid interval for the eliminated
+    column from the activity bounds of its other variables.  The explicit box
+    is redundant when the intersection of those intervals lies inside it.
+    Any stable incident row may then be used as the substitution pivot.
+    """
+
+    eliminated: int
+    coef_eliminated: float
+    rhs: float
+    terms: tuple[tuple[int, float], ...]
+
+
+@dataclass(frozen=True)
 class _DuplicateColumn:
     removed: int
     kept: int
@@ -168,6 +186,8 @@ class _LazyRecordList:
                 yield _DuplicateColumn(rec[1], rec[2], rec[3], rec[4], rec[5], rec[6])
             elif rec[0] == 5:
                 yield _Aggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
+            elif rec[0] == 6:
+                yield _NetAggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
             else:
                 raise ValueError(f"unknown presolve record tag {rec[0]}")
 
@@ -183,8 +203,34 @@ class _LazyRecordList:
                 yield _DuplicateColumn(rec[1], rec[2], rec[3], rec[4], rec[5], rec[6])
             elif rec[0] == 5:
                 yield _Aggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
+            elif rec[0] == 6:
+                yield _NetAggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
             else:
                 raise ValueError(f"unknown presolve record tag {rec[0]}")
+
+
+class _ComposedRecordList:
+    """Lazily concatenate and relabel records from sequential reductions."""
+
+    __slots__ = ("_active_cols", "_first", "_second")
+
+    def __init__(self, first: Any, second: Any, active_cols: list[int]) -> None:
+        self._first = first
+        self._second = second
+        self._active_cols = active_cols
+
+    def __len__(self) -> int:
+        return len(self._first) + len(self._second)
+
+    def __iter__(self):  # type: ignore[override]
+        yield from self._first
+        for record in self._second:
+            yield _remap_record(record, self._active_cols)
+
+    def __reversed__(self):  # type: ignore[override]
+        for record in reversed(self._second):
+            yield _remap_record(record, self._active_cols)
+        yield from reversed(self._first)
 
 
 def _empty_reduction_counts() -> dict[str, int]:
@@ -199,6 +245,7 @@ def _empty_reduction_counts() -> dict[str, int]:
         "doubletons": 0,
         "duplicate_columns": 0,
         "aggregations": 0,
+        "net_aggregations": 0,
     }
 
 
@@ -219,8 +266,16 @@ class PresolveResult:
     removed_rows: int
     removed_cols: int
     _records: (
-        list[_FixedVar | _Doubleton | _ColumnSingleton | _DuplicateColumn | _Aggregation]
+        list[
+            _FixedVar
+            | _Doubleton
+            | _ColumnSingleton
+            | _DuplicateColumn
+            | _Aggregation
+            | _NetAggregation
+        ]
         | _LazyRecordList
+        | _ComposedRecordList
     )
     _active_cols: list[int]
     _original_cols: int
@@ -285,6 +340,16 @@ def _agg_max_nnz() -> int:
     enough that the pass cost cannot regress a large fixture. Large sentinel
     fixtures (pds/osa/stocfor/pds_20) stay above this and are never re-scanned."""
     return int(os.environ.get("LINPROGX_AGG_MAX_NNZ", "50000"))
+
+
+def _netagg_enabled() -> bool:
+    """Large equality-network aggregation. Default OFF until certified."""
+    return os.environ.get("LINPROGX_PRESOLVE_NETAGG", "0") == "1"
+
+
+_NETAGG_MIN_ROWS = 10_000
+_NETAGG_MIN_NNZ = 100_000
+_NETAGG_MIN_NNZ_REDUCTION_FRACTION = 0.10
 
 
 def _v2_native_enabled() -> bool:
@@ -367,6 +432,13 @@ def _remap_record(record: Any, active_cols: list[int]) -> Any:
             record.rhs,
             tuple((active_cols[j], coef) for j, coef in record.terms),
         )
+    if isinstance(record, _NetAggregation):
+        return _NetAggregation(
+            active_cols[record.eliminated],
+            record.coef_eliminated,
+            record.rhs,
+            tuple((active_cols[j], coef) for j, coef in record.terms),
+        )
     raise ValueError(f"unknown presolve record type {type(record)!r}")
 
 
@@ -384,7 +456,7 @@ def _compose_reductions(
     """
     a1 = first._active_cols  # intermediate column -> original column
     combined_active = [a1[j] for j in second._active_cols]
-    combined_records = list(first._records) + [_remap_record(rec, a1) for rec in second._records]
+    combined_records = _ComposedRecordList(first._records, second._records, a1)
     combined_counts = _empty_reduction_counts()
     for key in combined_counts:
         combined_counts[key] = first._reduction_counts.get(key, 0) + second._reduction_counts.get(
@@ -493,6 +565,37 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
     # and structurally excludes the fill-positive cases (greenbea: 23274->26683).
     second_nnz = second._matrix.nnz if second._matrix is not None else len(second.data)
     if _agg_fillgate_enabled() and second_nnz > nnz:
+        return result
+    return _compose_reductions(result, second)
+
+
+def _maybe_netaggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
+    """Compose the native multi-row implied-bound aggregation stage.
+
+    The up-front size gates and the final 10% nnz gate are global structural
+    policy.  The native kernel separately requires every committed elimination
+    to have an exact nonpositive nnz delta.
+    """
+    nnz = result._matrix.nnz if result._matrix is not None else len(result.data)
+    if result.rows < _NETAGG_MIN_ROWS or nnz < _NETAGG_MIN_NNZ:
+        return result
+    if _c_presolve_netagg is None or result._matrix is None:
+        return result
+    raw = _c_presolve_netagg(
+        result._matrix,
+        _pack_dbls(result.b),
+        _pack_dbls(result.c),
+        _pack_dbls(result.lo),
+        _pack_dbls(result.hi),
+        max_fill,
+        -1,
+        nnz,
+    )
+    if raw is None:
+        return result
+    second = _result_from_c(raw)
+    second_nnz = second._matrix.nnz if second._matrix is not None else len(second.data)
+    if second_nnz > (1.0 - _NETAGG_MIN_NNZ_REDUCTION_FRACTION) * nnz:
         return result
     return _compose_reductions(result, second)
 
@@ -736,7 +839,14 @@ def _presolve_eq_box_python(
         for j in row_entries[i]:
             col_rows[j].add(i)
 
-    records: list[_FixedVar | _Doubleton | _ColumnSingleton | _DuplicateColumn | _Aggregation] = []
+    records: list[
+        _FixedVar
+        | _Doubleton
+        | _ColumnSingleton
+        | _DuplicateColumn
+        | _Aggregation
+        | _NetAggregation
+    ] = []
     removed_rows: set[int] = set()
     removed_cols: set[int] = set()
     objective_offset = 0.0
@@ -1276,6 +1386,11 @@ def _result_from_c(raw: tuple[Any, ...]) -> PresolveResult:
                 reduction_counts["singleton_rows"] += 1
             elif record[0] == 1:
                 reduction_counts["doubletons"] += 1
+    for record in r_records_raw:
+        if record[0] == 5:
+            reduction_counts["aggregations"] += 1
+        elif record[0] == 6:
+            reduction_counts["net_aggregations"] += 1
     return PresolveResult(
         rows=r_shape[0],
         cols=r_shape[1],
@@ -1323,7 +1438,7 @@ def presolve_matrix(
         packed_lo = _pack_dbls(lo)
         packed_hi = _pack_dbls(hi)
 
-        def _agg(res: PresolveResult | None) -> PresolveResult | None:
+        def _staged(res: PresolveResult | None) -> PresolveResult | None:
             # General equality-row aggregation lives only in the Python reducer;
             # inject it as a composed re-stage over whatever the C path produced.
             # Aggregation is validated for the IPM route only: aggregated
@@ -1331,7 +1446,9 @@ def presolve_matrix(
             # iteration limit even when fill-negative, so explicit
             # simplex/dual_simplex/pdhg requests skip the re-stage.
             if res is not None and algorithm in ("ipm", "auto") and _agg_restage_enabled():
-                return _maybe_aggregate(res, max_fill)
+                res = _maybe_aggregate(res, max_fill)
+            if res is not None and algorithm in ("pdhg", "auto") and _netagg_enabled():
+                res = _maybe_netaggregate(res, max_fill)
             return res
 
         if _v2_enabled() and _c_v2_candidates is not None:
@@ -1353,9 +1470,9 @@ def presolve_matrix(
                         packed_hi,
                         max_fill,
                     )
-                    return _agg(None if raw is None else _result_from_c(raw))
+                    return _staged(None if raw is None else _result_from_c(raw))
                 indptr, indices, data = matrix.to_components()  # type: ignore[attr-defined]
-                return _agg(
+                return _staged(
                     _presolve_eq_box_python(
                         rows_val,
                         cols_val,
@@ -1428,8 +1545,8 @@ def presolve_matrix(
             if second is not None and _fixpoint_reduction_is_substantial(
                 second.removed_rows, second.removed_cols, first_result.rows, first_result.cols
             ):
-                return _agg(_compose_reductions(first_result, second))
-        return _agg(first_result)
+                return _staged(_compose_reductions(first_result, second))
+        return _staged(first_result)
 
     # Fallback: extract components and use Python path
     rows_val, cols_val = matrix.shape  # type: ignore[attr-defined]
@@ -1451,7 +1568,7 @@ def postsolve_x(x_reduced: list[float], reduction: PresolveResult) -> list[float
             x_full[record.eliminated] = (
                 record.rhs - record.coef_kept * x_full[record.kept]
             ) / record.coef_eliminated
-        elif isinstance(record, (_ColumnSingleton, _Aggregation)):
+        elif isinstance(record, (_ColumnSingleton, _Aggregation, _NetAggregation)):
             rest = sum(coef * x_full[j] for j, coef in record.terms)
             x_full[record.eliminated] = (record.rhs - rest) / record.coef_eliminated
         else:

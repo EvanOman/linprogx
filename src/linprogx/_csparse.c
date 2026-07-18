@@ -15806,6 +15806,7 @@ typedef struct {
 #define PS_REC_COLUMN_SINGLETON 2
 #define PS_REC_DUPLICATE_COLUMN 3
 #define PS_REC_AGGREGATION 5
+#define PS_REC_NET_AGGREGATION 6
 
 typedef struct { Py_ssize_t col; double val; } PSTerm;
 
@@ -16204,6 +16205,18 @@ static int ps_rec_aggregation(
     return 0;
 }
 
+static int ps_rec_net_aggregation(
+    PSRec **recs, Py_ssize_t *n, Py_ssize_t *cap,
+    Py_ssize_t eliminated, double coef_eliminated, double rhs,
+    const PSTerm *terms, Py_ssize_t n_terms
+) {
+    if (ps_rec_aggregation(recs, n, cap, eliminated, coef_eliminated,
+                           rhs, terms, n_terms) != 0)
+        return -1;
+    (*recs)[*n - 1].type = PS_REC_NET_AGGREGATION;
+    return 0;
+}
+
 /* One O(degree) pass over a whole row returning its cached activity summary
  * (lo_fin, hi_fin, lo_unb, hi_unb, row_max). Mirrors _row_activity in
  * presolve.py: iteration follows PSRow insertion order, matching the Python
@@ -16286,6 +16299,36 @@ static int ps_implied_free_from_activity(
             return 0;
     }
     return 1;
+}
+
+static void ps_implied_interval_from_activity(
+    Py_ssize_t j, double coef, double rhs,
+    const double *lo, const double *hi,
+    double lo_fin, double hi_fin, Py_ssize_t lo_unb, Py_ssize_t hi_unb,
+    double *implied_lo, double *implied_hi
+) {
+    double loj = lo[j], hij = hi[j];
+    int loj_fin = isfinite(loj), hij_fin = isfinite(hij);
+    double j_lo_fin, j_hi_fin;
+    Py_ssize_t j_lo_unb, j_hi_unb;
+    if (coef >= 0.0) {
+        j_lo_fin = loj_fin ? coef * loj : 0.0; j_lo_unb = loj_fin ? 0 : 1;
+        j_hi_fin = hij_fin ? coef * hij : 0.0; j_hi_unb = hij_fin ? 0 : 1;
+    } else {
+        j_lo_fin = hij_fin ? coef * hij : 0.0; j_lo_unb = hij_fin ? 0 : 1;
+        j_hi_fin = loj_fin ? coef * loj : 0.0; j_hi_unb = loj_fin ? 0 : 1;
+    }
+    int rest_lo_inf = (lo_unb - j_lo_unb) > 0;
+    int rest_hi_inf = (hi_unb - j_hi_unb) > 0;
+    double rest_lo = lo_fin - j_lo_fin;
+    double rest_hi = hi_fin - j_hi_fin;
+    if (coef > 0.0) {
+        *implied_lo = rest_hi_inf ? -INFINITY : (rhs - rest_hi) / coef;
+        *implied_hi = rest_lo_inf ? INFINITY : (rhs - rest_lo) / coef;
+    } else {
+        *implied_lo = rest_lo_inf ? -INFINITY : (rhs - rest_lo) / coef;
+        *implied_hi = rest_hi_inf ? INFINITY : (rhs - rest_hi) / coef;
+    }
 }
 
 static int ps_ssize_cmp(const void *a, const void *b) {
@@ -17085,10 +17128,49 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
                     agg_rows_j[y + 1] = v;
                 }
 
+                int netagg_mode = agg_mode == 2;
+                if (netagg_mode) {
+                    double intersection_lo = -INFINITY;
+                    double intersection_hi = INFINITY;
+                    for (Py_ssize_t a = 0; a < nrj; a++) {
+                        Py_ssize_t i = agg_rows_j[a];
+                        PSRow *row_i = &row_data[i];
+                        PSEntry *pe = ps_row_find(row_i, j);
+                        if (!pe || fabs(pe->val) < PRESOLVE_PIVOT_EPS) continue;
+                        double lo_fin, hi_fin, row_max; Py_ssize_t lo_unb, hi_unb;
+                        if (ract_gen[i] == ract_generation) {
+                            lo_fin = ract_lo[i]; hi_fin = ract_hi[i];
+                            lo_unb = ract_lou[i]; hi_unb = ract_hiu[i]; row_max = ract_max[i];
+                        } else {
+                            ps_row_activity(row_i, lo_arr, hi_arr,
+                                            &lo_fin, &hi_fin, &lo_unb, &hi_unb, &row_max);
+                            ract_lo[i] = lo_fin; ract_hi[i] = hi_fin;
+                            ract_lou[i] = lo_unb; ract_hiu[i] = hi_unb; ract_max[i] = row_max;
+                            ract_gen[i] = ract_generation;
+                        }
+                        double implied_lo, implied_hi;
+                        ps_implied_interval_from_activity(
+                            j, pe->val, b_arr[i], lo_arr, hi_arr,
+                            lo_fin, hi_fin, lo_unb, hi_unb,
+                            &implied_lo, &implied_hi);
+                        if (implied_lo > intersection_lo) intersection_lo = implied_lo;
+                        if (implied_hi < intersection_hi) intersection_hi = implied_hi;
+                    }
+                    double loj = lo_arr[j], hij = hi_arr[j];
+                    if (isfinite(loj) && (!isfinite(intersection_lo) ||
+                        intersection_lo < loj - PRESOLVE_BOUND_EPS *
+                            fmax(1.0, fmax(fabs(loj), fabs(intersection_lo)))))
+                        continue;
+                    if (isfinite(hij) && (!isfinite(intersection_hi) ||
+                        intersection_hi > hij + PRESOLVE_BOUND_EPS *
+                            fmax(1.0, fmax(fabs(hij), fabs(intersection_hi)))))
+                        continue;
+                }
+
                 /* Choose the implied-free, numerically safe, lowest-fill pivot
                  * row (first-wins on ties -> lowest row index). */
                 int have_best = 0;
-                Py_ssize_t best_i = -1, best_fill = 0;
+                Py_ssize_t best_i = -1, best_fill = 0, best_delta = 0;
                 double best_coef = 0.0;
                 for (Py_ssize_t a = 0; a < nrj; a++) {
                     Py_ssize_t i = agg_rows_j[a];
@@ -17110,7 +17192,7 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
                         ract_gen[i] = ract_generation;
                     }
                     if (fabs(coef) < agg_pivot_tol * row_max) continue;
-                    if (!ps_implied_free_from_activity(
+                    if (!netagg_mode && !ps_implied_free_from_activity(
                             j, coef, b_arr[i], lo_arr, hi_arr,
                             lo_fin, hi_fin, lo_unb, hi_unb))
                         continue;
@@ -17146,8 +17228,41 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
                         if (fill > agg_max_fill) { ok = 0; }
                     }
                     if (!ok) continue;
-                    if (!have_best || fill < best_fill) {
-                        have_best = 1; best_fill = fill; best_i = i; best_coef = coef;
+                    Py_ssize_t candidate_delta = -row_i->count;
+                    if (netagg_mode) {
+                        for (Py_ssize_t a2 = 0; a2 < nrj; a2++) {
+                            Py_ssize_t r = agg_rows_j[a2];
+                            if (r == i) continue;
+                            PSRow *rr = &row_data[r];
+                            colpos_stamp++;
+                            for (Py_ssize_t e = 0; e < rr->total; e++) {
+                                Py_ssize_t col = rr->entries[e].col;
+                                if (col >= 0) {
+                                    colpos_gen[col] = colpos_stamp;
+                                    colpos_idx[col] = e;
+                                }
+                            }
+                            if (colpos_gen[j] != colpos_stamp) continue;
+                            double mult = rr->entries[colpos_idx[j]].val / coef;
+                            candidate_delta--;
+                            for (Py_ssize_t t = 0; t < nt; t++) {
+                                Py_ssize_t k = term_buf[t].col;
+                                PSEntry *ke = colpos_gen[k] == colpos_stamp
+                                              ? &rr->entries[colpos_idx[k]] : NULL;
+                                double merged = (ke ? ke->val : 0.0) -
+                                                mult * term_buf[t].val;
+                                if (!ke && fabs(merged) >= PRESOLVE_DROP_EPS)
+                                    candidate_delta++;
+                                else if (ke && fabs(merged) < PRESOLVE_DROP_EPS)
+                                    candidate_delta--;
+                            }
+                        }
+                        if (candidate_delta > 0) continue;
+                    }
+                    if (!have_best ||
+                        (netagg_mode ? candidate_delta < best_delta : fill < best_fill)) {
+                        have_best = 1; best_fill = fill; best_delta = candidate_delta;
+                        best_i = i; best_coef = coef;
                     }
                 }
                 if (!have_best) continue;
@@ -17165,8 +17280,12 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
                         nt++;
                     }
                 }
-                if (ps_rec_aggregation(&recs, &recs_n, &recs_cap,
-                                       j, coef, b_arr[i], term_buf, nt) != 0)
+                int rec_status = netagg_mode
+                    ? ps_rec_net_aggregation(&recs, &recs_n, &recs_cap,
+                                             j, coef, b_arr[i], term_buf, nt)
+                    : ps_rec_aggregation(&recs, &recs_n, &recs_cap,
+                                         j, coef, b_arr[i], term_buf, nt);
+                if (rec_status != 0)
                     goto oom;
                 obj_off += c_arr[j] * b_arr[i] / coef;
                 double cost_scale = c_arr[j] / coef;
@@ -17219,6 +17338,16 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
                     ps_row_delete(rr, j);
                     delta -= 1;
                     ract_gen[r] = 0;  /* rewritten row: cached activity stale */
+                    if (netagg_mode) {
+                        for (Py_ssize_t e = 0; e < rr->total; e++) {
+                            Py_ssize_t k = rr->entries[e].col;
+                            if (k >= 0 && !agg_inq[k] && !rem_col[k]) {
+                                agg_inq[k] = 1;
+                                agg_queue[agg_q_tail] = k;
+                                agg_q_tail = (agg_q_tail + 1) % agg_q_cap;
+                            }
+                        }
+                    }
                 }
                 for (Py_ssize_t t = 0; t < nt; t++)
                     ps_colset_discard(&col_sets[term_buf[t].col], i);
@@ -17490,7 +17619,8 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
                 tup = Py_BuildValue("(nnddO)",
                     (Py_ssize_t)2, recs[x].idx1, recs[x].v1, recs[x].v2, terms);
                 Py_DECREF(terms);
-            } else if (recs[x].type == PS_REC_AGGREGATION) {
+            } else if (recs[x].type == PS_REC_AGGREGATION ||
+                       recs[x].type == PS_REC_NET_AGGREGATION) {
                 PyObject *terms = PyTuple_New(recs[x].n_terms);
                 if (!terms) goto cleanup;
                 for (Py_ssize_t t = 0; t < recs[x].n_terms; t++) {
@@ -17500,7 +17630,8 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
                     PyTuple_SET_ITEM(terms, t, term);
                 }
                 tup = Py_BuildValue("(nnddO)",
-                    (Py_ssize_t)5, recs[x].idx1, recs[x].v1, recs[x].v2, terms);
+                    (Py_ssize_t)(recs[x].type == PS_REC_AGGREGATION ? 5 : 6),
+                    recs[x].idx1, recs[x].v1, recs[x].v2, terms);
                 Py_DECREF(terms);
             } else {
                 tup = Py_BuildValue("(nnndddd)",
@@ -17568,6 +17699,11 @@ static PyObject *csparse_presolve_agg(PyObject *self, PyObject *args) {
     return csparse_presolve_impl(args, 0, 1);
 }
 
+static PyObject *csparse_presolve_netagg(PyObject *self, PyObject *args) {
+    (void)self;
+    return csparse_presolve_impl(args, 0, 2);
+}
+
 static PyObject *csparse_presolve_v2(PyObject *self, PyObject *args) {
     (void)self;
     return csparse_presolve_impl(args, 1, 0);
@@ -17588,6 +17724,8 @@ static PyMethodDef module_methods[] = {
      "C V2 presolve for equality-plus-bounds LP (fixed columns, forcing, column singletons, duplicates)."},
     {"presolve_agg", csparse_presolve_agg, METH_VARARGS,
      "C agg-only re-stage: general equality-row aggregation (mirrors the agg_only Python path)."},
+    {"presolve_netagg", csparse_presolve_netagg, METH_VARARGS,
+     "C network aggregation using multi-row implied-bound certificates."},
     {"presolve_v2_candidates", csparse_presolve_v2_candidates, METH_VARARGS,
      "Count immediately removable V2 rows and columns."},
     {NULL, NULL, 0, NULL}

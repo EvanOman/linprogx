@@ -206,7 +206,16 @@ class SparseSolver:
         chosen = algorithm
         if algorithm == "auto":
             rows, _ = matrix.shape
-            chosen = "ipm" if rows <= self.AUTO_IPM_MAX_ROWS else "pdhg"
+            # Net aggregation is certified only for models already on the
+            # PDHG route.  Its large row reduction must not reclassify that
+            # same solve as IPM merely because the reduced row count crossed
+            # the auto threshold.
+            net_aggregated = (
+                reduction is not None and reduction._reduction_counts.get("net_aggregations", 0) > 0
+            )
+            chosen = (
+                "pdhg" if net_aggregated else ("ipm" if rows <= self.AUTO_IPM_MAX_ROWS else "pdhg")
+            )
 
         # Stall-prediction shortcut: when the presolved problem has
         # structurally adversarial one-sided columns with costs pointing

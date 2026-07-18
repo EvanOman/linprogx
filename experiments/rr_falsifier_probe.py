@@ -357,6 +357,7 @@ def solve_pdhg(
     original_x = np.asarray(postsolve_x(reduced_x.tolist(), presolve), dtype=float)
     original_objective = float(raw["c"] @ original_x)
     absolute_delta = abs(original_objective - oracle_objective)
+    assert result.solution.objective_value is not None
     return SolveFacts(
         status=result.solution.status.value,
         iterations=result.solution.iterations,
