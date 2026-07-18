@@ -87,6 +87,8 @@ ARTIFACT_DATES = {
     "70203c4": "2026-07-17",
     "592d2c0": "2026-07-17",
     "c5517a2": "2026-07-17",
+    "38846d5": "2026-07-18",
+    "31b197a": "2026-07-18",
 }
 
 ARTIFACT_LABELS = {
@@ -104,6 +106,8 @@ ARTIFACT_LABELS = {
     "70203c4": "native aggregation certification",
     "592d2c0": "on-host IPM slice census",
     "c5517a2": "a2 refactor certification",
+    "38846d5": "netagg certification",
+    "31b197a": "parallel-cols certification",
 }
 
 
