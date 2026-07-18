@@ -2387,6 +2387,31 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   green. greenbea's pivot-count frontier re-closes; P-E (locality)
   is the wave's last runner.
 
+- FORTY-FIFTH SETTLED — LOCALITY (P-E) KILLED; THE GREENBEA
+  RESEARCH CAMPAIGN CLOSES (2026-07-18, codex, audit clean;
+  experiments/probe_locality_2026_07_18.md): 95.9-96.9% of the DS
+  kernels' indirect accesses already hit touched cache lines; the
+  feasible hot-pack layout models 0.81% SLOWER; an impossible
+  per-call oracle permutation ceilings at 1.26% vs the 15% gate.
+  The access pattern is already near-optimal. CAMPAIGN CLOSURE:
+  every idea class from the four-model ideation fan-out is now
+  measured dead — A block-DS (survival 1.28 pivots/panel), B
+  precision (cache-resident, 6.8%), C active-set (over-determined),
+  E locality (oracle 1.26%), F Schur (rho invariance), native
+  Phase-1 replication (0-for-2, 11,377 pivots) — while D's
+  mechanism identification STANDS as the scientific answer.
+  GREENBEA'S TERMINAL ACCOUNT: per-pivot work sits at a
+  measured-and-proven hard floor (intrinsically dense solve
+  vectors, cache-optimal access, no amortizable structure, no
+  precision headroom); the pivot-count gap is architecturally
+  explained (HiGHS's refined dual Phase-1) but unreplicable from
+  published formulations within the campaign's constraints. The
+  cell stays ~1.69 with the most complete negative-results dossier
+  on the board: 45 dated verdicts, 6 idea classes, 4 model
+  families, one mechanism identified. Reopening requires either a
+  novel Phase-1 formulation from future literature or an idea
+  class no thread has named.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
