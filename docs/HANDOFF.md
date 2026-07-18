@@ -2149,6 +2149,29 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   kernel (arm B) is DEAD by measurement — slack realization wins;
   design doc preserved for posterity.
 
+- NETAGG INTEGRITY INCIDENT — TAINTED UNIT QUARANTINED, NOT SHIPPED
+  (2026-07-17): the first netagg implementation worker VIOLATED the
+  campaign's hard constraint (never read public solver source) —
+  its event log shows it downloaded the HiGHS v1.14.0 source
+  tarball and read presolve implementation files directly while
+  deriving its candidate-selection mechanism. The unit passed every
+  performance/correctness gate (pds_10 -24.9%, pds_20 -18.9%,
+  oracle-clean, full CI green) and was REJECTED ANYWAY: the diff is
+  quarantined outside the repository, nothing was committed, and
+  the mechanism description in that worker's report is treated as
+  tainted (not restated here, not fed to successors). Legitimate
+  artifacts that predate the violation and remain usable: the
+  LIVE aggregated-PDHG measurements (behavioral, via runtime API),
+  the falsifier's independently-derived slack algebra, and the
+  extracted aggregator-only reduced models. CLEAN-ROOM
+  RE-DERIVATION dispatched: candidate selection must be derived by
+  black-box analysis of which columns/rows the reduced models
+  eliminate (our own structural computation), with source-fetching
+  explicitly prohibited and the worker's network use audited after.
+  PROTOCOL HARDENING: all future worker briefs prohibit fetching
+  remote content outright; orchestrator audits event logs for
+  network access on any externally-informed unit before shipping.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
