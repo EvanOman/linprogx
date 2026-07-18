@@ -72,3 +72,12 @@ current era).
 - GIT QUIRK: this checkout maps LF->CRLF on touch — NEVER git stash here
   (a stash/pop cycle conflicts on churned files; use a scratch worktree
   at HEAD to test pre-existing failures instead).
+- INTEGRITY PROTOCOL (2026-07-17 incident — see NETAGG INTEGRITY
+  INCIDENT in the ledger): the codex sandbox can sometimes reach the
+  network; a worker once downloaded HiGHS source and its gate-passing
+  unit was quarantined for it. EVERY worker brief must explicitly
+  prohibit fetching remote content (no curl/wget/new installs; solver
+  source strictly forbidden — the campaign constraint). Before
+  shipping any unit whose design could have been externally informed,
+  AUDIT the worker's event log: codex-worker.sh log <session>, grep
+  for curl/wget/github/clone. Network use on such a unit = discard.
