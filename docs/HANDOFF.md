@@ -2331,6 +2331,25 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   batching (pending) or the held locality/Schur multipliers
   (2-thread convergence, unprobed).
 
+- FORTY-SECOND SETTLED — BLOCK-DS (P-A) KILLED; PROBE WAVE
+  SYNTHESIS (2026-07-18, codex, audit clean;
+  experiments/probe_blockds_2026_07_18.md): panel survival is
+  catastrophic — 1.281 consecutive pivots per p=4 panel, 2.30%
+  survive three intervening pivots; favorable batching 1.434x
+  collapses to 0.564x after survival; attacked pool measured
+  53.6%; projection 0.59x = SLOWDOWN vs the 2.8x bar. WAVE
+  SYNTHESIS: P-A/P-B/P-C all killed on measurement; P-D identified
+  the mechanism (dual Phase-1, 40th). The ONLY flip path is now
+  NATIVE DUAL PHASE-1 (~-25% pivots, the sure factor) STACKED with
+  one unprobed multiplier: E (support-contiguity reordering,
+  glm+opus+contrarian convergent, claimed -7..-20%) or F
+  (Schur/bordered-block basis factorization, glm+opus convergent,
+  claimed -11..-25%; opus measured greenbea as bordered-staircase:
+  87% local columns + dense border, RCM bandwidth 2363->1422).
+  Phase-1 alone projects greenbea ~1.28 on-host — the largest
+  single narrowing available. NEXT WAVE DISPATCHED: U-P1 (native
+  dual Phase-1 build, staged) in parallel with probes P-E and P-F.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
