@@ -2412,6 +2412,32 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   novel Phase-1 formulation from future literature or an idea
   class no thread has named.
 
+- FORTY-SIXTH ENTRY — PHASE-1 DERIVATION: CORE CONFIRMED, ECONOMICS
+  CONSERVED (2026-07-18, orchestrator derivation + codex
+  verification, audit clean; experiments/dual_phase1_derivation_
+  2026_07_18.md + phase1_predictions_2026_07_18.md): the
+  Fenchel-derived auxiliary (min c'x, Ax=0, unit boxes) is
+  STRUCTURALLY RIGHT — P1 confirmed EXACTLY (HiGHS DuPh1 = 1,655
+  bit-stable across six b-perturbations at three magnitudes: their
+  phase-1 never reads b; only a homogeneous auxiliary predicts
+  this), and the derivation's central mathematical claim verified
+  by direct linear algebra: the auxiliary's optimal basis B* has
+  ZERO dual-feasibility violations on the original problem.
+  B*-start achieves **3,334 native pivots** — PIVOT PARITY with
+  HiGHS's 3,309, from our own construction. Falsified details: the
+  naive support-monotonicity prediction (auxiliary difficulty is
+  not monotone in cost support) and boxed-column fixing (their
+  auxiliary responds to boxed costs — boxed columns participate
+  with flip freedom; refinable). THE WALL VERDICT: B*-trajectory
+  densifies to 113.8 us/pivot (vs 90.5 cold) — pivots x us/pivot
+  behaves as a CONSERVED ~0.38-0.40s across every start ever
+  tested (cold, foreign transfer, native B*). The open question:
+  the per-pivot floor proofs (P-B/P-E/P-F, dense-U 25th) were all
+  measured on the COLD trajectory's sparser bases; the B*
+  trajectory is dense from pivot 1 — a different kernel regime.
+  Dense-regime re-test on the B* trajectory DISPATCHED (the last
+  coherent thread).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
