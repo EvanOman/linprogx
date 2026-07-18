@@ -2207,6 +2207,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   (~1.7) is accepted as the campaign's standing loss pending a
   genuinely new idea class; do not re-probe settled axes.
 
+- NETAGG CERTIFICATION — PDS_20 CRUSHES, PDS_10 NARROWS TO 1.109
+  (2026-07-18, v3 3 hosts x 7 pairs, us-west-2, at 38846d5,
+  assets/modal_bench_38846d5898ec_paired_hosts3.json): **pds_20
+  WIN 0.459** [0.414,0.526] 21/21 (was 0.824 — the clean-room
+  netagg's -50% transferred fully; one of the deepest wins on the
+  board). **pds_10 1.109** [0.954,1.122] 6/21 — NOT flipped but
+  the gap is two-thirds closed (was 1.26-1.57); one host had it
+  at 0.954. qap12 sentinel clean (0.017, netagg size-gated off).
+  Board holds 21W-1P-2L with pds_10 needing ~10%. SCOPED RESIDUAL:
+  the mechanism probe measured HiGHS rule 13 removing 4,613
+  parallel columns on post-aggregation pds_10 — our duplicate
+  detection is exact-only; a proportional parallel-column pass on
+  the netagg-reduced shape is the follow-up falsifier (the old
+  3.3% census ceiling was pre-netagg on other instances).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
