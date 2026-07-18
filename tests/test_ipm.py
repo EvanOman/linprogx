@@ -154,6 +154,17 @@ class TestMinDegree:
 
 
 class TestSolveEqBoxIpm:
+    @pytest.mark.parametrize("post_mu", [float("nan"), float("inf"), float("-inf")])
+    def test_mu_safeguard_rejects_nonfinite_post_step(self, post_mu: float) -> None:
+        assert _csparse.ipm_mu_step_rejected_test(1e-9, post_mu)
+
+    def test_mu_safeguard_preserves_finite_threshold(self) -> None:
+        pre_mu = 1e-9
+        threshold = 10.0 * pre_mu
+
+        assert not _csparse.ipm_mu_step_rejected_test(pre_mu, threshold)
+        assert _csparse.ipm_mu_step_rejected_test(pre_mu, np.nextafter(threshold, np.inf))
+
     def test_equality_bounds_known_solution(self) -> None:
         matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
 

@@ -6439,6 +6439,11 @@ static double ipm_raw_primal_residual(const double *rp, const double *row_scale,
     return max_residual;
 }
 
+static inline int ipm_mu_step_rejected(double pre_mu, double post_mu) {
+    return !isfinite(pre_mu) || !isfinite(post_mu) ||
+           post_mu > 10.0 * pre_mu;
+}
+
 static int ipm_dual_polish(const ScaledOp *op, CholContext *chol, const double *c,
                            const double *b, const double *lo, const double *hi,
                            const unsigned char *bound_kind, Py_ssize_t m, Py_ssize_t n,
@@ -8257,10 +8262,11 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
          * forced correctors: mu 3.96e-9 -> 2.29e-4 at one iteration, then ~50
          * extra iterations re-converging). Before committing, compute the
          * tentative post-step mu over the same complementarity products used
-         * for the barrier parameter; if it would grow past 10x the pre-step
-         * mu, shrink the step (bounded halvings), and if no shrunk step is
-         * safe skip the step entirely so the exit machinery certifies the
-         * current converged iterate rather than mutating it into a worse one.
+         * for the barrier parameter; if any tentative component is non-finite
+         * or mu would grow past 10x the pre-step mu, shrink the step (bounded
+         * halvings), and if no shrunk step is safe skip the step entirely so
+         * the exit machinery certifies the current converged iterate rather
+         * than mutating it into a worse one.
          * Two global constants (1e-7 window, 10x blowup); no per-problem
          * tuning; deterministic arithmetic only. */
         if (mu < 1e-7) {
@@ -8273,24 +8279,39 @@ static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *arg
             double post_mu;
             for (;;) {
                 double post_sum = 0.0;
+                int post_components_finite = 1;
                 for (Py_ssize_t j = 0; j < n; j++) {
                     unsigned char kind = bound_kind[j];
                     if (kind & 1) {
-                        post_sum += (sl[j] + ap * dx[j]) * (zl[j] + ad * dzl[j]);
+                        double post_sl = sl[j] + ap * dx[j];
+                        double post_zl = zl[j] + ad * dzl[j];
+                        if (!isfinite(post_sl) || !isfinite(post_zl)) {
+                            post_components_finite = 0;
+                            break;
+                        }
+                        post_sum += post_sl * post_zl;
                     }
                     if (kind & 2) {
-                        post_sum += (su[j] - ap * dx[j]) * (zu[j] + ad * dzu[j]);
+                        double post_su = su[j] - ap * dx[j];
+                        double post_zu = zu[j] + ad * dzu[j];
+                        if (!isfinite(post_su) || !isfinite(post_zu)) {
+                            post_components_finite = 0;
+                            break;
+                        }
+                        post_sum += post_su * post_zu;
                     }
                 }
-                post_mu = post_sum / (double)n_comp;
-                if (post_mu <= 10.0 * pre_mu || halvings >= 3) {
+                post_mu = post_components_finite
+                              ? post_sum / (double)n_comp
+                              : NAN;
+                if (!ipm_mu_step_rejected(pre_mu, post_mu) || halvings >= 3) {
                     break;
                 }
                 ap *= 0.5;
                 ad *= 0.5;
                 halvings++;
             }
-            if (post_mu > 10.0 * pre_mu) {
+            if (ipm_mu_step_rejected(pre_mu, post_mu)) {
                 /* No safe step within the shrink budget: the direction is
                  * garbage. Skip the step; the best-iterate restore and exit
                  * certification below run on the converged iterate. */
@@ -18011,6 +18032,15 @@ static PyObject *csparse_presolve_parallel_cols(PyObject *self, PyObject *args) 
     return csparse_presolve_impl(args, 0, 0, 1);
 }
 
+static PyObject *csparse_ipm_mu_step_rejected_test(PyObject *self, PyObject *args) {
+    (void)self;
+    double pre_mu, post_mu;
+    if (!PyArg_ParseTuple(args, "dd", &pre_mu, &post_mu)) {
+        return NULL;
+    }
+    return PyBool_FromLong(ipm_mu_step_rejected(pre_mu, post_mu));
+}
+
 static PyMethodDef module_methods[] = {
     {"min_degree", csparse_min_degree, METH_VARARGS,
      "Exact minimum-degree ordering of a symmetric CSC/CSR pattern (indptr, indices)."},
@@ -18032,6 +18062,8 @@ static PyMethodDef module_methods[] = {
      "Exact compatible and endpoint-dominated parallel-column reduction."},
     {"presolve_v2_candidates", csparse_presolve_v2_candidates, METH_VARARGS,
      "Count immediately removable V2 rows and columns."},
+    {"ipm_mu_step_rejected_test", csparse_ipm_mu_step_rejected_test, METH_VARARGS,
+     "Test hook: return whether the IPM mu safeguard rejects a tentative step."},
     {NULL, NULL, 0, NULL}
 };
 
