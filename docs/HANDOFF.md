@@ -2350,6 +2350,25 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   single narrowing available. NEXT WAVE DISPATCHED: U-P1 (native
   dual Phase-1 build, staged) in parallel with probes P-E and P-F.
 
+- FORTY-THIRD SETTLED — SCHUR/BORDERED FACTORIZATION (P-F) KILLED
+  ON AN INVARIANT (2026-07-18, opus killing its own family's idea,
+  audit clean; experiments/probe_schur_2026_07_18.md): rho = B^-T
+  e_r is the UNIQUE solution fixed by (B,r) — its nnz is
+  factorization-independent (verified: zero nnz disagreement across
+  NATURAL/COLAMD/MMD orderings on real trajectory bases at pivots
+  500/2000/3500, including the densest rows at 72%). greenbea's
+  59-94% solve-vector densities are the TRUE BTRAN results on the
+  rows the DS visits, not border-fill symptoms. Additionally: real
+  bases are one giant connected component (88.7-95.7%) — no thin
+  border exists (10-15% border needed for sub-10% blocks); bordered
+  orderings carry +30% MORE factor fill than COLAMD. Class F dead;
+  the deep fact stands: greenbea's basis inverse is intrinsically
+  dense on the visited rows — per-pivot work has a hard floor near
+  the current kernels. The flip now rides entirely on U-P1 (native
+  dual Phase-1, fewer pivots) x P-E (locality — its cache-model
+  gate must now overcome both the P-B cache-residency finding and
+  this intrinsic-density result).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
