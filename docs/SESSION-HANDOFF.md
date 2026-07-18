@@ -30,16 +30,19 @@ current era).
 1. Coin flips (cre_a 0.995, pds_10 0.985): occasionally re-certify
    (one v3 wave, both instances); a friendly host draw certifies
    either as a win. No engineering.
-2. mu-safeguard NaN guard (37th settled found the comparison passes
-   NaN steps): small defensive C fix, characterization-first.
-3. greenbea: closed. Only a genuinely new idea class reopens it —
-   re-read the 35th/37th/38th settled entries before proposing
-   anything; every named axis is measured dead.
-4. Supernodal sparse front (refactor lever c): optional general-value
-   unit (~57% front-time cut needed for further gates); not board-
-   critical.
-5. Chronicle round 6 (21W-2P-1L) may already be committed/published —
-   verify gh-pages + artifact match before re-publishing.
+2. greenbea: THE RESEARCH CAMPAIGN IS CLOSED (39th-45th settled,
+   2026-07-18). Terminal account: per-pivot work at a proven hard
+   floor (rho density factorization-invariant; kernels 96%
+   cache-line-reuse optimal; panels die in 1.28 pivots; fp32 gains
+   0.98-1.18x); pivot gap identified as HiGHS's refined dual
+   Phase-1 but replication 0-for-2 (11,377 vs their 1,655).
+   Reopening requires a novel Phase-1 formulation or an unnamed
+   idea class. Read experiments/greenbea_dossier + the probe
+   reports before proposing ANYTHING.
+3. Supernodal sparse front (refactor lever c): optional
+   general-value unit; not board-critical.
+4. Chronicle round 7 (research-campaign story) may be committed/
+   published — verify gh-pages + artifact before re-publishing.
 
 ## Orchestration protocol (hard lessons, do not relearn)
 - Overmind mode: Fable plans/reviews; workers implement. NEVER
