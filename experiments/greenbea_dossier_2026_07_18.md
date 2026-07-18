@@ -26,8 +26,11 @@ measured dead — proposals on those axes are rejected on sight.
   at a bound-propagation fixpoint: eliminating all 338 under ranged-row
   semantics yields 10 redundant rows, 0 propagated tightenings, 0 fixes.
 - Row degree p50/p99 = 5/91.8; col degree p50/p99 = 6/17. Density 0.39%.
-- 83.2% of variables active at a bound at optimum; ~1/4,399 degenerate
-  pivots (essentially none).
+- CORRECTED 2026-07-18 (probe_activeset): 61.6% of variables are truly
+  nonbasic-at-bound at optimum (2,381/3,868); the earlier 83.2% figure
+  counted 681 degenerate-BASIC columns sitting at bounds by value. The
+  IPM primal cannot distinguish the two classes (measured prediction
+  precision ceiling ~0.76). ~1/4,399 degenerate pivots.
 - DS support density: rho p50 897, alpha p50 3,625, ratio-candidates
   p50 182; consecutive-pivot support overlap 96-99.97%.
 

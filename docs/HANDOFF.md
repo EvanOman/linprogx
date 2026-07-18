@@ -2272,6 +2272,25 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   with kill criteria: experiments/greenbea_research_plan_2026_07_18
   .md + the four greenbea_ideas_* files. PROBES DISPATCHED.
 
+- THIRTY-NINTH SETTLED — ACTIVE-SET PREDICTION (P-C) KILLED,
+  OVER-DETERMINED (2026-07-18, GLM-5.2 killing its own bet; audit
+  clean; experiments/probe_activeset_2026_07_18.md): five
+  independent failures. (1) TIMING RECORD CORRECTED: partial IPM to
+  k=60 costs 0.630s — G2's k-sweep 0.117-0.128s was an artifact of
+  a LINPROGX_IPM_CROSSOVER_SLICE gate in its probe build that is
+  absent from current source; opus's ideation-thread skepticism was
+  right and the research plan's adjudication was WRONG (recorded
+  here per honest-reporting). (2) End-to-end 0.89s vs the 0.30s
+  bar. (3) All reduced LPs infeasible (over-fixed). (4) DOSSIER
+  CORRECTED: true nonbasic-at-bound is 61.6%, not 83.2% (681
+  degenerate-basic columns sit at bounds by value). (5) Structural
+  precision ceiling ~0.76: the IPM primal cannot separate
+  optimal-nonbasic from degenerate-basic at bounds. FAMILY VERDICT:
+  prediction-based fixing is dead as a class; the sifting variant
+  (exact-pricing dormancy, no fixing) survives unprobed but demoted
+  by the corrected 61.6%. Probes P-A/P-B/P-D unaffected (their
+  premises do not rest on the corrected figures).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
