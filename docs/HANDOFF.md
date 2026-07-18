@@ -2369,6 +2369,24 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   gate must now overcome both the P-B cache-residency finding and
   this intrinsic-density result).
 
+- FORTY-FOURTH SETTLED — NATIVE DUAL PHASE-1 (U-P1) KILLED AT S1
+  (2026-07-18, codex, audit clean;
+  experiments/unit_dual_phase1_2026_07_18.md): both permitted
+  formulations of an artificial-bounds dual Phase-1 FAIL
+  catastrophically — boxed-auxiliary-optimum 11,377 pivots (2.6x
+  worse than no phase), early-dual-feasible handoff 11,379 total
+  with Phase-2 densified +16.5% us/pivot (FTRAN/BTRAN density
+  +43/+41% — the trade-against curse a fifth time). HiGHS's DuPh1
+  does 1,655: their phase-1 is far more refined than the standard
+  textbook constructions. The 40th entry's mechanism
+  identification STANDS (it is behaviorally proven to be phase
+  architecture); its REPLICATION from published formulations is
+  now 0-for-2 and closed under the campaign's two-attempt rule.
+  Status semantics preserved and tested (synthetic optimal/
+  infeasible/unbounded knob-on/off); knob default OFF; 531 tests
+  green. greenbea's pivot-count frontier re-closes; P-E (locality)
+  is the wave's last runner.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
