@@ -2238,6 +2238,19 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   parallel/dominance merging) requiring no architecture change —
   the falsifier chain corrected the premise twice en route.
 
+- MU-SAFEGUARD NAN GUARD SHIPPED (2026-07-18, codex, audit clean):
+  the 37th-settled latent bug fixed fail-closed — a shared isfinite
+  predicate rejects non-finite pre/post-step mu and tentative
+  slack/dual components before commit; finite-path behavior is
+  byte-identical on every IPM fixture (hex-float objectives
+  verified). greenbea forced-IPM now BREAKs cleanly at the stall
+  instead of committing a NaN step (59 -> 58 iterations, same
+  objective/residual, clean iteration_limit). 522 tests; full CI
+  green. This closes the session queue: remaining board items are
+  the two host-lottery coin flips (cre_a 0.995, pds_10 0.985 —
+  periodic re-cert only) and greenbea (closed frontier, awaiting a
+  new idea class).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
