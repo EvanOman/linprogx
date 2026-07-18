@@ -182,6 +182,8 @@ def test_netagg_default_is_on(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_pds10_netagg_public_route_and_original_space_residual(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Netagg-layer golden: pin the downstream parallel-cols stage off.
+    monkeypatch.setenv("LINPROGX_PRESOLVE_PARALLEL_COLS", "0")
     import numpy as np
 
     raw = loadmat("/tmp/lpsuite/lp_pds_10.mat")["Problem"][0, 0]

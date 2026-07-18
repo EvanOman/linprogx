@@ -31,11 +31,13 @@ from linprogx.presolve import (
     PresolveResult,
     _ColumnSingleton,
     _compose_reductions,
+    _DominatedColumn,
     _Doubleton,
     _DuplicateColumn,
     _empty_reduction_counts,
     _FixedVar,
     _fixpoint_worth_restage,
+    _ParallelColumn,
     _remap_record,
     postsolve_x,
     presolve_matrix,
@@ -173,6 +175,10 @@ def test_remap_record_all_types() -> None:
     assert _remap_record(_DuplicateColumn(1, 0, 0.0, 5.0, 0.0, 8.0), a1) == _DuplicateColumn(
         20, 10, 0.0, 5.0, 0.0, 8.0
     )
+    assert _remap_record(_ParallelColumn(2, 0, -1.0, -3.0, 4.0, 0.0, 8.0), a1) == _ParallelColumn(
+        30, 10, -1.0, -3.0, 4.0, 0.0, 8.0
+    )
+    assert _remap_record(_DominatedColumn(1, 2.5), a1) == _DominatedColumn(20, 2.5)
 
 
 def _mk_result(active_cols, records, orig_cols, cols):

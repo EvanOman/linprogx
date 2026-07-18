@@ -61,6 +61,9 @@ try:
     _c_v2_candidates = _csparse.presolve_v2_candidates  # type: ignore[attr-defined]
     _c_presolve_agg = getattr(_csparse, "presolve_agg", None)  # type: ignore[attr-defined]
     _c_presolve_netagg = getattr(_csparse, "presolve_netagg", None)  # type: ignore[attr-defined]
+    _c_presolve_parallel_cols = getattr(  # type: ignore[attr-defined]
+        _csparse, "presolve_parallel_cols", None
+    )
 except (ImportError, AttributeError):  # pragma: no cover - source tree before extension build
     _csparse = None
     _c_presolve = None
@@ -68,6 +71,7 @@ except (ImportError, AttributeError):  # pragma: no cover - source tree before e
     _c_v2_candidates = None
     _c_presolve_agg = None
     _c_presolve_netagg = None
+    _c_presolve_parallel_cols = None
 
 _SSZ = struct.calcsize("n")  # sizeof(Py_ssize_t)
 
@@ -159,6 +163,23 @@ class _DuplicateColumn:
     kept_hi: float
 
 
+@dataclass(frozen=True)
+class _ParallelColumn:
+    removed: int
+    kept: int
+    scale: float
+    removed_lo: float
+    removed_hi: float
+    kept_lo: float
+    kept_hi: float
+
+
+@dataclass(frozen=True)
+class _DominatedColumn:
+    column: int
+    value: float
+
+
 class _LazyRecordList:
     """Lazily materializes presolve records from raw C tuples.
 
@@ -188,6 +209,10 @@ class _LazyRecordList:
                 yield _Aggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
             elif rec[0] == 6:
                 yield _NetAggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
+            elif rec[0] == 7:
+                yield _ParallelColumn(rec[1], rec[2], rec[3], rec[4], rec[5], rec[6], rec[7])
+            elif rec[0] == 8:
+                yield _DominatedColumn(rec[1], rec[2])
             else:
                 raise ValueError(f"unknown presolve record tag {rec[0]}")
 
@@ -205,6 +230,10 @@ class _LazyRecordList:
                 yield _Aggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
             elif rec[0] == 6:
                 yield _NetAggregation(rec[1], rec[2], rec[3], tuple(rec[4]))
+            elif rec[0] == 7:
+                yield _ParallelColumn(rec[1], rec[2], rec[3], rec[4], rec[5], rec[6], rec[7])
+            elif rec[0] == 8:
+                yield _DominatedColumn(rec[1], rec[2])
             else:
                 raise ValueError(f"unknown presolve record tag {rec[0]}")
 
@@ -246,6 +275,8 @@ def _empty_reduction_counts() -> dict[str, int]:
         "duplicate_columns": 0,
         "aggregations": 0,
         "net_aggregations": 0,
+        "parallel_columns": 0,
+        "dominated_columns": 0,
     }
 
 
@@ -273,6 +304,8 @@ class PresolveResult:
             | _DuplicateColumn
             | _Aggregation
             | _NetAggregation
+            | _ParallelColumn
+            | _DominatedColumn
         ]
         | _LazyRecordList
         | _ComposedRecordList
@@ -347,9 +380,16 @@ def _netagg_enabled() -> bool:
     return os.environ.get("LINPROGX_PRESOLVE_NETAGG", "1") == "1"
 
 
+def _parallel_cols_enabled() -> bool:
+    """Exact compatible/endpoint-dominated parallel columns. Default OFF."""
+    return os.environ.get("LINPROGX_PRESOLVE_PARALLEL_COLS", "1") == "1"
+
+
 _NETAGG_MIN_ROWS = 10_000
 _NETAGG_MIN_NNZ = 100_000
 _NETAGG_MIN_NNZ_REDUCTION_FRACTION = 0.10
+_PARALLEL_MAX_ROWS = 10_000
+_PARALLEL_MIN_NNZ_REDUCTION_FRACTION = 0.08
 
 
 def _v2_native_enabled() -> bool:
@@ -439,6 +479,18 @@ def _remap_record(record: Any, active_cols: list[int]) -> Any:
             record.rhs,
             tuple((active_cols[j], coef) for j, coef in record.terms),
         )
+    if isinstance(record, _ParallelColumn):
+        return _ParallelColumn(
+            active_cols[record.removed],
+            active_cols[record.kept],
+            record.scale,
+            record.removed_lo,
+            record.removed_hi,
+            record.kept_lo,
+            record.kept_hi,
+        )
+    if isinstance(record, _DominatedColumn):
+        return _DominatedColumn(active_cols[record.column], record.value)
     raise ValueError(f"unknown presolve record type {type(record)!r}")
 
 
@@ -596,6 +648,36 @@ def _maybe_netaggregate(result: PresolveResult, max_fill: int) -> PresolveResult
     second = _result_from_c(raw)
     second_nnz = second._matrix.nnz if second._matrix is not None else len(second.data)
     if second_nnz > (1.0 - _NETAGG_MIN_NNZ_REDUCTION_FRACTION) * nnz:
+        return result
+    return _compose_reductions(result, second)
+
+
+def _maybe_parallel_columns(result: PresolveResult) -> PresolveResult:
+    """Compose the dark exact parallel-column stage after netagg.
+
+    Netagg's own route and raw-size gates are inherited by requiring a composed
+    net-aggregation record. The final 8% nnz gate is global and realized: a
+    knob-enabled scan that finds less exact reduction is discarded.
+    """
+    if result._reduction_counts.get("net_aggregations", 0) == 0:
+        return result
+    if result.rows > _PARALLEL_MAX_ROWS:
+        return result
+    if _c_presolve_parallel_cols is None or result._matrix is None:
+        return result
+    nnz = result._matrix.nnz
+    raw = _c_presolve_parallel_cols(
+        result._matrix,
+        _pack_dbls(result.b),
+        _pack_dbls(result.c),
+        _pack_dbls(result.lo),
+        _pack_dbls(result.hi),
+    )
+    if raw is None:
+        return result
+    second = _result_from_c(raw)
+    second_nnz = second._matrix.nnz if second._matrix is not None else len(second.data)
+    if second_nnz > (1.0 - _PARALLEL_MIN_NNZ_REDUCTION_FRACTION) * nnz:
         return result
     return _compose_reductions(result, second)
 
@@ -846,6 +928,8 @@ def _presolve_eq_box_python(
         | _DuplicateColumn
         | _Aggregation
         | _NetAggregation
+        | _ParallelColumn
+        | _DominatedColumn
     ] = []
     removed_rows: set[int] = set()
     removed_cols: set[int] = set()
@@ -1379,6 +1463,8 @@ def _result_from_c(raw: tuple[Any, ...]) -> PresolveResult:
             reduction_counts["column_singletons"],
             reduction_counts["doubletons"],
             reduction_counts["duplicate_columns"],
+            reduction_counts["parallel_columns"],
+            reduction_counts["dominated_columns"],
         ) = r_counts_raw
     else:
         for record in r_records_raw:
@@ -1391,6 +1477,10 @@ def _result_from_c(raw: tuple[Any, ...]) -> PresolveResult:
             reduction_counts["aggregations"] += 1
         elif record[0] == 6:
             reduction_counts["net_aggregations"] += 1
+        elif record[0] == 7 and r_counts_raw is None:
+            reduction_counts["parallel_columns"] += 1
+        elif record[0] == 8 and r_counts_raw is None:
+            reduction_counts["dominated_columns"] += 1
     return PresolveResult(
         rows=r_shape[0],
         cols=r_shape[1],
@@ -1449,6 +1539,8 @@ def presolve_matrix(
                 res = _maybe_aggregate(res, max_fill)
             if res is not None and algorithm in ("pdhg", "auto") and _netagg_enabled():
                 res = _maybe_netaggregate(res, max_fill)
+            if res is not None and algorithm in ("pdhg", "auto") and _parallel_cols_enabled():
+                res = _maybe_parallel_columns(res)
             return res
 
         if _v2_enabled() and _c_v2_candidates is not None:
@@ -1562,7 +1654,7 @@ def postsolve_x(x_reduced: list[float], reduction: PresolveResult) -> list[float
     for new_j, j in enumerate(reduction._active_cols):
         x_full[j] = float(x_reduced[new_j])
     for record in reversed(reduction._records):
-        if isinstance(record, _FixedVar):
+        if isinstance(record, (_FixedVar, _DominatedColumn)):
             x_full[record.column] = record.value
         elif isinstance(record, _Doubleton):
             x_full[record.eliminated] = (
@@ -1571,6 +1663,27 @@ def postsolve_x(x_reduced: list[float], reduction: PresolveResult) -> list[float
         elif isinstance(record, (_ColumnSingleton, _Aggregation, _NetAggregation)):
             rest = sum(coef * x_full[j] for j, coef in record.terms)
             x_full[record.eliminated] = (record.rhs - rest) / record.coef_eliminated
+        elif isinstance(record, _ParallelColumn):
+            y = x_full[record.kept]
+            mapped_lo = min(
+                record.scale * record.removed_lo,
+                record.scale * record.removed_hi,
+            )
+            mapped_hi = max(
+                record.scale * record.removed_lo,
+                record.scale * record.removed_hi,
+            )
+            split_lo = max(record.kept_lo, y - mapped_hi)
+            split_hi = min(record.kept_hi, y - mapped_lo)
+            if split_lo > 0.0:
+                kept_value = split_lo
+            elif split_hi < 0.0:
+                kept_value = split_hi
+            else:
+                kept_value = 0.0
+            removed_value = (y - kept_value) / record.scale
+            x_full[record.kept] = kept_value
+            x_full[record.removed] = removed_value
         else:
             y = x_full[record.kept]
             kept_value = min(

@@ -15807,13 +15807,15 @@ typedef struct {
 #define PS_REC_DUPLICATE_COLUMN 3
 #define PS_REC_AGGREGATION 5
 #define PS_REC_NET_AGGREGATION 6
+#define PS_REC_PARALLEL_COLUMN 7
+#define PS_REC_DOMINATED_COLUMN 8
 
 typedef struct { Py_ssize_t col; double val; } PSTerm;
 
 typedef struct {
     int         type;
     Py_ssize_t  idx1, idx2;
-    double      v1, v2, v3, v4;
+    double      v1, v2, v3, v4, v5;
     PSTerm     *terms;
     Py_ssize_t  n_terms;
 } PSRec;
@@ -15822,6 +15824,19 @@ typedef struct {
     Py_ssize_t row;
     double val;
 } PSDupPair;
+
+typedef struct {
+    Py_ssize_t col;
+    double orient;
+    double gamma;
+} PSParallelMember;
+
+typedef struct {
+    Py_ssize_t start, end;
+    double gamma;
+    int lower_finite, upper_finite;
+    int lower_neg_inf, upper_pos_inf;
+} PSParallelGroup;
 
 /* ---- PSRow helpers ---------------------------------------------------- */
 
@@ -16108,6 +16123,54 @@ static int ps_signatures_equal(
     return 1;
 }
 
+static int ps_parallel_signature(
+    Py_ssize_t j, PSRow *row_data, PSColSet *col_sets,
+    const char *rem_row, PSDupPair *buf,
+    Py_ssize_t *n_out, uint64_t *hash_out, double *orient_out
+) {
+    Py_ssize_t n = 0;
+    uint64_t ignored = 0;
+    ps_col_signature(j, row_data, col_sets, rem_row, buf, &n, &ignored);
+    if (n == 0) {
+        *n_out = 0; *hash_out = 0; *orient_out = 1.0;
+        return 0;
+    }
+    double orient = buf[0].val > 0.0 ? 1.0 : -1.0;
+    uint64_t hash = ps_hash_mix(UINT64_C(0xcbf29ce484222325), (uint64_t)n);
+    for (Py_ssize_t k = 0; k < n; k++) {
+        hash = ps_hash_mix(hash, (uint64_t)buf[k].row);
+        hash = ps_hash_mix(hash, ps_double_key(orient * buf[k].val));
+    }
+    *n_out = n; *hash_out = hash; *orient_out = orient;
+    return 0;
+}
+
+static int ps_parallel_signatures_equal(
+    Py_ssize_t a, Py_ssize_t b, PSRow *row_data, PSColSet *col_sets,
+    const char *rem_row, PSDupPair *buf_a, PSDupPair *buf_b
+) {
+    Py_ssize_t na = 0, nb = 0;
+    uint64_t ha = 0, hb = 0;
+    double oa = 1.0, ob = 1.0;
+    ps_parallel_signature(a, row_data, col_sets, rem_row, buf_a, &na, &ha, &oa);
+    ps_parallel_signature(b, row_data, col_sets, rem_row, buf_b, &nb, &hb, &ob);
+    if (na != nb) return 0;
+    for (Py_ssize_t k = 0; k < na; k++) {
+        if (buf_a[k].row != buf_b[k].row ||
+            oa * buf_a[k].val != ob * buf_b[k].val)
+            return 0;
+    }
+    return 1;
+}
+
+static int ps_parallel_member_cmp(const void *a, const void *b) {
+    const PSParallelMember *ma = (const PSParallelMember *)a;
+    const PSParallelMember *mb = (const PSParallelMember *)b;
+    if (ma->gamma < mb->gamma) return -1;
+    if (ma->gamma > mb->gamma) return 1;
+    return (ma->col > mb->col) - (ma->col < mb->col);
+}
+
 static int ps_rec_reserve(PSRec **recs, Py_ssize_t *cap, Py_ssize_t need) {
     if (need <= *cap) return 0;
     Py_ssize_t nc = *cap > 0 ? *cap : 32;
@@ -16127,7 +16190,7 @@ static int ps_rec_fixed(
     PSRec *r = &(*recs)[(*n)++];
     r->type = PS_REC_FIXED;
     r->idx1 = col; r->idx2 = 0;
-    r->v1 = value; r->v2 = r->v3 = r->v4 = 0.0;
+    r->v1 = value; r->v2 = r->v3 = r->v4 = r->v5 = 0.0;
     r->terms = NULL; r->n_terms = 0;
     return 0;
 }
@@ -16141,7 +16204,8 @@ static int ps_rec_doubleton(
     PSRec *r = &(*recs)[(*n)++];
     r->type = PS_REC_DOUBLETON;
     r->idx1 = eliminated; r->idx2 = kept;
-    r->v1 = coef_eliminated; r->v2 = coef_kept; r->v3 = rhs; r->v4 = 0.0;
+    r->v1 = coef_eliminated; r->v2 = coef_kept; r->v3 = rhs;
+    r->v4 = r->v5 = 0.0;
     r->terms = NULL; r->n_terms = 0;
     return 0;
 }
@@ -16161,7 +16225,7 @@ static int ps_rec_column_singleton(
     PSRec *r = &(*recs)[(*n)++];
     r->type = PS_REC_COLUMN_SINGLETON;
     r->idx1 = eliminated; r->idx2 = 0;
-    r->v1 = coef_eliminated; r->v2 = rhs; r->v3 = r->v4 = 0.0;
+    r->v1 = coef_eliminated; r->v2 = rhs; r->v3 = r->v4 = r->v5 = 0.0;
     r->terms = copy; r->n_terms = n_terms;
     return 0;
 }
@@ -16177,6 +16241,7 @@ static int ps_rec_duplicate(
     r->type = PS_REC_DUPLICATE_COLUMN;
     r->idx1 = removed; r->idx2 = kept;
     r->v1 = removed_lo; r->v2 = removed_hi; r->v3 = kept_lo; r->v4 = kept_hi;
+    r->v5 = 0.0;
     r->terms = NULL; r->n_terms = 0;
     return 0;
 }
@@ -16200,8 +16265,36 @@ static int ps_rec_aggregation(
     PSRec *r = &(*recs)[(*n)++];
     r->type = PS_REC_AGGREGATION;
     r->idx1 = eliminated; r->idx2 = 0;
-    r->v1 = coef_eliminated; r->v2 = rhs; r->v3 = r->v4 = 0.0;
+    r->v1 = coef_eliminated; r->v2 = rhs; r->v3 = r->v4 = r->v5 = 0.0;
     r->terms = copy; r->n_terms = n_terms;
+    return 0;
+}
+
+static int ps_rec_parallel(
+    PSRec **recs, Py_ssize_t *n, Py_ssize_t *cap,
+    Py_ssize_t removed, Py_ssize_t kept, double scale,
+    double removed_lo, double removed_hi, double kept_lo, double kept_hi
+) {
+    if (ps_rec_reserve(recs, cap, *n + 1) != 0) return -1;
+    PSRec *r = &(*recs)[(*n)++];
+    r->type = PS_REC_PARALLEL_COLUMN;
+    r->idx1 = removed; r->idx2 = kept;
+    r->v1 = scale; r->v2 = removed_lo; r->v3 = removed_hi;
+    r->v4 = kept_lo; r->v5 = kept_hi;
+    r->terms = NULL; r->n_terms = 0;
+    return 0;
+}
+
+static int ps_rec_dominated(
+    PSRec **recs, Py_ssize_t *n, Py_ssize_t *cap,
+    Py_ssize_t col, double value
+) {
+    if (ps_rec_reserve(recs, cap, *n + 1) != 0) return -1;
+    PSRec *r = &(*recs)[(*n)++];
+    r->type = PS_REC_DOMINATED_COLUMN;
+    r->idx1 = col; r->idx2 = 0;
+    r->v1 = value; r->v2 = r->v3 = r->v4 = r->v5 = 0.0;
+    r->terms = NULL; r->n_terms = 0;
     return 0;
 }
 
@@ -16578,7 +16671,9 @@ static PyObject *csparse_presolve_v2_candidates(PyObject *self, PyObject *args) 
 
 /* ---- the main presolve function --------------------------------------- */
 
-static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mode) {
+static PyObject *csparse_presolve_impl(
+    PyObject *args, int enable_v2, int agg_mode, int parallel_mode
+) {
     PyObject *matrix_obj;
     const char *b_buf, *c_buf, *lo_buf, *hi_buf;
     Py_ssize_t b_len, c_len, lo_len, hi_len;
@@ -16641,6 +16736,10 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
     PSDupPair   *dup_buf_a   = NULL, *dup_buf_b = NULL;
     Py_ssize_t  *dup_hash_cols = NULL;
     uint64_t    *dup_hash_values = NULL;
+    Py_ssize_t  *parallel_next = NULL;
+    double      *parallel_orient = NULL;
+    PSParallelMember *parallel_members = NULL;
+    PSParallelGroup *parallel_groups = NULL;
     Py_ssize_t  *act_rows    = NULL;
     Py_ssize_t  *act_cols    = NULL;
     Py_ssize_t  *col_map     = NULL;
@@ -16758,14 +16857,19 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
     Py_ssize_t count_column_singletons = 0;
     Py_ssize_t count_doubletons = 0;
     Py_ssize_t count_duplicate_columns = 0;
+    Py_ssize_t count_parallel_columns = 0;
+    Py_ssize_t count_dominated_columns = 0;
 
+    if (enable_v2 || parallel_mode) {
+        dup_buf_a = (PSDupPair *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(PSDupPair));
+        dup_buf_b = (PSDupPair *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(PSDupPair));
+        if (!dup_buf_a || !dup_buf_b) goto oom;
+    }
     if (enable_v2) {
         fix_cols = (Py_ssize_t *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(Py_ssize_t));
         fix_vals = (double *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(double));
         term_buf = (PSTerm *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(PSTerm));
-        dup_buf_a = (PSDupPair *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(PSDupPair));
-        dup_buf_b = (PSDupPair *)malloc((size_t)(rows > 0 ? rows : 1) * sizeof(PSDupPair));
-        if (!fix_cols || !fix_vals || !term_buf || !dup_buf_a || !dup_buf_b) goto oom;
+        if (!fix_cols || !fix_vals || !term_buf) goto oom;
     }
 
     /* ---- agg-only working storage + parameters ------------------------- */
@@ -16807,8 +16911,190 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
     }
     Py_ssize_t count_aggregations = 0;
 
+    /* ---- exact parallel columns + endpoint dominance ----------------- */
+    if (parallel_mode) {
+        size_t hash_cap = 1;
+        size_t col_count = (size_t)(cols > 0 ? cols : 1);
+        while (hash_cap < col_count * 2) hash_cap <<= 1;
+        dup_hash_cols = (Py_ssize_t *)calloc(hash_cap, sizeof(Py_ssize_t));
+        dup_hash_values = (uint64_t *)calloc(hash_cap, sizeof(uint64_t));
+        parallel_next = (Py_ssize_t *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(Py_ssize_t));
+        parallel_orient = (double *)malloc((size_t)(cols > 0 ? cols : 1) * sizeof(double));
+        parallel_members = (PSParallelMember *)malloc(
+            (size_t)(cols > 0 ? cols : 1) * sizeof(PSParallelMember));
+        parallel_groups = (PSParallelGroup *)malloc(
+            (size_t)(cols > 0 ? cols : 1) * sizeof(PSParallelGroup));
+        if (!dup_hash_cols || !dup_hash_values || !parallel_next ||
+            !parallel_orient || !parallel_members || !parallel_groups)
+            goto oom;
+        for (Py_ssize_t j = 0; j < cols; j++) parallel_next[j] = -1;
+
+        /* Hash exact canonical signatures. Multiplying a column by its
+         * orientation (+/-1 from the first sorted nonzero) makes A and -A
+         * share one class without any tolerance or coefficient rounding. */
+        for (Py_ssize_t j = 0; j < cols; j++) {
+            if (col_sets[j].count == 0) continue;
+            Py_ssize_t nsig = 0;
+            uint64_t hash = 0;
+            double orient = 1.0;
+            ps_parallel_signature(j, row_data, col_sets, rem_row,
+                                  dup_buf_a, &nsig, &hash, &orient);
+            if (nsig == 0) continue;
+            parallel_orient[j] = orient;
+            size_t slot = (size_t)hash & (hash_cap - 1);
+            while (dup_hash_cols[slot] != 0) {
+                Py_ssize_t first = dup_hash_cols[slot] - 1;
+                if (dup_hash_values[slot] == hash &&
+                    ps_parallel_signatures_equal(
+                        first, j, row_data, col_sets, rem_row,
+                        dup_buf_b, dup_buf_a))
+                    break;
+                slot = (slot + 1) & (hash_cap - 1);
+            }
+            if (dup_hash_cols[slot] == 0) {
+                dup_hash_cols[slot] = j + 1;
+                dup_hash_values[slot] = hash;
+            } else {
+                parallel_next[j] = dup_hash_cols[slot] - 1;
+                dup_hash_cols[slot] = j + 1;
+            }
+        }
+
+        for (size_t slot = 0; slot < hash_cap; slot++) {
+            if (dup_hash_cols[slot] == 0) continue;
+            Py_ssize_t nm = 0;
+            int valid = 1;
+            for (Py_ssize_t j = dup_hash_cols[slot] - 1; j >= 0;
+                 j = parallel_next[j]) {
+                double orient = parallel_orient[j];
+                double gamma = orient * c_arr[j];
+                if (!isfinite(gamma) || isnan(lo_arr[j]) || isnan(hi_arr[j]) ||
+                    lo_arr[j] > hi_arr[j] || lo_arr[j] == INFINITY ||
+                    hi_arr[j] == -INFINITY) {
+                    valid = 0;
+                    break;
+                }
+                parallel_members[nm].col = j;
+                parallel_members[nm].orient = orient;
+                parallel_members[nm].gamma = gamma;
+                nm++;
+            }
+            if (!valid || nm < 2) continue;
+            qsort(parallel_members, (size_t)nm, sizeof(PSParallelMember),
+                  ps_parallel_member_cmp);
+
+            Py_ssize_t ng = 0;
+            for (Py_ssize_t start = 0; start < nm;) {
+                Py_ssize_t end = start + 1;
+                while (end < nm &&
+                       parallel_members[end].gamma == parallel_members[start].gamma)
+                    end++;
+                PSParallelGroup *g = &parallel_groups[ng++];
+                g->start = start; g->end = end;
+                g->gamma = parallel_members[start].gamma;
+                g->lower_finite = 1; g->upper_finite = 1;
+                g->lower_neg_inf = 0; g->upper_pos_inf = 0;
+                for (Py_ssize_t p = start; p < end; p++) {
+                    Py_ssize_t j = parallel_members[p].col;
+                    double orient = parallel_members[p].orient;
+                    double lower = orient > 0.0 ? lo_arr[j] : -hi_arr[j];
+                    double upper = orient > 0.0 ? hi_arr[j] : -lo_arr[j];
+                    if (!isfinite(lower)) {
+                        g->lower_finite = 0;
+                        if (lower == -INFINITY) g->lower_neg_inf = 1;
+                    }
+                    if (!isfinite(upper)) {
+                        g->upper_finite = 0;
+                        if (upper == INFINITY) g->upper_pos_inf = 1;
+                    }
+                }
+                start = end;
+            }
+
+            int dominance_mode = 0;  /* +1: fix higher costs low; -1: fix lower costs high */
+            if (ng > 1 && parallel_groups[0].upper_pos_inf) {
+                int ok = 1;
+                for (Py_ssize_t g = 1; g < ng; g++)
+                    if (!parallel_groups[g].lower_finite) { ok = 0; break; }
+                if (ok) dominance_mode = 1;
+            }
+            if (dominance_mode == 0 && ng > 1 &&
+                parallel_groups[ng - 1].lower_neg_inf) {
+                int ok = 1;
+                for (Py_ssize_t g = 0; g + 1 < ng; g++)
+                    if (!parallel_groups[g].upper_finite) { ok = 0; break; }
+                if (ok) dominance_mode = -1;
+            }
+
+            for (Py_ssize_t gi = 0; gi < ng; gi++) {
+                PSParallelGroup *g = &parallel_groups[gi];
+                int dominated = (dominance_mode > 0 && gi > 0) ||
+                                (dominance_mode < 0 && gi + 1 < ng);
+                if (dominated) {
+                    for (Py_ssize_t p = g->start; p < g->end; p++) {
+                        Py_ssize_t j = parallel_members[p].col;
+                        double orient = parallel_members[p].orient;
+                        double endpoint = dominance_mode > 0
+                            ? (orient > 0.0 ? lo_arr[j] : -hi_arr[j])
+                            : (orient > 0.0 ? hi_arr[j] : -lo_arr[j]);
+                        double value = orient * endpoint;
+                        if (!isfinite(value)) { valid = 0; break; }
+                        if (ps_rec_dominated(&recs, &recs_n, &recs_cap,
+                                             j, value) != 0)
+                            goto oom;
+                        obj_off += c_arr[j] * value;
+                        Py_ssize_t sn = col_sets[j].count;
+                        memcpy(snap_buf, col_sets[j].items,
+                               (size_t)sn * sizeof(Py_ssize_t));
+                        for (Py_ssize_t s = 0; s < sn; s++) {
+                            Py_ssize_t i = snap_buf[s];
+                            PSEntry *entry = ps_row_find(&row_data[i], j);
+                            if (!entry) continue;
+                            b_arr[i] -= entry->val * value;
+                            ps_row_delete(&row_data[i], j);
+                            ps_colset_discard(&col_sets[j], i);
+                        }
+                        rem_col[j] = 1; n_rem_cols++;
+                        ps_colset_clear(&col_sets[j]);
+                        count_dominated_columns++;
+                    }
+                    if (!valid) break;
+                    continue;
+                }
+
+                /* Equal oriented costs merge losslessly. Keep the lowest
+                 * column index (the gamma/column sort makes it first). */
+                Py_ssize_t kept = parallel_members[g->start].col;
+                double kept_orient = parallel_members[g->start].orient;
+                for (Py_ssize_t p = g->start + 1; p < g->end; p++) {
+                    Py_ssize_t j = parallel_members[p].col;
+                    double scale = parallel_members[p].orient * kept_orient;
+                    double mapped_lo = scale > 0.0 ? lo_arr[j] : -hi_arr[j];
+                    double mapped_hi = scale > 0.0 ? hi_arr[j] : -lo_arr[j];
+                    if (ps_rec_parallel(
+                            &recs, &recs_n, &recs_cap, j, kept, scale,
+                            lo_arr[j], hi_arr[j], lo_arr[kept], hi_arr[kept]) != 0)
+                        goto oom;
+                    lo_arr[kept] += mapped_lo;
+                    hi_arr[kept] += mapped_hi;
+                    Py_ssize_t sn = col_sets[j].count;
+                    memcpy(snap_buf, col_sets[j].items,
+                           (size_t)sn * sizeof(Py_ssize_t));
+                    for (Py_ssize_t s = 0; s < sn; s++) {
+                        Py_ssize_t i = snap_buf[s];
+                        if (ps_row_pop(&row_data[i], j))
+                            ps_colset_discard(&col_sets[j], i);
+                    }
+                    rem_col[j] = 1; n_rem_cols++;
+                    ps_colset_clear(&col_sets[j]);
+                    count_parallel_columns++;
+                }
+            }
+        }
+    }
+
     /* ==== fixpoint loop ================================================ */
-    int changed = 1;
+    int changed = parallel_mode ? 0 : 1;
     while (changed) {
         changed = 0;
 
@@ -17633,6 +17919,14 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
                     (Py_ssize_t)(recs[x].type == PS_REC_AGGREGATION ? 5 : 6),
                     recs[x].idx1, recs[x].v1, recs[x].v2, terms);
                 Py_DECREF(terms);
+            } else if (recs[x].type == PS_REC_PARALLEL_COLUMN) {
+                tup = Py_BuildValue("(nnnddddd)",
+                    (Py_ssize_t)7, recs[x].idx1, recs[x].idx2,
+                    recs[x].v1, recs[x].v2, recs[x].v3,
+                    recs[x].v4, recs[x].v5);
+            } else if (recs[x].type == PS_REC_DOMINATED_COLUMN) {
+                tup = Py_BuildValue("(nnd)",
+                    (Py_ssize_t)8, recs[x].idx1, recs[x].v1);
             } else {
                 tup = Py_BuildValue("(nnndddd)",
                     (Py_ssize_t)3, recs[x].idx1, recs[x].idx2,
@@ -17646,10 +17940,11 @@ static PyObject *csparse_presolve_impl(PyObject *args, int enable_v2, int agg_mo
                                           (Py_ssize_t)(n_ac * sizeof(Py_ssize_t)));
         if (!py_ac) goto cleanup;
 
-        PyObject *py_counts = Py_BuildValue("(nnnnnnnnn)",
+        PyObject *py_counts = Py_BuildValue("(nnnnnnnnnnn)",
             count_fixed_columns, count_empty_columns, count_forcing_rows,
             count_forcing_columns, count_empty_rows, count_singleton_rows,
-            count_column_singletons, count_doubletons, count_duplicate_columns);
+            count_column_singletons, count_doubletons, count_duplicate_columns,
+            count_parallel_columns, count_dominated_columns);
         if (!py_counts) goto cleanup;
 
         result = Py_BuildValue("(OOOOOdnnOOnO)",
@@ -17680,6 +17975,8 @@ cleanup:
     free(snap_buf); free(build_gen); free(build_slot);
     free(fix_cols); free(fix_vals); free(term_buf);
     free(dup_buf_a); free(dup_buf_b); free(dup_hash_cols); free(dup_hash_values);
+    free(parallel_next); free(parallel_orient);
+    free(parallel_members); free(parallel_groups);
     free(act_rows); free(act_cols); free(col_map); free(sort_buf);
     free(o_indptr); free(o_indices); free(o_data); free(o_b);
     free(agg_queue); free(agg_inq); free(agg_rows_j);
@@ -17691,22 +17988,27 @@ cleanup:
 
 static PyObject *csparse_presolve_eq_box(PyObject *self, PyObject *args) {
     (void)self;
-    return csparse_presolve_impl(args, 0, 0);
+    return csparse_presolve_impl(args, 0, 0, 0);
 }
 
 static PyObject *csparse_presolve_agg(PyObject *self, PyObject *args) {
     (void)self;
-    return csparse_presolve_impl(args, 0, 1);
+    return csparse_presolve_impl(args, 0, 1, 0);
 }
 
 static PyObject *csparse_presolve_netagg(PyObject *self, PyObject *args) {
     (void)self;
-    return csparse_presolve_impl(args, 0, 2);
+    return csparse_presolve_impl(args, 0, 2, 0);
 }
 
 static PyObject *csparse_presolve_v2(PyObject *self, PyObject *args) {
     (void)self;
-    return csparse_presolve_impl(args, 1, 0);
+    return csparse_presolve_impl(args, 1, 0, 0);
+}
+
+static PyObject *csparse_presolve_parallel_cols(PyObject *self, PyObject *args) {
+    (void)self;
+    return csparse_presolve_impl(args, 0, 0, 1);
 }
 
 static PyMethodDef module_methods[] = {
@@ -17726,6 +18028,8 @@ static PyMethodDef module_methods[] = {
      "C agg-only re-stage: general equality-row aggregation (mirrors the agg_only Python path)."},
     {"presolve_netagg", csparse_presolve_netagg, METH_VARARGS,
      "C network aggregation using multi-row implied-bound certificates."},
+    {"presolve_parallel_cols", csparse_presolve_parallel_cols, METH_VARARGS,
+     "Exact compatible and endpoint-dominated parallel-column reduction."},
     {"presolve_v2_candidates", csparse_presolve_v2_candidates, METH_VARARGS,
      "Count immediately removable V2 rows and columns."},
     {NULL, NULL, 0, NULL}
