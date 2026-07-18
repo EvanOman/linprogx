@@ -165,9 +165,11 @@ def test_netagg_record_remaps_and_composes() -> None:
     assert postsolve_x([2.0, 9.0], composed) == pytest.approx([2.0, 0.0, 7.0, 9.0])
 
 
-def test_netagg_default_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_netagg_default_is_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Shipped default ON after certification gates passed; the structural
+    # size gates keep the pass inert off pds-scale PDHG problems.
     monkeypatch.delenv("LINPROGX_PRESOLVE_NETAGG", raising=False)
-    assert P._netagg_enabled() is False
+    assert P._netagg_enabled() is True
     monkeypatch.setenv("LINPROGX_PRESOLVE_NETAGG", "1")
     assert P._netagg_enabled() is True
     monkeypatch.setenv("LINPROGX_PRESOLVE_NETAGG", "0")

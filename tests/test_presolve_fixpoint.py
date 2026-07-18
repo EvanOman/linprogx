@@ -261,6 +261,9 @@ def test_cre_a_reconstruction_matches_oracle(monkeypatch: pytest.MonkeyPatch) ->
 @pytest.mark.skipif(not SUITE.exists(), reason="/tmp/lpsuite fixtures unavailable")
 @pytest.mark.parametrize("name", sorted(GOLDEN_OFF))
 def test_off_path_byte_identical(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Fixpoint goldens characterize the classic+V2 layers; pin netagg off
+    # (its default-ON pds reductions would change these shapes).
+    monkeypatch.setenv("LINPROGX_PRESOLVE_NETAGG", "0")
     monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "0")
     monkeypatch.setenv("LINPROGX_PRESOLVE_FIXPOINT", "0")
     assert _shape(SUITE / f"lp_{name}.mat") == GOLDEN_OFF[name]
@@ -269,6 +272,9 @@ def test_off_path_byte_identical(name: str, monkeypatch: pytest.MonkeyPatch) -> 
 @pytest.mark.skipif(not SUITE.exists(), reason="/tmp/lpsuite fixtures unavailable")
 @pytest.mark.parametrize("name", sorted(EXPECT_ON))
 def test_on_path_second_fixpoint(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Fixpoint goldens characterize the classic+V2 layers; pin netagg off
+    # (its default-ON pds reductions would change these shapes).
+    monkeypatch.setenv("LINPROGX_PRESOLVE_NETAGG", "0")
     monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "0")
     monkeypatch.setenv("LINPROGX_PRESOLVE_FIXPOINT", "1")
     assert _shape(SUITE / f"lp_{name}.mat") == EXPECT_ON[name]
@@ -310,6 +316,9 @@ def test_second_fixpoint_reconstruction(name: str, monkeypatch: pytest.MonkeyPat
 @pytest.mark.skipif(not SUITE.exists(), reason="/tmp/lpsuite fixtures unavailable")
 @pytest.mark.parametrize("name", DISCARDED_RESTAGE)
 def test_tiny_second_reduction_is_discarded(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Fixpoint goldens characterize the classic+V2 layers; pin netagg off
+    # (its default-ON pds reductions would change these shapes).
+    monkeypatch.setenv("LINPROGX_PRESOLVE_NETAGG", "0")
     # These trigger the second pass (classic >= 2%) but the second reduction is
     # too small to keep; the acceptance gate must fall back to the classic shape
     # (keeping it regressed the solve by up to 41% in measurement).

@@ -719,7 +719,11 @@ def test_cre_a_fixture_equivalence() -> None:
         "lp_woodw",
     ],
 )
-def test_lpnetlib_fixture_native_v2_bit_equivalence(fixture_name: str, v2_enabled: None) -> None:
+def test_lpnetlib_fixture_native_v2_bit_equivalence(
+    fixture_name: str, v2_enabled: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # V2 bit-equivalence characterizes the V2 layer alone; pin netagg off.
+    monkeypatch.setenv("LINPROGX_PRESOLVE_NETAGG", "0")
     path = Path("/tmp/lpsuite") / f"{fixture_name}.mat"
     raw = loadmat(path)["Problem"][0, 0]
     aux = raw["aux"][0, 0]
@@ -772,6 +776,7 @@ def test_lpnetlib_fixture_native_v2_bit_equivalence(fixture_name: str, v2_enable
 def test_lpnetlib_fixture_native_agg_bit_equivalence(
     fixture_name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("LINPROGX_PRESOLVE_NETAGG", "0")  # agg-layer golden; netagg off
     """The native (_csparse) aggregation re-stage must reproduce the pure-Python
     agg_only re-stage bit-for-bit -- the composed reduced problem, its records,
     and the accept/reject (fill-gate) decision -- on every LPnetlib fixture.
