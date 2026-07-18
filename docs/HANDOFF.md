@@ -2438,6 +2438,24 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   Dense-regime re-test on the B* trajectory DISPATCHED (the last
   coherent thread).
 
+- FORTY-SEVENTH SETTLED — DENSE-REGIME LOOPHOLE CLOSED; THE
+  CONSERVATION LAW IS GREENBEA'S TERMINAL RESULT (2026-07-18,
+  codex, audit clean; phase1_predictions_2026_07_18.md appendix):
+  on the B*-start dense trajectory, dense-U gains ~1% (0.3780 ->
+  0.3743s), CHOL_SCHED inert, pivot-row +7.4us is the largest
+  density cost. The honest pipeline (auxiliary 0.1451s + B*-DS
+  0.374s = 0.519s) is 24-27% WORSE than cold. FINAL LAW: pivots x
+  us/pivot ~ 0.38-0.40s for our kernels across every construction
+  (cold 4,399x90.5; foreign 3,529x113.1; native B* 3,334x113.4) —
+  with the auxiliary's own cost on top, no start beats the crash.
+  HiGHS holds 3,309 pivots AND ~86us dense-regime kernels
+  simultaneously; our floor proofs (P-B/P-E/P-F + this) place that
+  combination outside the current kernel architecture. GREENBEA
+  CLOSES at ~1.69 with a complete scientific account: the phase-1
+  mechanism identified and DERIVED (46th: exact b-invariance, B*
+  dual-feasibility proven, native pivot parity achieved), and the
+  wall governed by a measured conservation law. 47 dated verdicts.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
