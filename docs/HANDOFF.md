@@ -2291,6 +2291,30 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   by the corrected 61.6%. Probes P-A/P-B/P-D unaffected (their
   premises do not rest on the corrected figures).
 
+- FORTIETH ENTRY — THE 1,090-PIVOT MECHANISM IDENTIFIED: DUAL
+  PHASE-1 ARCHITECTURE (2026-07-18, opus P-D tomography, audit
+  clean; experiments/probe_tomography_2026_07_18.md): four
+  mutually corroborating behavioral lines. (E3) HiGHS diverges
+  from pivot 1 and its phase-2-equivalent work is 1,633 vs our
+  entire 4,675; (E4) of ALL documented HiGHS simplex options, only
+  dual_feasibility_tolerance and scale_strategy move its 3,309 —
+  and they act on the DuPh1 count, DuPh2 is stable; no
+  pricing/Markowitz/crossover knob matters; (E2) lagging our DSE
+  weights TRIPLES our pivots — their edge is not approximation;
+  (E1) the gap is perturbation-robust — not tie-breaking. The
+  mechanism: an explicit dual Phase-1 (1,655 pivots, ~50% of their
+  work) builds a GEOMETRICALLY GOOD dual-feasible basis; our
+  big-M unified crash starts feasible-but-poor. RESEARCH-PLAN
+  CORRECTION: the contrarian thread's phase-1 exclusion (accepted
+  as adjudication 2) conflated TRANSFERRED phase-1 bases (killed
+  for foreign-basis densification, 35th settled) with a NATIVE
+  phase-1 — the distinction is load-bearing and the exclusion is
+  OVERTURNED. FOLLOW-UP UNIT (the stack's pivot factor): native
+  dual Phase-1 -> native Phase-2, ceiling ~3,300 pivots (-29%);
+  kill if >=4,200 total or post-phase-1 us/pivot densifies >15%
+  or certificate/oracle disagreement. Stacks with P-B precision
+  toward ~0.21s local = flip.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
