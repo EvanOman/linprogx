@@ -2095,6 +2095,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   greenbea ~1.7 and pds_10 1.26-1.57, both requiring new idea
   classes — 35th settled and 29th settled respectively).
 
+- RANGED-ROW PROJECT COMMISSIONED (2026-07-17, Evan's explicit
+  go): the pds_10 architecture unit (29th settled scoping) runs as
+  THREE ARMS IN TENSION. T = go/no-go falsifier: does the
+  chain-contracted problem PDHG-converge without an iteration
+  blow-up (the H1 hazard)? — measured with a throwaway slack
+  realization on the existing solver; kill bar: contracted work
+  proxy must project >=15% wall. A = slack realization
+  (_ChainContraction record, merged row + bounded slack column,
+  zero kernel changes; gate pds_10 >=15%). B = native two-sided row
+  bounds in the PDHG kernel (Chambolle-Pock clamp prox, certificate
+  semantics reworked, equality-only bit-identity as the
+  compatibility gate; gate pds_10 >=18% — must beat A to justify
+  kernel risk). pds_20 (a WIN) is the protected sentinel in all
+  arms; oracle 2e-5 everywhere. Whichever realization wins on
+  measured wall ships; T can kill both.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
