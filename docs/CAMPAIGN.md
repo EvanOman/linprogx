@@ -603,8 +603,8 @@ the start of the campaign's most disciplined piece of science. "It needs a
 genuinely new idea class" is a testable claim, and 2026-07-18 spent it in full.
 The board did not move (**21W-2P-1L** throughout), and this arc changed no ship;
 its product is knowledge — the most complete negative-results dossier on the
-board, **45 dated verdicts across six idea classes and four model families, with
-one long-standing mechanism finally identified**.
+board, **47 dated verdicts across six idea classes and four model families, with
+one long-standing mechanism finally identified and then independently derived**.
 
 **The fan-out: hypotheses in tension across model families.** A shared evidence
 dossier (every measured-dead axis, the per-pivot wall census, the structural
@@ -730,6 +730,76 @@ an idea class that none of four model families has yet named. That is a far
 stronger and more useful place to stand than "we ran out of ideas" — it is a map
 of precisely where the remaining performance is, and precisely why every road the
 campaign can currently see is closed.
+
+### The derivation coda
+
+The 40th entry proved HiGHS's edge is a dual phase-1 we do not run, and the 44th
+closed the *textbook* replications 0-for-2. That could have been the end. Instead,
+after the research campaign had formally closed, the orchestrator did the one thing
+the two-attempt rule had not yet been spent on: it **derived the phase-1 auxiliary
+from first principles** — no source read, textbook duality only — and pre-registered
+three falsifiable predictions before testing. This is the campaign's scientific
+capstone, and it moved the board zero (**21W-2P-1L**) like everything before it.
+
+**The derivation (46th settled).** The natural dual Phase-1 minimizes total dual
+infeasibility `Φ(y)` over the duals `y` — a piecewise-linear convex unconstrained
+problem. Taking its Fenchel dual (the hinge/abs terms conjugate to linear-plus-box
+indicators) collapses it to a strikingly clean auxiliary: **min `c'x` s.t. `Ax = 0`,
+with unit boxes** — `[0,1]` for lower-only columns, `[-1,0]` for upper-only, `[-1,1]`
+for free, and boxed columns fixed at `0`. The auxiliary is **homogeneous** — `b` does
+not appear — with the original sparse `c`, and its KKT conditions *are* the original
+problem's dual-feasibility sign conditions, so its optimal basis `B*` is a
+dual-feasible Phase-2 start by construction.
+
+**P1 confirmed EXACTLY — the decisive test.** The derivation's sharpest prediction:
+because the auxiliary never reads `b`, HiGHS's dual-Phase-1 pivot count must be
+*invariant* under perturbations of the RHS. It was — **DuPh1 = 1,655, bit-stable
+across all six `b`-perturbations** at three magnitudes (`1e-6`, `1e-3`, `1e-1`, two
+seeds each), maximum deviation **0 pivots (0.0%)**, while DuPh2 moved freely from
+1,633 to 2,255 exactly as allowed. No competing hypothesis predicts a homogeneous
+phase-1; only the derived auxiliary does. The central mathematical claim was then
+verified by **direct linear algebra**: forming `B*` and checking `d = c - Aᵀ(B*⁻ᵀc_B*)`
+against the original sign conditions gave **zero dual-feasibility violations** (max
+violation `6.09e-8`; max reduced cost on a basic structural column `8.14e-12`).
+
+**Native pivot parity, achieved.** Warm-starting our dual simplex from `B*` — accepted
+with no singular repairs and no imported bound-status vector — solved greenbea in
+**3,334 native pivots**, **pivot parity with HiGHS's 3,309**, and 195 pivots (5.5%)
+below the 3,529-pivot foreign-basis transfer. For the first time the campaign
+reproduced HiGHS's pivot count *from its own machinery*, on a basis it derived rather
+than imported. The mechanism was no longer merely identified — it was derived,
+verified, and pivotally matched.
+
+**Two naive side-predictions falsified, honestly.** Not everything survived. P2's
+support-monotonicity claim failed — randomly halving the relevant cost support moved
+DuPh1 *up* to 1,929, and the sweep was non-monotone (175→131 support raised DuPh1
+48.3%). Its boxed-column-invariance sub-claim also failed — adding cost to boxed
+columns only moved DuPh1 to **1,808 (+9.2%)**, because boxed columns participate
+through bound-flip freedom rather than being inert. The derivation's *core* is right;
+its two convenience corollaries were wrong, and the ledger records both.
+
+**The terminal physics: a conservation law.** The final twist is the deepest. The
+`B*` warm start cut pivots 24% but the wall did not move — because the `B*`
+trajectory is **dense from pivot 1** (113.8 µs/pivot vs 90.5 cold). A dense-regime
+re-test (the last coherent thread: the earlier per-pivot floor proofs were all
+measured on the *sparser* cold bases) confirmed the ceiling — dense-U gains only
+**~1%** on the `B*` trajectory (0.3780 → 0.3743s), the scheduler is inert, and
+pivot-row scatter is the largest single density cost. Across **every start the
+campaign ever constructed**, the product `pivots × µs/pivot` holds at **~0.38–0.40s
+for our kernels** — cold **4,399 × 90.5**, foreign transfer **3,529 × 113.1**, native
+`B*` **3,334 × 113.4**. Fewer pivots buy denser ones, at a conserved wall. The honest
+pipeline makes it worse: charging the auxiliary solve (0.145s) on top of the warm DS
+(0.374s) totals **0.519s**, 24–27% *slower* than the cold crash. HiGHS holds 3,309
+pivots *and* ~86 µs dense-regime kernels **simultaneously** — a combination our
+floor proofs place outside the current kernel architecture.
+
+**greenbea closes at ~1.69** with a complete scientific account: the phase-1
+mechanism **identified** (40th), **derived** from first principles with exact
+`b`-invariance confirmed and `B*` dual-feasibility proven (46th), and **native pivot
+parity achieved** — beaten in the end not by a missing idea but by a *measured
+conservation law* (47th). **47 dated ledger verdicts** across the full arc. The cell
+is not merely accepted as a loss; it is understood down to the physics of why it
+cannot currently be won.
 
 ## Current certified scoreboard
 
