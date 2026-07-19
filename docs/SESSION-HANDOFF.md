@@ -11,9 +11,9 @@ current era).
   belongs to another session (web-demo) — never touch it.
 - BOARD OF RECORD (protocol v3: 3 hosts x 7 pairs median-of-hosts, AWS
   us-west-2): **21W-2P-1L** (incl. qap15 coverage win).
-  - Parity coin flips (host-lottery, no engineered lever outstanding):
-    cre_a 0.995 and pds_10 0.985 [0.891,1.030] — periodic re-certs may
-    flip either; do not build units for them.
+  - Parity: cre_a only — the perfect coin (four waves: 0.939/1.021/
+    0.995/1.025, cumulative ~52% pair wins). Periodic re-certs only;
+    never build units for it.
   - Sole loss: greenbea ~1.7 — frontier TOTALLY closed (38 settled
     verdicts; see 35th/37th/38th). Needs a genuinely new idea class.
   - The 07-18 pds arc: clean-room netagg + parallel/dominance merging
