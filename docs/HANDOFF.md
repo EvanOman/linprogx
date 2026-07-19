@@ -2456,6 +2456,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   dual-feasibility proven, native pivot parity achieved), and the
   wall governed by a measured conservation law. 47 dated verdicts.
 
+- COIN-FLIP RE-CERT — PDS_10 CERTIFIES, BOARD 22W-1P-1L
+  (2026-07-19, v3 3 hosts x 7 pairs, us-west-2, at 76ba8dcfb79f,
+  assets/modal_bench_76ba8dcfb79f_paired_hosts3.json): **pds_10 0.893**
+  [0.810,1.016] 16/21 — cumulative at the current stack 25/42 pair
+  wins, median of six host-medians 0.939: by the pilot87 precedent
+  (30/42 at 0.927) pds_10 is a HOST-CONDITIONAL WIN. Its full arc:
+  1.26-1.57 -> 1.109 (netagg) -> 0.985 (parallel/dominance) ->
+  certified. cre_a 1.025 [1.007,1.035] 6/21 — the perfect coin
+  (0.939/1.021/0.995/1.025 across four waves, cumulative ~52%):
+  stays PARITY. **V3 BOARD OF RECORD: 22W-1P-1L** — parity cre_a,
+  sole loss greenbea ~1.69 (terminal, conservation law).
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
