@@ -352,6 +352,77 @@ PDS_BOARD = {
     "cumulative": "the ranged-row commissioning resolved into two clean-room presolve units (multi-row implied-bound aggregation + parallel/dominance merging) requiring no architecture change; the falsifier chain corrected the premise twice en route",
 }
 
+# Board of record after the pds_10 host-draw re-certification: a fresh v3 wave lands
+# pds_10 at 0.893 (16/21), and cumulative accounting reaches 25/42 pair wins with a
+# median of six host-medians of 0.939 — a host-conditional WIN by the pilot87 precedent
+# (30/42 at 0.927). pds_10 crosses from parity into the wins column; cre_a stays the
+# perfect coin-flip parity; greenbea is the sole and terminal loss. Board: 22W-1P-1L.
+RECERT_BOARD = {
+    "date": "2026-07-19",
+    "label": "Protocol v3 board (2026-07-19)",
+    # pds_10 now comes from the host-draw re-certification (76ba8dcfb79f). pds_20 carries
+    # from the parallel-cols certification; 80bau3b/cre_a/woodw from a2; greenbea/d2q06c/
+    # ken_07 from the aggregation wave; osa_60/osa_14/stocfor3 from the census wave;
+    # pilot87 from the first v3 wave (its a2 print was a documented host lottery).
+    "artifacts": [
+        "modal_bench_76ba8dcfb79f_paired_hosts3.json",
+        "modal_bench_31b197afe7f4_paired_hosts3.json",
+        "modal_bench_38846d5898ec_paired_hosts3.json",
+        "modal_bench_c5517a23f370_paired_hosts3.json",
+        "modal_bench_70203c413cea_paired_hosts3.json",
+        "modal_bench_928399cf5fea_paired_hosts3.json",
+        "modal_bench_c34417761bb6_paired_hosts3.json",
+    ],
+    "recert_artifact": "modal_bench_76ba8dcfb79f_paired_hosts3.json",
+    "pds_artifact": "modal_bench_31b197afe7f4_paired_hosts3.json",
+    "netagg_artifact": "modal_bench_38846d5898ec_paired_hosts3.json",
+    "a2_artifact": "modal_bench_c5517a23f370_paired_hosts3.json",
+    "agg_artifact": "modal_bench_70203c413cea_paired_hosts3.json",
+    "census_artifact": "modal_bench_928399cf5fea_paired_hosts3.json",
+    "prior_core_artifact": "modal_bench_c34417761bb6_paired_hosts3.json",
+    "summary": "22W-1P-1L",
+    "wins": [
+        "qap12",
+        "ken_18",
+        "d2q06c",
+        "fit2p",
+        "truss",
+        "ken_07",
+        "ken_11",
+        "ken_13",
+        "cre_b",
+        "maros_r7",
+        "cre_d",
+        "degen3",
+        "pds_20",
+        "osa_30",
+        "pilot87",
+        "osa_60",
+        "osa_14",
+        "stocfor3",
+        "80bau3b",
+        "woodw",
+        "pds_10",
+    ],
+    "coverage_wins": ["qap15"],
+    # The pds_10 crossing from parity into the wins column off the 21W-2P-1L pds-era board.
+    "flips": {
+        "pds_10": "parity -> WIN: 0.893 [0.810, 1.016] (16/21 this wave); cumulative 25/42 pair wins, median of six host-medians 0.939 = host-conditional win by the pilot87 precedent (full arc 1.26-1.57 -> 1.109 netagg -> 0.985 parallel/dominance -> 0.893 certified)",
+    },
+    # cre_a remains the perfect coin flip across four waves.
+    "parity": {
+        "cre_a": "the perfect coin (0.939 / 1.021 / 0.995 / 1.025 across four waves, cumulative ~52%); 6/21 this wave at 1.025; decided by host luck with no engineered lever outstanding",
+    },
+    "losses": {
+        "greenbea": "~1.69 (frontier totally closed and terminal — presolve depth, aggregation, ranged rows, five leaving rules, external + IPM warm starts, BFRT, crash, per-pivot slices, IPM route all measured; governed by a measured conservation law; needs a genuinely new idea class)",
+    },
+    # pilot87's a2 print remained a host lottery on a byte-identical code path.
+    "host_lottery": {
+        "pilot87": "a2 print 1.027 [0.914, 1.292]; 128 iters in every pair of both waves, HiGHS walls flat while ours swung 3.76->6.13s — scored from the 0.826 first-v3 win",
+    },
+    "cumulative": "pds_10 was commissioned as an architecture project and completed as two clean-room presolve units (multi-row implied-bound aggregation + parallel/dominance merging) plus a host-draw certification, requiring no architecture change; the falsifier chain corrected the premise twice en route",
+}
+
 # Canonical ship order (baseline first, then chronological ship commits).
 ORDER_SHORT = [
     "a1a355d",  # baseline
@@ -498,9 +569,9 @@ data = {
     "ordered_instances": ordered_instances,
     "final_ratio": {k: (round(v, 3) if v else None) for k, v in final_ratio.items()},
     "aggregate": agg,
-    "generated": "2026-07-18",
-    "canonical_board": PDS_BOARD,
-    "prior_boards": [A2_BOARD, CANONICAL_BOARD, CENSUS_BOARD, V3_BOARD, PIN4_BOARD],
+    "generated": "2026-07-19",
+    "canonical_board": RECERT_BOARD,
+    "prior_boards": [PDS_BOARD, A2_BOARD, CANONICAL_BOARD, CENSUS_BOARD, V3_BOARD, PIN4_BOARD],
 }
 
 if table_exists("bench_artifacts"):
@@ -568,8 +639,8 @@ if table_exists("modal_v3_pairs"):
             SELECT artifact, instance, hosts_observed, pairs_total, lx_wins_total,
                    ratio_median_of_hosts, ratio_min_host, ratio_max_host, verdict
             FROM modal_v3_pairs
-            WHERE (artifact = :pds
-                   AND instance IN ('lp_pds_10', 'lp_pds_20'))
+            WHERE (artifact = :recert AND instance = 'lp_pds_10')
+               OR (artifact = :pds AND instance = 'lp_pds_20')
                OR (artifact = :a2
                    AND instance IN ('lp_80bau3b', 'lp_cre_a', 'lp_woodw'))
                OR (artifact = :agg
@@ -580,11 +651,12 @@ if table_exists("modal_v3_pairs"):
             ORDER BY ratio_median_of_hosts
             """,
             {
-                "pds": PDS_BOARD["pds_artifact"],
-                "a2": PDS_BOARD["a2_artifact"],
-                "agg": PDS_BOARD["agg_artifact"],
-                "census": PDS_BOARD["census_artifact"],
-                "prior_core": PDS_BOARD["prior_core_artifact"],
+                "recert": RECERT_BOARD["recert_artifact"],
+                "pds": RECERT_BOARD["pds_artifact"],
+                "a2": RECERT_BOARD["a2_artifact"],
+                "agg": RECERT_BOARD["agg_artifact"],
+                "census": RECERT_BOARD["census_artifact"],
+                "prior_core": RECERT_BOARD["prior_core_artifact"],
             },
         )
     ]
@@ -641,14 +713,14 @@ if table_exists("bench_artifacts"):
         )
 
 if table_exists("modal_v3_pairs"):
-    print(f"\n=== CANONICAL BOARD PAIRS ({PDS_BOARD['summary']} pds-era) ===")
+    print(f"\n=== CANONICAL BOARD PAIRS ({RECERT_BOARD['summary']} 2026-07-19) ===")
     for r in conn.execute(
         """
         SELECT instance, pairs_total, lx_wins_total, ratio_median_of_hosts,
                verdict, artifact
         FROM modal_v3_pairs
-        WHERE (artifact = :pds
-               AND instance IN ('lp_pds_10', 'lp_pds_20'))
+        WHERE (artifact = :recert AND instance = 'lp_pds_10')
+           OR (artifact = :pds AND instance = 'lp_pds_20')
            OR (artifact = :a2
                AND instance IN ('lp_80bau3b', 'lp_cre_a', 'lp_woodw'))
            OR (artifact = :agg
@@ -659,11 +731,12 @@ if table_exists("modal_v3_pairs"):
         ORDER BY ratio_median_of_hosts
         """,
         {
-            "pds": PDS_BOARD["pds_artifact"],
-            "a2": PDS_BOARD["a2_artifact"],
-            "agg": PDS_BOARD["agg_artifact"],
-            "census": PDS_BOARD["census_artifact"],
-            "prior_core": PDS_BOARD["prior_core_artifact"],
+            "recert": RECERT_BOARD["recert_artifact"],
+            "pds": RECERT_BOARD["pds_artifact"],
+            "a2": RECERT_BOARD["a2_artifact"],
+            "agg": RECERT_BOARD["agg_artifact"],
+            "census": RECERT_BOARD["census_artifact"],
+            "prior_core": RECERT_BOARD["prior_core_artifact"],
         },
     ):
         name = r["instance"].replace("lp_", "")

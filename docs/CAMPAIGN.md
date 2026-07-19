@@ -20,20 +20,22 @@ Where the two axes stand:
   certified optimality.
 - **Runtime: aggregate EXCEEDED, per-instance majority WON.** The suite total and
   geometric-mean time ratio have favored linprogx since early in the campaign; the
-  paired head-to-head is now **21W-2P-1L**, including the `qap15` coverage win,
-  on the 2026-07-18 AWS `us-west-2` protocol-v3 pds-era board. A loss census
+  paired head-to-head is now **22W-1P-1L**, including the `qap15` coverage win,
+  on the 2026-07-19 AWS `us-west-2` protocol-v3 board. A loss census
   plus two presolve ships (H0, H1) took the board to 20W-0P-4L; a native
   equality-row aggregation ship then flipped `80bau3b` to a win while reclassifying
   `cre_a` to an honest coin flip (20W-1P-3L); an on-host slice census then
   isolated the memory-bandwidth **refactor slice**, whose cache-sized-tail
-  single-thread scheduling ship flipped `woodw` to a win (21W-1P-2L); and finally
-  a ranged-row commissioning — which a falsifier chain twice corrected before it
+  single-thread scheduling ship flipped `woodw` to a win (21W-1P-2L); a ranged-row
+  commissioning — which a falsifier chain twice corrected before it
   resolved into two clean-room presolve ships (multi-row implied-bound aggregation,
-  then parallel-column + endpoint dominance) — carried `pds_10` across parity,
-  lifting the parity column to two and dropping the losses to one. The sole
-  remaining loss is greenbea ~1.7 (its frontier now totally closed across every
-  named axis); the two parity cells are `cre_a` and `pds_10`, both host-lottery
-  cells with no engineered lever outstanding (see
+  then parallel-column + endpoint dominance) — carried `pds_10` across parity
+  (21W-2P-1L); and finally a host-draw re-certification landed `pds_10` at **0.893**
+  (25/42 cumulative pair wins, median of six host-medians 0.939), a host-conditional
+  win that crosses it into the wins column and drops the parity column to one. The
+  sole remaining loss is greenbea ~1.69 (its frontier now totally closed across every
+  named axis and governed by a measured conservation law); the one parity cell is
+  `cre_a`, a perfect coin flip with no engineered lever outstanding (see
   [Current certified scoreboard](#current-certified-scoreboard)).
 
 ## The arc
@@ -49,9 +51,11 @@ ship the same day that flipped `80bau3b` to a win and reclassified `cre_a` to a
 coin flip (**20W-1P-3L**), and finally an on-host slice census that isolated the
 memory-bandwidth **refactor slice**, whose cache-sized-tail single-thread
 scheduling ship flipped `woodw` and deepened `80bau3b` to settle the
-**21W-1P-2L** a2-era board, and finally a ranged-row commissioning whose
+**21W-1P-2L** a2-era board, a ranged-row commissioning whose
 falsifier chain and two clean-room presolve ships carried `pds_10` across parity
-to the **21W-2P-1L** pds-era board. The through-line:
+to the **21W-2P-1L** pds-era board, and finally a host-draw re-certification that
+landed `pds_10` at **0.893** — a host-conditional win crossing it into the wins
+column for the **22W-1P-1L** board of record. The through-line:
 the IPM factor path, dual-simplex LU path, presolve layer, and measurement
 protocol were each tightened under paired certification, closing whole classes
 of hypotheses along the way. The final pre-V2 ships came out of a joint
@@ -566,6 +570,22 @@ commissioning is **complete**: its final form was two clean-room presolve units
 requiring no architecture change, the falsifier chain having corrected the
 premise twice en route.
 
+**Host-draw re-certification — `pds_10` certifies as a win (`76ba8dc`).** A fresh
+v3 wave (three AWS `us-west-2` hosts × seven pairs,
+`assets/modal_bench_76ba8dcfb79f_paired_hosts3.json`) landed `pds_10` at **0.893**
+[0.810, 1.016], **16/21**. Folding it into the cumulative accounting takes the
+current stack to **25/42 pair wins** with a **median of six host-medians of
+0.939** — a **host-conditional win** by the same `pilot87` precedent (30/42 at
+0.927) that scores our accepted wins. `pds_10` therefore crosses from parity into
+the wins column, taking the board to **22W-1P-1L** with `cre_a` the sole parity
+cell and `greenbea` the sole loss. `pds_10`'s complete arc — **1.26–1.57
+(commissioning) → 1.109 (netagg) → 0.985 (parallel/dominance) → 0.893
+(certified)** — closes the story of a unit that was *commissioned as an
+architecture project* and *ended as two clean-room presolve units plus a
+host-draw certification*, requiring no architecture change. `cre_a`, meanwhile,
+stays the perfect coin: **0.939 / 1.021 / 0.995 / 1.025** across four waves, a
+cumulative ~52% split with no engineered lever outstanding.
+
 ### The greenbea frontier totally closes
 
 In parallel, `greenbea` (~1.7) — the campaign's standing loss — had its **last two
@@ -806,22 +826,24 @@ cannot currently be won.
 The **certified** standing uses the protocol-v3 median-of-hosts method in
 `docs/HANDOFF.md` and the Modal artifacts replayed into `assets/campaign.db`;
 the single-shot replay table below is narrative-grade only. The board of record
-combines the stable prior cells with the 2026-07-18 AWS `us-west-2`
-pds-era certification (three hosts × seven pairs), which re-certifies `pds_10`
-and `pds_20` from the parallel-cols wave, layered over the a2, aggregation,
+combines the stable prior cells with the 2026-07-19 AWS `us-west-2`
+`pds_10` host-draw re-certification (three hosts × seven pairs), which supplies
+`pds_10`, layered over the parallel-cols (`pds_20`), a2, aggregation,
 census-wave, and prior v3 certifications:
 
-- **pds-era board of record: 21W-2P-1L**, including `qap15` as a coverage win.
-- **The pds crossing:** `pds_10` walked **1.26–1.57 → 1.109 → 0.985**
-  [0.891, 1.030] (9/21) as the ranged-row commissioning resolved into two
-  clean-room presolve ships — multi-row implied-bound aggregation
-  (`38846d5`, which took `pds_20` to **0.459** and narrowed `pds_10` to 1.109)
-  then parallel-column + endpoint dominance (`31b197a`). `pds_20` holds a deep
+- **Board of record: 22W-1P-1L**, including `qap15` as a coverage win.
+- **The pds crossing, certified:** `pds_10` walked **1.26–1.57 → 1.109 → 0.985 →
+  0.893** [0.810, 1.016] (16/21 this wave) as the ranged-row commissioning
+  resolved into two clean-room presolve ships — multi-row implied-bound
+  aggregation (`38846d5`, which took `pds_20` to **0.459** and narrowed `pds_10`
+  to 1.109) then parallel-column + endpoint dominance (`31b197a`) — and a
+  host-draw re-certification (`76ba8dc`) that certified the win. Cumulative
+  accounting: **25/42 pair wins, median of six host-medians 0.939 =
+  host-conditional WIN** by the `pilot87` precedent. `pds_20` holds a deep
   **0.499** [0.414, 0.526] (20/21) — one of the board's deepest wins.
-- **Parity (2):** `cre_a` is a coin flip trending our side —
-  **0.939 / 1.021 / 0.995** across waves — and `pds_10` at **0.985**
-  (sub-1.0 median-of-hosts, one host at 0.891) is parity trending winward by the
-  same precedent. Both cells are decided by host lottery with no engineered lever
+- **Parity (1):** `cre_a` is the perfect coin —
+  **0.939 / 1.021 / 0.995 / 1.025** across four waves, a cumulative ~52% split,
+  6/21 at 1.025 this wave — decided by host lottery with no engineered lever
   outstanding.
 - **Carried-over flips and wins:** `80bau3b` **0.793** (21/21), `cre_a`, and
   `woodw` **0.962** (21/21) from the a2 wave; `greenbea` (sentinel), `d2q06c`
@@ -849,7 +871,8 @@ census-wave, and prior v3 certifications:
   Modal artifacts, and the single-shot trajectory table below still ends at
   `82cd31d`.
 
-The pds-era board supersedes the 21W-1P-2L a2-era board, which superseded the
+The 22W-1P-1L board supersedes the 21W-2P-1L pds-era board, which superseded the
+21W-1P-2L a2-era board, which superseded the
 20W-1P-3L aggregation-era board, which superseded the 20W-0P-4L census-wave
 board, which superseded the 16W-2P-6L v3 board, which in turn superseded the
 single-host pin4 board. The important certification waypoints since presolve V2
