@@ -2486,6 +2486,25 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   final form: change the hardware regime or the factorization
   data structure. The board's last cell stands at 1.215.
 
+- KERNEL CAMPAIGN CLOSED (2026-07-20): final ledger of the 12-angle
+  fan-out + 3 follow-on arms. SHIPPED: the SIMD integration unit
+  (K4 branchless Harris + K2-safe AVX2 scan) — certified, flipped
+  cre_a, greenbea to 1.215. LIVE-UNSHIPPED: K9 density shaping
+  (pipeline-blocked by the auxiliary tax). DISCOVERIES: K7's
+  2,399-pivot native basis; K1's IPC census. KILLED ON MEASUREMENT:
+  K3 dense sweeps (75-87x slower), K12 flags (0%, latency-bound),
+  LS-B interleaving (0.000% collisions yet slower — memory
+  disambiguation), LS-A level scheduling (perfect structure,
+  execution overhead swamps at this size), K2 pivot-row body
+  (numerics), K7-cost, K8 boxed participation. ABANDONED (opencode
+  zombies killed after 24h hung at build; angles' residual value
+  negligible against the proven floor): K5 fusion, K6 prefetch,
+  K10 threaded PRICE, K11 fp32-compare. THE PROVEN RESULT: gathered
+  sparse triangular solves at ~1.5k rows have a hardware latency
+  floor (IPC 0.3-0.6) immune to traversal, width, flags, pipelining
+  and scheduling; greenbea's reopening condition in final form —
+  a different factorization DATA STRUCTURE or hardware regime.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
