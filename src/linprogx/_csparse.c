@@ -7,6 +7,14 @@
 #include <time.h>
 #include <unistd.h>
 
+#if (defined(__x86_64__) || defined(__i386__)) && \
+    (defined(__GNUC__) || defined(__clang__))
+#include <immintrin.h>
+#define LINPROGX_X86_SIMD 1
+#else
+#define LINPROGX_X86_SIMD 0
+#endif
+
 #ifdef LINPROGX_HAVE_BLAS
 /* Fortran LAPACK (LP64, column-major), declared directly so no
  * lapacke header is required. OpenBLAS exports these symbols. */
@@ -12146,6 +12154,287 @@ static LUContext *ds_factorize_basis(
 #define DS_BOUND_FIXED 3   /* lo == hi, variable is fixed */
 #define DS_BOUND_BASIC 4   /* in the basis */
 
+/* K2-safe + K4 SIMD kernels. They are selected together by the global
+ * LINPROGX_DS_SIMD gate (default on, zero disables) when AVX2 is available.
+ * Both deterministic reductions preserve the scalar ascending-index tie
+ * break. */
+static int ds_simd_available(void) {
+#if LINPROGX_X86_SIMD
+    return __builtin_cpu_supports("avx2") != 0;
+#else
+    return 0;
+#endif
+}
+
+typedef struct {
+    double score;
+    int32_t basis_pos;
+    int sigma;
+} DSPriceChoice;
+
+#if LINPROGX_X86_SIMD
+__attribute__((target("avx2")))
+static DSPriceChoice ds_price_avx2(
+    const int32_t *basis, const double *x_B, const double *lo_ext,
+    const double *hi_ext, const double *weights, int32_t m, double tol,
+    int dantzig)
+{
+    const __m256d zero = _mm256_setzero_pd();
+    const __m256d one = _mm256_set1_pd(1.0);
+    const __m256d neg_one = _mm256_set1_pd(-1.0);
+    const __m256d tol_v = _mm256_set1_pd(tol);
+    const __m256d weight_floor = _mm256_set1_pd(1e-12);
+    const __m256d no_index = _mm256_set1_pd(-1.0);
+    __m256d lane_best_score = zero;
+    __m256d lane_best_index = no_index;
+    __m256d lane_best_sigma = zero;
+    int32_t k = 0;
+
+    for (; k + 4 <= m; k += 4) {
+        __m128i basis_index = _mm_loadu_si128((const __m128i *)(basis + k));
+        __m256d x = _mm256_loadu_pd(x_B + k);
+        __m256d lo = _mm256_i32gather_pd(lo_ext, basis_index, 8);
+        __m256d hi = _mm256_i32gather_pd(hi_ext, basis_index, 8);
+        __m256d lo_mask = _mm256_cmp_pd(
+            x, _mm256_sub_pd(lo, tol_v), _CMP_LT_OQ);
+        __m256d hi_mask = _mm256_cmp_pd(
+            x, _mm256_add_pd(hi, tol_v), _CMP_GT_OQ);
+        __m256d lo_viol = _mm256_sub_pd(lo, x);
+        __m256d hi_viol = _mm256_sub_pd(x, hi);
+        __m256d viol = _mm256_blendv_pd(zero, lo_viol, lo_mask);
+        __m256d sigma = _mm256_blendv_pd(zero, one, lo_mask);
+        __m256d take_hi = _mm256_and_pd(
+            hi_mask, _mm256_cmp_pd(hi_viol, viol, _CMP_GT_OQ));
+        viol = _mm256_blendv_pd(viol, hi_viol, take_hi);
+        sigma = _mm256_blendv_pd(sigma, neg_one, take_hi);
+
+        __m256d score;
+        if (dantzig) {
+            score = viol;
+        } else {
+            __m256d weight = _mm256_loadu_pd(weights + k);
+            weight = _mm256_max_pd(weight, weight_floor);
+            score = _mm256_div_pd(_mm256_mul_pd(viol, viol), weight);
+        }
+        __m256d better = _mm256_cmp_pd(score, lane_best_score, _CMP_GT_OQ);
+        __m256d index = _mm256_setr_pd(
+            (double)k, (double)(k + 1), (double)(k + 2), (double)(k + 3));
+        lane_best_score = _mm256_blendv_pd(lane_best_score, score, better);
+        lane_best_index = _mm256_blendv_pd(lane_best_index, index, better);
+        lane_best_sigma = _mm256_blendv_pd(lane_best_sigma, sigma, better);
+    }
+
+    double scores[4], indices[4], sigmas[4];
+    _mm256_storeu_pd(scores, lane_best_score);
+    _mm256_storeu_pd(indices, lane_best_index);
+    _mm256_storeu_pd(sigmas, lane_best_sigma);
+    DSPriceChoice choice = {0.0, -1, 0};
+    for (int lane = 0; lane < 4; lane++) {
+        int32_t index = (int32_t)indices[lane];
+        if (index < 0) continue;
+        if (scores[lane] > choice.score ||
+            (scores[lane] == choice.score &&
+             (choice.basis_pos < 0 || index < choice.basis_pos))) {
+            choice.score = scores[lane];
+            choice.basis_pos = index;
+            choice.sigma = (int)sigmas[lane];
+        }
+    }
+
+    for (; k < m; k++) {
+        int32_t j = basis[k];
+        double viol = 0.0;
+        int sigma = 0;
+        if (isfinite(lo_ext[j]) && x_B[k] < lo_ext[j] - tol) {
+            viol = lo_ext[j] - x_B[k];
+            sigma = 1;
+        }
+        if (isfinite(hi_ext[j]) && x_B[k] > hi_ext[j] + tol) {
+            double v2 = x_B[k] - hi_ext[j];
+            if (v2 > viol) {
+                viol = v2;
+                sigma = -1;
+            }
+        }
+        if (viol > 0.0) {
+            double score;
+            if (dantzig) {
+                score = viol;
+            } else {
+                double w = weights[k];
+                if (w < 1e-12) w = 1e-12;
+                score = (viol * viol) / w;
+            }
+            if (score > choice.score) {
+                choice.score = score;
+                choice.basis_pos = k;
+                choice.sigma = sigma;
+            }
+        }
+    }
+    return choice;
+}
+
+__attribute__((target("avx2")))
+static int ds_harris_pass1_avx2(
+    int32_t n_total, const int32_t *basis_pos, const int8_t *bound_status,
+    const double *alpha_scratch, const double *r_ext, int leaving_sigma,
+    int expand, double expand_tau, int32_t *cand_j, double *cand_alpha,
+    double *theta_min_out)
+{
+    const __m256d sign_mask = _mm256_set1_pd(-0.0);
+    const __m256d pivot_floor = _mm256_set1_pd(1e-9);
+    const __m256d tau = _mm256_set1_pd(expand == 1 ? expand_tau : 0.0);
+    __m256d theta_min_v = _mm256_set1_pd(INFINITY);
+    int32_t j = 0;
+    int n_admissible = 0;
+
+    for (; j + 4 <= n_total; j += 4) {
+        __m256d alpha = _mm256_loadu_pd(alpha_scratch + j);
+        __m256d abs_alpha = _mm256_andnot_pd(sign_mask, alpha);
+        int alpha_mask = _mm256_movemask_pd(
+            _mm256_cmp_pd(abs_alpha, pivot_floor, _CMP_GE_OQ));
+
+        __m128i positions = _mm_loadu_si128((const __m128i *)(basis_pos + j));
+        int nonbasic_mask = _mm_movemask_ps(_mm_castsi128_ps(
+            _mm_cmplt_epi32(positions, _mm_setzero_si128())));
+
+        uint32_t packed_status;
+        memcpy(&packed_status, bound_status + j, sizeof(packed_status));
+        __m128i statuses = _mm_cvtepi8_epi32(_mm_cvtsi32_si128((int)packed_status));
+        int lo_mask = _mm_movemask_ps(_mm_castsi128_ps(
+            _mm_cmpeq_epi32(statuses, _mm_set1_epi32(DS_BOUND_LO))));
+        int hi_mask = _mm_movemask_ps(_mm_castsi128_ps(
+            _mm_cmpeq_epi32(statuses, _mm_set1_epi32(DS_BOUND_HI))));
+        int free_mask = _mm_movemask_ps(_mm_castsi128_ps(
+            _mm_cmpeq_epi32(statuses, _mm_set1_epi32(DS_BOUND_FREE))));
+
+        int negative_mask = _mm256_movemask_pd(
+            _mm256_cmp_pd(alpha, _mm256_setzero_pd(), _CMP_LT_OQ));
+        int positive_mask = _mm256_movemask_pd(
+            _mm256_cmp_pd(alpha, _mm256_setzero_pd(), _CMP_GT_OQ));
+        int lo_direction = leaving_sigma > 0 ? negative_mask : positive_mask;
+        int hi_direction = leaving_sigma > 0 ? positive_mask : negative_mask;
+        int eligible_mask = nonbasic_mask & alpha_mask &
+            ((lo_mask & lo_direction) | (hi_mask & hi_direction) | free_mask);
+
+        __m256d abs_r = _mm256_andnot_pd(
+            sign_mask, _mm256_loadu_pd(r_ext + j));
+        __m256d ratio = _mm256_div_pd(_mm256_add_pd(abs_r, tau), abs_alpha);
+        __m256d eligible_v = _mm256_castsi256_pd(_mm256_set_epi64x(
+            (eligible_mask & 8) ? -1LL : 0LL,
+            (eligible_mask & 4) ? -1LL : 0LL,
+            (eligible_mask & 2) ? -1LL : 0LL,
+            (eligible_mask & 1) ? -1LL : 0LL));
+        ratio = _mm256_blendv_pd(_mm256_set1_pd(INFINITY), ratio, eligible_v);
+        theta_min_v = _mm256_min_pd(theta_min_v, ratio);
+
+        unsigned int remaining = (unsigned int)eligible_mask;
+        while (remaining != 0) {
+            unsigned int lane = (unsigned int)__builtin_ctz(remaining);
+            cand_j[n_admissible] = j + (int32_t)lane;
+            cand_alpha[n_admissible] = alpha_scratch[j + (int32_t)lane];
+            n_admissible++;
+            remaining &= remaining - 1;
+        }
+    }
+
+    double lane_min[4];
+    _mm256_storeu_pd(lane_min, theta_min_v);
+    double theta_min = lane_min[0];
+    for (int lane = 1; lane < 4; lane++) {
+        if (lane_min[lane] < theta_min) theta_min = lane_min[lane];
+    }
+
+    for (; j < n_total; j++) {
+        if (basis_pos[j] >= 0) continue;
+        if (bound_status[j] == DS_BOUND_FIXED) continue;
+        double alpha_j = alpha_scratch[j];
+        if (fabs(alpha_j) < 1e-9) continue;
+        int admissible = 0;
+        if (bound_status[j] == DS_BOUND_LO && leaving_sigma * alpha_j < 0.0) {
+            admissible = 1;
+        } else if (bound_status[j] == DS_BOUND_HI && leaving_sigma * alpha_j > 0.0) {
+            admissible = 1;
+        } else if (bound_status[j] == DS_BOUND_FREE) {
+            admissible = 1;
+        }
+        if (!admissible) continue;
+        double r_num = fabs(r_ext[j]);
+        if (expand == 1) r_num += expand_tau;
+        double ratio = r_num / fabs(alpha_j);
+        if (ratio < theta_min) theta_min = ratio;
+        cand_j[n_admissible] = j;
+        cand_alpha[n_admissible] = alpha_j;
+        n_admissible++;
+    }
+    *theta_min_out = theta_min;
+    return n_admissible;
+}
+
+__attribute__((target("avx2")))
+static void ds_harris_pass2_avx2(
+    int n_admissible, const int32_t *cand_j, const double *cand_alpha,
+    const double *r_ext, double theta_max, int32_t *entering_col_out,
+    double *entering_alpha_out)
+{
+    const __m256d sign_mask = _mm256_set1_pd(-0.0);
+    const __m256d theta = _mm256_set1_pd(theta_max);
+    __m256d best_abs_v = _mm256_setzero_pd();
+    __m256d best_signed_v = _mm256_setzero_pd();
+    __m256i best_j_v = _mm256_set1_epi64x(INT32_MAX);
+    int ci = 0;
+
+    for (; ci + 4 <= n_admissible; ci += 4) {
+        __m128i j32 = _mm_loadu_si128((const __m128i *)(cand_j + ci));
+        __m256i j64 = _mm256_cvtepi32_epi64(j32);
+        __m256d alpha = _mm256_loadu_pd(cand_alpha + ci);
+        __m256d abs_alpha = _mm256_andnot_pd(sign_mask, alpha);
+        __m256d abs_r = _mm256_andnot_pd(
+            sign_mask, _mm256_i32gather_pd(r_ext, j32, 8));
+        __m256d ratio = _mm256_div_pd(abs_r, abs_alpha);
+        __m256d in_band = _mm256_cmp_pd(ratio, theta, _CMP_LE_OQ);
+        __m256d improves = _mm256_and_pd(
+            in_band, _mm256_cmp_pd(abs_alpha, best_abs_v, _CMP_GT_OQ));
+        best_abs_v = _mm256_blendv_pd(best_abs_v, abs_alpha, improves);
+        best_signed_v = _mm256_blendv_pd(best_signed_v, alpha, improves);
+        best_j_v = _mm256_blendv_epi8(
+            best_j_v, j64, _mm256_castpd_si256(improves));
+    }
+
+    double lane_abs[4];
+    double lane_signed[4];
+    int64_t lane_j[4];
+    _mm256_storeu_pd(lane_abs, best_abs_v);
+    _mm256_storeu_pd(lane_signed, best_signed_v);
+    _mm256_storeu_si256((__m256i *)lane_j, best_j_v);
+    double best_alpha = 0.0;
+    int32_t entering_col = -1;
+    double entering_alpha = 0.0;
+    for (int lane = 0; lane < 4; lane++) {
+        if (lane_abs[lane] > best_alpha ||
+            (lane_abs[lane] == best_alpha && lane_j[lane] < entering_col)) {
+            best_alpha = lane_abs[lane];
+            entering_col = (int32_t)lane_j[lane];
+            entering_alpha = lane_signed[lane];
+        }
+    }
+    for (; ci < n_admissible; ci++) {
+        int32_t j = cand_j[ci];
+        double alpha_j = cand_alpha[ci];
+        double ratio = fabs(r_ext[j]) / fabs(alpha_j);
+        if (ratio > theta_max) continue;
+        if (fabs(alpha_j) > best_alpha) {
+            best_alpha = fabs(alpha_j);
+            entering_col = j;
+            entering_alpha = alpha_j;
+        }
+    }
+    *entering_col_out = entering_col;
+    *entering_alpha_out = entering_alpha;
+}
+#endif
+
 /*
  * ds_repair_singular_basis: when LU factorization reports singular_step >= 0,
  * replace the offending basis column with an artificial (identity) column
@@ -13224,6 +13513,21 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     int64_t stat_max_degen_streak = 0;
     int64_t stat_art_ejections = 0;
     int64_t stat_cost_shifts = 0;
+    /* The branchless kernels target the campaign's cache-resident dense-scan
+     * regime. Above 8K basis rows the gathered PRICE working set is no longer
+     * resident and sparse scalar early-outs win (stocfor3 is the falsifier).
+     * This is a global workload-shape cutoff, independent of problem identity. */
+    int ds_simd_on = ds_simd_available() && m <= 8192;
+    {
+        const char *env = getenv("LINPROGX_DS_SIMD");
+        if (env != NULL && atoi(env) == 0) ds_simd_on = 0;
+    }
+    int pivot_hash_on = 0;
+    {
+        const char *env = getenv("LINPROGX_DS_PIVOT_TRACE");
+        pivot_hash_on = env != NULL && atoi(env) != 0;
+    }
+    uint64_t pivot_hash = UINT64_C(1469598103934665603);
     /* --- Dual-progress instrumentation (always-on, read-only) ---
      * Every DUAL_PROG_STRIDE pivots, sample the running Phase-2 dual merit
      *   z = c_ext' x  (basics from x_B, nonbasics at their bound)
@@ -13535,6 +13839,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
                 rot_section++;
                 if (rot_section >= n_sections) rot_section = 0;
+            } else if (ds_simd_on &&
+                       (leaving_rule == 1 || leaving_rule == 5)) {
+#if LINPROGX_X86_SIMD
+                DSPriceChoice choice = ds_price_avx2(
+                    basis, x_B, lo_ext, hi_ext, devex_w, m, tol,
+                    leaving_rule == 1);
+                max_score = choice.score;
+                leaving_basis_pos = choice.basis_pos;
+                leaving_sigma = choice.sigma;
+#endif
             } else {
                 for (int32_t k = 0; k < m; k++) {
                     int32_t j = basis[k];
@@ -13797,7 +14111,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                  * order-sensitive sweeps below can walk the compact
                  * candidate list in identical order instead of rescanning
                  * all of n_total. */
-                for (int32_t j = 0; j < n_total; j++) {
+                if (ds_simd_on && bfrt == 0) {
+#if LINPROGX_X86_SIMD
+                    n_admissible = ds_harris_pass1_avx2(
+                        n_total, basis_pos, bound_status, alpha_scratch, r_ext,
+                        leaving_sigma, expand, expand_tau, cand_j, cand_alpha,
+                        &theta_min);
+#endif
+                } else for (int32_t j = 0; j < n_total; j++) {
                     if (basis_pos[j] >= 0) continue;
                     if (bound_status[j] == DS_BOUND_FIXED) continue;
 
@@ -14075,7 +14396,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                  * is unchanged since pass 1 and the cache is exactly the
                  * admissible set). */
                 double best_alpha = 0.0;
-                for (int32_t ci_ = 0; ci_ < n_admissible; ci_++) {
+                if (ds_simd_on && bfrt == 0) {
+#if LINPROGX_X86_SIMD
+                    ds_harris_pass2_avx2(
+                        n_admissible, cand_j, cand_alpha, r_ext, theta_max,
+                        &entering_col, &entering_alpha_row);
+#endif
+                } else for (int32_t ci_ = 0; ci_ < n_admissible; ci_++) {
                     int32_t j = cand_j[ci_];
                     double alpha_j = cand_alpha[ci_];
 
@@ -14393,6 +14720,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
                 DS_TICK(6);
                 continue;
+            }
+            if (pivot_hash_on) {
+                pivot_hash ^= (uint32_t)leaving_basis_pos;
+                pivot_hash *= UINT64_C(1099511628211);
+                pivot_hash ^= (uint32_t)basis[leaving_basis_pos];
+                pivot_hash *= UINT64_C(1099511628211);
+                pivot_hash ^= (uint32_t)entering_col;
+                pivot_hash *= UINT64_C(1099511628211);
             }
             double dx_entering = (x_B[leaving_basis_pos] - bound_leaving) / pivot;
 
@@ -15178,6 +15513,17 @@ build_result:
                 }
                 Py_DECREF(basis_list);
                 Py_DECREF(status_list);
+            }
+            if (pivot_hash_on) {
+                PyObject *hash_value = PyLong_FromUnsignedLongLong(pivot_hash);
+                if (hash_value == NULL ||
+                    PyDict_SetItemString(result, "pivot_trace_hash", hash_value) != 0) {
+                    Py_XDECREF(hash_value);
+                    Py_DECREF(result);
+                    result = NULL;
+                    goto done;
+                }
+                Py_DECREF(hash_value);
             }
         }
     }
