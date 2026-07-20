@@ -11,9 +11,13 @@ current era).
   belongs to another session (web-demo) — never touch it.
 - BOARD OF RECORD (protocol v3: 3 hosts x 7 pairs median-of-hosts, AWS
   us-west-2): **21W-2P-1L** (incl. qap15 coverage win).
-  - Parity: cre_a only — the perfect coin (four waves: 0.939/1.021/
-    0.995/1.025, cumulative ~52% pair wins). Periodic re-certs only;
-    never build units for it.
+  - Sole loss: greenbea 1.215 (was 1.69 pre-SIMD-ship) — the kernel
+    campaign proved the solve hardware floor (12 angles + 3 arms;
+    see KERNEL CAMPAIGN CLOSED in the ledger). Reopening requires a
+    different factorization DATA STRUCTURE or hardware regime —
+    nothing softer. Do not re-probe: dense sweeps, flags,
+    interleaving, level scheduling, SIMD bodies all have dated
+    kill verdicts.
   - Sole loss: greenbea ~1.7 — frontier TOTALLY closed (38 settled
     verdicts; see 35th/37th/38th). Needs a genuinely new idea class.
   - The 07-18 pds arc: clean-room netagg + parallel/dominance merging
