@@ -2468,6 +2468,24 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   stays PARITY. **V3 BOARD OF RECORD: 22W-1P-1L** — parity cre_a,
   sole loss greenbea ~1.69 (terminal, conservation law).
 
+- SIMD-SHIP CERTIFICATION — CRE_A CERTIFIES, BOARD 23W-0P-1L
+  (2026-07-20, v3 3 hosts x 7 pairs, us-west-2, at b657ba85e2b2,
+  assets/modal_bench_b657ba85e2b2_paired_hosts3.json): the kernel
+  campaign's integration unit (branchless SIMD Harris + safe AVX2
+  scan, -11.3% local) lands **greenbea 1.215** [1.208,1.235] —
+  from 1.69, its best state ever; the SIMD gains amplify on
+  bandwidth-tight hosts as a2's did. **cre_a 0.912 [0.862,0.940]
+  19/21** — five-wave cumulative 63/105 with this wave wholly
+  below parity: BY THE HOST-CONDITIONAL STANDARD CRE_A CERTIFIES
+  AS A WIN. woodw deepens to 0.789 (21/21). **V3 BOARD OF RECORD:
+  23W-0P-1L.** The kernel campaign's full account: 12 angles + 3
+  follow-on arms -> one shipped unit (the SIMD pair), the solve
+  hardware-floor proof (dense sweeps, flags, interleaving, level
+  scheduling ALL killed — IPC 0.3-0.6 is the gathered-solve
+  reality at this size), and greenbea's reopening condition in
+  final form: change the hardware regime or the factorization
+  data structure. The board's last cell stands at 1.215.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
