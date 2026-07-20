@@ -20,8 +20,8 @@ Where the two axes stand:
   certified optimality.
 - **Runtime: aggregate EXCEEDED, per-instance majority WON.** The suite total and
   geometric-mean time ratio have favored linprogx since early in the campaign; the
-  paired head-to-head is now **22W-1P-1L**, including the `qap15` coverage win,
-  on the 2026-07-19 AWS `us-west-2` protocol-v3 board. A loss census
+  paired head-to-head is now **23W-0P-1L**, including the `qap15` coverage win,
+  on the 2026-07-20 AWS `us-west-2` protocol-v3 board. A loss census
   plus two presolve ships (H0, H1) took the board to 20W-0P-4L; a native
   equality-row aggregation ship then flipped `80bau3b` to a win while reclassifying
   `cre_a` to an honest coin flip (20W-1P-3L); an on-host slice census then
@@ -30,12 +30,16 @@ Where the two axes stand:
   commissioning — which a falsifier chain twice corrected before it
   resolved into two clean-room presolve ships (multi-row implied-bound aggregation,
   then parallel-column + endpoint dominance) — carried `pds_10` across parity
-  (21W-2P-1L); and finally a host-draw re-certification landed `pds_10` at **0.893**
-  (25/42 cumulative pair wins, median of six host-medians 0.939), a host-conditional
-  win that crosses it into the wins column and drops the parity column to one. The
-  sole remaining loss is greenbea ~1.69 (its frontier now totally closed across every
-  named axis and governed by a measured conservation law); the one parity cell is
-  `cre_a`, a perfect coin flip with no engineered lever outstanding (see
+  (21W-2P-1L); a host-draw re-certification landed `pds_10` at **0.893**
+  (a host-conditional win crossing it into the wins column, 22W-1P-1L); and finally
+  a kernel campaign against greenbea's conservation law shipped one SIMD integration
+  unit (branchless Harris ratio test + safe AVX2 scan) whose certification landed
+  `cre_a` wholly below parity at **0.912** (19/21, five-wave cumulative 63/105 pair
+  wins), crossing the perfect coin into the wins column and **emptying the parity
+  column**. The sole remaining loss is greenbea, now at its best state ever
+  (~1.69 → **1.215**) but structurally terminal: its frontier is closed across every
+  named axis, governed by a measured conservation law, and its per-pivot solve sits
+  on a proven IPC 0.3–0.6 hardware latency floor (see
   [Current certified scoreboard](#current-certified-scoreboard)).
 
 ## The arc
@@ -53,9 +57,12 @@ memory-bandwidth **refactor slice**, whose cache-sized-tail single-thread
 scheduling ship flipped `woodw` and deepened `80bau3b` to settle the
 **21W-1P-2L** a2-era board, a ranged-row commissioning whose
 falsifier chain and two clean-room presolve ships carried `pds_10` across parity
-to the **21W-2P-1L** pds-era board, and finally a host-draw re-certification that
+to the **21W-2P-1L** pds-era board, a host-draw re-certification that
 landed `pds_10` at **0.893** — a host-conditional win crossing it into the wins
-column for the **22W-1P-1L** board of record. The through-line:
+column for the **22W-1P-1L** board — and finally a kernel campaign whose one
+shipped SIMD unit certified `cre_a` wholly below parity (0.912) and pulled greenbea
+to its best state ever (1.215), emptying the parity column for the **23W-0P-1L**
+board of record. The through-line:
 the IPM factor path, dual-simplex LU path, presolve layer, and measurement
 protocol were each tightened under paired certification, closing whole classes
 of hypotheses along the way. The final pre-V2 ships came out of a joint
@@ -821,43 +828,100 @@ conservation law* (47th). **47 dated ledger verdicts** across the full arc. The 
 is not merely accepted as a loss; it is understood down to the physics of why it
 cannot currently be won.
 
+### The kernel campaign
+
+The derivation coda proved *why* greenbea's pivot count could not translate into a
+wall win: a conservation law across the pivot dimension. The kernel campaign asked
+the last remaining question — whether the **per-pivot** side had any headroom left
+— by attacking the solve kernels directly. A shared dossier fanned out into a
+**twelve-angle** assault (K1–K12) plus **three follow-on arms**, and it resolved
+into exactly one ship, one certification, and the campaign's cleanest hardware-floor
+proof.
+
+**The one ship — a SIMD integration unit (`b657ba8`).** Two of the twelve angles
+survived to code and integrated cleanly: a **branchless SIMD Harris ratio test**
+(K4 — vectorizes the ratio slice with no data-dependent branches, −30/−39% on the
+slice, trajectory-identical) fused with a **K2-safe AVX2 scan** (the salvageable
+subcomponent of K2, whose pivot-row body was numerically unsafe and killed as a
+primary). The combined kernel is **−11.3% local greenbea**, reverts under
+`LINPROGX_DS_SIMD=0`, and its gains **amplify on bandwidth-tight hosts** exactly as
+the a2 scheduling ship's did.
+
+**The certification — `cre_a` certifies, board 23W-0P-1L (`b657ba8`).** A fresh v3
+wave (three AWS `us-west-2` hosts × seven pairs,
+`assets/modal_bench_b657ba85e2b2_paired_hosts3.json`) landed **`cre_a` 0.912**
+[0.862, 0.940], **19/21** — the first wave whose whole spread sits below parity,
+ending the five-wave coin-flip saga (**0.939 / 1.021 / 0.995 / 1.025 / 0.912**,
+five-wave cumulative **63/105 pair wins**). By the host-conditional standard that
+scores our accepted wins, `cre_a` **certifies as a win** and crosses from parity
+into the wins column — **emptying the parity column**. `woodw` deepened to **0.789**
+[0.727, 0.800] (21/21) on the same wave, and **`greenbea` reached 1.215**
+[1.208, 1.235] — its **best state in the whole campaign**, down from ~1.69, still
+the sole loss. **Board of record: 23W-0P-1L.**
+
+**The scientific capstone — the solve hardware floor.** Every other angle died on
+measurement, and together they constitute the campaign's final negative result. The
+solve-latency family was killed in full: **dense sweeps** ran 75–87× slower (the
+factor is sparse; solution density had misled the hypothesis); **compiler and PGO
+flags** moved 0% (the loop is latency-bound, not throughput-bound, so vectorization
+buys nothing and PGO regressed); **chain interleaving** found **0.000% register
+collisions yet ran slower** (the stall source is memory disambiguation, not data
+hazards); and **level scheduling** exposed a perfect DAG structure whose execution
+overhead swamps the gain at this size class. The proven result: **gathered sparse
+triangular solves at ~1,500 rows sit on an IPC 0.3–0.6 hardware latency floor**,
+immune to traversal, width, flags, pipelining, and scheduling. Two live-but-unshipped
+findings remain pipeline-blocked by the auxiliary tax (K7's 2,399-pivot native basis
+discovery, K9's density shaping), and the abandoned angles (K5 fusion, K6 prefetch,
+K10 threaded PRICE, K11 fp32-compare) carried negligible residual value against the
+proven floor. **greenbea's reopening condition, in final form: a different
+factorization data structure or a different hardware regime.** The board's last cell
+stands at 1.215.
+
 ## Current certified scoreboard
 
 The **certified** standing uses the protocol-v3 median-of-hosts method in
 `docs/HANDOFF.md` and the Modal artifacts replayed into `assets/campaign.db`;
 the single-shot replay table below is narrative-grade only. The board of record
-combines the stable prior cells with the 2026-07-19 AWS `us-west-2`
-`pds_10` host-draw re-certification (three hosts × seven pairs), which supplies
-`pds_10`, layered over the parallel-cols (`pds_20`), a2, aggregation,
-census-wave, and prior v3 certifications:
+combines the stable prior cells with the 2026-07-20 AWS `us-west-2`
+SIMD-ship certification (three hosts × seven pairs), which supplies `cre_a`,
+`greenbea`, and `woodw`, layered over the `pds_10` host-draw re-certification
+(`pds_10`), parallel-cols (`pds_20`), a2 (`80bau3b`), aggregation, census-wave,
+and prior v3 certifications:
 
-- **Board of record: 22W-1P-1L**, including `qap15` as a coverage win.
+- **Board of record: 23W-0P-1L**, including `qap15` as a coverage win. The parity
+  column is **empty**; `greenbea` is the sole and terminal loss.
+- **`cre_a` certifies — the perfect coin lands:** the kernel campaign's SIMD-ship
+  certification (`b657ba8`) landed `cre_a` at **0.912** [0.862, 0.940], **19/21**
+  — the first wave whose whole spread sits below parity, ending the five-wave
+  coin-flip saga (**0.939 / 1.021 / 0.995 / 1.025 / 0.912**, five-wave cumulative
+  **63/105 pair wins = host-conditional WIN** by the `pilot87` precedent). `cre_a`
+  crosses from parity into the wins column and the parity column empties. `woodw`
+  deepened to **0.789** [0.727, 0.800] (21/21) on the same wave.
 - **The pds crossing, certified:** `pds_10` walked **1.26–1.57 → 1.109 → 0.985 →
-  0.893** [0.810, 1.016] (16/21 this wave) as the ranged-row commissioning
+  0.893** [0.810, 1.016] (16/21) as the ranged-row commissioning
   resolved into two clean-room presolve ships — multi-row implied-bound
   aggregation (`38846d5`, which took `pds_20` to **0.459** and narrowed `pds_10`
   to 1.109) then parallel-column + endpoint dominance (`31b197a`) — and a
-  host-draw re-certification (`76ba8dc`) that certified the win. Cumulative
-  accounting: **25/42 pair wins, median of six host-medians 0.939 =
-  host-conditional WIN** by the `pilot87` precedent. `pds_20` holds a deep
-  **0.499** [0.414, 0.526] (20/21) — one of the board's deepest wins.
-- **Parity (1):** `cre_a` is the perfect coin —
-  **0.939 / 1.021 / 0.995 / 1.025** across four waves, a cumulative ~52% split,
-  6/21 at 1.025 this wave — decided by host lottery with no engineered lever
-  outstanding.
-- **Carried-over flips and wins:** `80bau3b` **0.793** (21/21), `cre_a`, and
-  `woodw` **0.962** (21/21) from the a2 wave; `greenbea` (sentinel), `d2q06c`
-  **0.371** (21/21), and `ken_07` **0.410** (21/21) from the aggregation wave;
-  `osa_60` **0.280** (21/21), `osa_14` **0.912** (17/21), and `stocfor3`
+  host-draw re-certification (`76ba8dc`) that certified the win. `pds_20` holds a
+  deep **0.499** [0.414, 0.526] (20/21) — one of the board's deepest wins.
+- **Carried-over flips and wins:** `80bau3b` **0.793** (21/21) from the a2 wave;
+  `d2q06c` **0.371** (21/21) and `ken_07` **0.410** (21/21) from the aggregation
+  wave; `osa_60` **0.280** (21/21), `osa_14` **0.912** (17/21), and `stocfor3`
   **0.962** (17/21) from the census wave; `pilot87` 0.826 (21/21) from the first
   v3 wave; plus the stable structural-win core (qap12, ken_18, maros_r7, cre_b,
   cre_d, …).
-- **Loss (1):** `greenbea` ~1.7 — frontier **totally closed**. Presolve depth,
-  aggregation, ranged rows, five leaving rules, external and IPM warm starts,
-  BFRT, crash, per-pivot kernel slices, and the IPM route are all measured; the
-  IPM stall was anatomized as a dual-certificate failure and its cure killed,
-  warm-started DS never beats cold, and our cold Dantzig is locally optimal
-  against every tested perturbation. It needs a genuinely new idea class.
+- **Loss (1):** `greenbea` **1.215** [1.208, 1.235] — its **best state ever**,
+  down from ~1.69, the SIMD gains amplifying on bandwidth-tight hosts. The
+  frontier is **totally closed and terminal**. Presolve depth, aggregation, ranged
+  rows, five leaving rules, external and IPM warm starts, BFRT, crash, per-pivot
+  kernel slices, and the IPM route are all measured; the IPM stall was anatomized
+  as a dual-certificate failure and its cure killed, warm-started DS never beats
+  cold, and the mechanism was derived and pivot-matched only to be beaten by a
+  conservation law. The kernel campaign's solve hardware-floor proof (dense sweeps
+  75–87× slower, compiler flags 0%, chain interleaving 0.000% collisions yet
+  slower, level scheduling execution-overhead-bound) fixed gathered sparse
+  triangular solves at an **IPC 0.3–0.6 latency floor**. Reopening requires a
+  different factorization data structure or hardware regime.
 - **Host lottery (not a loss):** `pilot87` printed **1.027** [0.914, 1.292] on
   the a2 wave, but its code path is byte-identical under a2 (10 MiB tail above
   the single-thread threshold), iterations are 128 in every pair of both waves,
@@ -871,7 +935,8 @@ census-wave, and prior v3 certifications:
   Modal artifacts, and the single-shot trajectory table below still ends at
   `82cd31d`.
 
-The 22W-1P-1L board supersedes the 21W-2P-1L pds-era board, which superseded the
+The 23W-0P-1L board supersedes the 22W-1P-1L pds_10-recert board, which superseded
+the 21W-2P-1L pds-era board, which superseded the
 21W-1P-2L a2-era board, which superseded the
 20W-1P-3L aggregation-era board, which superseded the 20W-0P-4L census-wave
 board, which superseded the 16W-2P-6L v3 board, which in turn superseded the
@@ -963,6 +1028,22 @@ shipped:
   (9/21) — sub-1.0 median-of-hosts, parity trending winward by the `cre_a`
   precedent. `pds_20` held 0.499 (20/21); `qap12` clean. The board settled at
   **21W-2P-1L**.
+- **pds_10 host-draw re-certification (`76ba8dc`, 2026-07-19, AWS `us-west-2`,
+  `assets/modal_bench_76ba8dcfb79f_paired_hosts3.json`):** a fresh v3 wave landed
+  `pds_10` at **0.893** [0.810, 1.016] (16/21); cumulative 25/42 pair wins, median
+  of six host-medians 0.939 — a host-conditional win crossing `pds_10` from parity
+  into the wins column. `cre_a` stayed the perfect coin (1.025, 6/21). The board
+  settled at **22W-1P-1L** with `cre_a` the sole parity cell and `greenbea` the
+  sole loss.
+- **SIMD-ship certification (`b657ba8`, 2026-07-20, AWS `us-west-2`,
+  `assets/modal_bench_b657ba85e2b2_paired_hosts3.json`):** the kernel campaign's
+  integration unit — a branchless SIMD Harris ratio test (K4) fused with a K2-safe
+  AVX2 scan, −11.3% local greenbea, reverting under `LINPROGX_DS_SIMD=0` — landed
+  `cre_a` at **0.912** [0.862, 0.940] (19/21), the first wave wholly below parity
+  (five-wave cumulative 63/105 pair wins). `cre_a` **certifies as a win** and
+  crosses into the wins column, **emptying the parity column**. `woodw` deepened to
+  **0.789** [0.727, 0.800] (21/21) and `greenbea` reached **1.215** [1.208, 1.235]
+  — its best state ever, still the sole loss. The board settled at **23W-0P-1L**.
 
 ## Headline per-instance trajectories
 

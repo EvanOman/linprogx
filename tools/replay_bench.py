@@ -90,6 +90,7 @@ ARTIFACT_DATES = {
     "38846d5": "2026-07-18",
     "31b197a": "2026-07-18",
     "76ba8dc": "2026-07-19",
+    "b657ba8": "2026-07-20",
 }
 
 ARTIFACT_LABELS = {
@@ -110,6 +111,7 @@ ARTIFACT_LABELS = {
     "38846d5": "netagg certification",
     "31b197a": "parallel-cols certification",
     "76ba8dc": "pds_10 certification re-cert",
+    "b657ba8": "SIMD-ship certification",
 }
 
 

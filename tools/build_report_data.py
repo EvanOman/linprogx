@@ -423,6 +423,82 @@ RECERT_BOARD = {
     "cumulative": "pds_10 was commissioned as an architecture project and completed as two clean-room presolve units (multi-row implied-bound aggregation + parallel/dominance merging) plus a host-draw certification, requiring no architecture change; the falsifier chain corrected the premise twice en route",
 }
 
+# Board of record after the SIMD-ship certification: the kernel campaign's
+# integration unit (branchless SIMD Harris ratio test + K2-safe AVX2 scan) is
+# certified, landing cre_a wholly below parity (0.912, 19/21) so it crosses from
+# the perfect-coin parity into the wins column, and pulling greenbea to its best
+# state ever (1.69 -> 1.215). woodw deepens to 0.789 (21/21). Board: 23W-0P-1L —
+# an empty parity column, greenbea the sole and terminal loss.
+SIMD_BOARD = {
+    "date": "2026-07-20",
+    "label": "Protocol v3 board (2026-07-20)",
+    # cre_a, greenbea, and woodw now come from the SIMD-ship certification
+    # (b657ba85e2b2). pds_10 carries from the host-draw re-certification (76ba8dc);
+    # pds_20 from the parallel-cols wave (31b197a); 80bau3b from a2 (c5517a2);
+    # d2q06c/ken_07 from the aggregation wave (70203c4); osa_60/osa_14/stocfor3
+    # from the census wave (928399c); pilot87 from the first v3 wave (its a2 print
+    # was a documented host lottery).
+    "artifacts": [
+        "modal_bench_b657ba85e2b2_paired_hosts3.json",
+        "modal_bench_76ba8dcfb79f_paired_hosts3.json",
+        "modal_bench_31b197afe7f4_paired_hosts3.json",
+        "modal_bench_c5517a23f370_paired_hosts3.json",
+        "modal_bench_70203c413cea_paired_hosts3.json",
+        "modal_bench_928399cf5fea_paired_hosts3.json",
+        "modal_bench_c34417761bb6_paired_hosts3.json",
+    ],
+    "simd_artifact": "modal_bench_b657ba85e2b2_paired_hosts3.json",
+    "recert_artifact": "modal_bench_76ba8dcfb79f_paired_hosts3.json",
+    "pds_artifact": "modal_bench_31b197afe7f4_paired_hosts3.json",
+    "a2_artifact": "modal_bench_c5517a23f370_paired_hosts3.json",
+    "agg_artifact": "modal_bench_70203c413cea_paired_hosts3.json",
+    "census_artifact": "modal_bench_928399cf5fea_paired_hosts3.json",
+    "prior_core_artifact": "modal_bench_c34417761bb6_paired_hosts3.json",
+    "summary": "23W-0P-1L",
+    "wins": [
+        "qap12",
+        "ken_18",
+        "d2q06c",
+        "fit2p",
+        "truss",
+        "ken_07",
+        "ken_11",
+        "ken_13",
+        "cre_b",
+        "maros_r7",
+        "cre_d",
+        "degen3",
+        "pds_20",
+        "osa_30",
+        "pilot87",
+        "osa_60",
+        "osa_14",
+        "stocfor3",
+        "80bau3b",
+        "woodw",
+        "pds_10",
+        "cre_a",
+    ],
+    "coverage_wins": ["qap15"],
+    # The cre_a crossing from parity into the wins column off the 22W-1P-1L board.
+    "flips": {
+        "cre_a": "the perfect coin lands: 0.912 [0.862, 0.940] (19/21 this wave) on the SIMD-ship certification (b657ba8); five-wave cumulative 63/105 pair wins with this wave wholly below parity = host-conditional WIN by the pilot87 precedent (full arc 0.939 / 1.021 / 0.995 / 1.025 / 0.912)",
+    },
+    "deepened": {
+        "greenbea": "1.69 -> 1.215 [1.208, 1.235] (0/21) — the SIMD gains amplify on bandwidth-tight hosts; still the sole loss, but its best state ever",
+        "woodw": "0.962 -> 0.789 [0.727, 0.800] (21/21) on the SIMD-ship certification",
+    },
+    # The parity column is now empty.
+    "losses": {
+        "greenbea": "1.215 [1.208, 1.235] (best ever, from ~1.69) — the frontier is totally closed and terminal: presolve depth, aggregation, ranged rows, five leaving rules, external + IPM warm starts, BFRT, crash, per-pivot slices, and the IPM route all measured; the solve hardware-floor proof (dense sweeps 75-87x slower, compiler flags 0%, chain interleaving 0.000% collisions yet slower, level scheduling execution-overhead-bound) fixed gathered sparse triangular solves at an IPC 0.3-0.6 latency floor. Reopening requires a different factorization data structure or hardware regime.",
+    },
+    # pilot87's a2 print remained a host lottery on a byte-identical code path.
+    "host_lottery": {
+        "pilot87": "a2 print 1.027 [0.914, 1.292]; 128 iters in every pair of both waves, HiGHS walls flat while ours swung 3.76->6.13s — scored from the 0.826 first-v3 win",
+    },
+    "cumulative": "the kernel campaign — a 12-angle fan-out plus three follow-on arms against greenbea's conservation law — shipped exactly one integration unit (the K4 branchless SIMD Harris ratio test + K2-safe AVX2 scan, -11.3% local), which certified cre_a as a win and pulled greenbea to 1.215; every other angle died on measurement, leaving the solve hardware floor as the capstone negative result",
+}
+
 # Canonical ship order (baseline first, then chronological ship commits).
 ORDER_SHORT = [
     "a1a355d",  # baseline
@@ -569,9 +645,17 @@ data = {
     "ordered_instances": ordered_instances,
     "final_ratio": {k: (round(v, 3) if v else None) for k, v in final_ratio.items()},
     "aggregate": agg,
-    "generated": "2026-07-19",
-    "canonical_board": RECERT_BOARD,
-    "prior_boards": [PDS_BOARD, A2_BOARD, CANONICAL_BOARD, CENSUS_BOARD, V3_BOARD, PIN4_BOARD],
+    "generated": "2026-07-20",
+    "canonical_board": SIMD_BOARD,
+    "prior_boards": [
+        RECERT_BOARD,
+        PDS_BOARD,
+        A2_BOARD,
+        CANONICAL_BOARD,
+        CENSUS_BOARD,
+        V3_BOARD,
+        PIN4_BOARD,
+    ],
 }
 
 if table_exists("bench_artifacts"):
@@ -639,24 +723,26 @@ if table_exists("modal_v3_pairs"):
             SELECT artifact, instance, hosts_observed, pairs_total, lx_wins_total,
                    ratio_median_of_hosts, ratio_min_host, ratio_max_host, verdict
             FROM modal_v3_pairs
-            WHERE (artifact = :recert AND instance = 'lp_pds_10')
+            WHERE (artifact = :simd
+                   AND instance IN ('lp_cre_a', 'lp_greenbea', 'lp_woodw'))
+               OR (artifact = :recert AND instance = 'lp_pds_10')
                OR (artifact = :pds AND instance = 'lp_pds_20')
-               OR (artifact = :a2
-                   AND instance IN ('lp_80bau3b', 'lp_cre_a', 'lp_woodw'))
+               OR (artifact = :a2 AND instance = 'lp_80bau3b')
                OR (artifact = :agg
-                   AND instance IN ('lp_greenbea', 'lp_d2q06c', 'lp_ken_07'))
+                   AND instance IN ('lp_d2q06c', 'lp_ken_07'))
                OR (artifact = :census
                    AND instance IN ('lp_osa_60', 'lp_osa_14', 'lp_stocfor3'))
                OR (artifact = :prior_core AND instance = 'lp_pilot87')
             ORDER BY ratio_median_of_hosts
             """,
             {
-                "recert": RECERT_BOARD["recert_artifact"],
-                "pds": RECERT_BOARD["pds_artifact"],
-                "a2": RECERT_BOARD["a2_artifact"],
-                "agg": RECERT_BOARD["agg_artifact"],
-                "census": RECERT_BOARD["census_artifact"],
-                "prior_core": RECERT_BOARD["prior_core_artifact"],
+                "simd": SIMD_BOARD["simd_artifact"],
+                "recert": SIMD_BOARD["recert_artifact"],
+                "pds": SIMD_BOARD["pds_artifact"],
+                "a2": SIMD_BOARD["a2_artifact"],
+                "agg": SIMD_BOARD["agg_artifact"],
+                "census": SIMD_BOARD["census_artifact"],
+                "prior_core": SIMD_BOARD["prior_core_artifact"],
             },
         )
     ]
@@ -713,30 +799,32 @@ if table_exists("bench_artifacts"):
         )
 
 if table_exists("modal_v3_pairs"):
-    print(f"\n=== CANONICAL BOARD PAIRS ({RECERT_BOARD['summary']} 2026-07-19) ===")
+    print(f"\n=== CANONICAL BOARD PAIRS ({SIMD_BOARD['summary']} 2026-07-20) ===")
     for r in conn.execute(
         """
         SELECT instance, pairs_total, lx_wins_total, ratio_median_of_hosts,
                verdict, artifact
         FROM modal_v3_pairs
-        WHERE (artifact = :recert AND instance = 'lp_pds_10')
+        WHERE (artifact = :simd
+               AND instance IN ('lp_cre_a', 'lp_greenbea', 'lp_woodw'))
+           OR (artifact = :recert AND instance = 'lp_pds_10')
            OR (artifact = :pds AND instance = 'lp_pds_20')
-           OR (artifact = :a2
-               AND instance IN ('lp_80bau3b', 'lp_cre_a', 'lp_woodw'))
+           OR (artifact = :a2 AND instance = 'lp_80bau3b')
            OR (artifact = :agg
-               AND instance IN ('lp_greenbea', 'lp_d2q06c', 'lp_ken_07'))
+               AND instance IN ('lp_d2q06c', 'lp_ken_07'))
            OR (artifact = :census
                AND instance IN ('lp_osa_60', 'lp_osa_14', 'lp_stocfor3'))
            OR (artifact = :prior_core AND instance = 'lp_pilot87')
         ORDER BY ratio_median_of_hosts
         """,
         {
-            "recert": RECERT_BOARD["recert_artifact"],
-            "pds": RECERT_BOARD["pds_artifact"],
-            "a2": RECERT_BOARD["a2_artifact"],
-            "agg": RECERT_BOARD["agg_artifact"],
-            "census": RECERT_BOARD["census_artifact"],
-            "prior_core": RECERT_BOARD["prior_core_artifact"],
+            "simd": SIMD_BOARD["simd_artifact"],
+            "recert": SIMD_BOARD["recert_artifact"],
+            "pds": SIMD_BOARD["pds_artifact"],
+            "a2": SIMD_BOARD["a2_artifact"],
+            "agg": SIMD_BOARD["agg_artifact"],
+            "census": SIMD_BOARD["census_artifact"],
+            "prior_core": SIMD_BOARD["prior_core_artifact"],
         },
     ):
         name = r["instance"].replace("lp_", "")
