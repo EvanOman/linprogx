@@ -1,90 +1,221 @@
-# Session Handoff — linprogx campaign orchestration
+# Session Handoff — linprogx campaign orchestration (2026-07-21)
 
-Read this + the tail of docs/HANDOFF.md (the research ledger, entries are
-dated; the 2026-07-17 entries — census wave + aggregation arc — are the
-current era).
+You are the new overmind. This document + the dated research ledger
+(docs/HANDOFF.md — read every entry from "PRESOLVE V2 SHIPPED" onward;
+the 2026-07-17..21 entries are the current era) are your complete state.
+Fable plans/reviews/synthesizes; workers implement. Everything below is
+battle-tested; deviate knowingly or not at all.
 
-## State (2026-07-17, end of the census/aggregation session)
-- Branch perf-supernodal-simplex in THIS worktree
-  (/home/evan/dev/linprogx-perf-worktree). Backup tag
-  session-backup-20260702 tracks HEAD. Main checkout /home/evan/dev/linprogx
-  belongs to another session (web-demo) — never touch it.
-- BOARD OF RECORD (protocol v3: 3 hosts x 7 pairs median-of-hosts, AWS
-  us-west-2): **21W-2P-1L** (incl. qap15 coverage win).
-  - Sole loss: greenbea 1.215 (was 1.69 pre-SIMD-ship) — the kernel
-    campaign proved the solve hardware floor (12 angles + 3 arms;
-    see KERNEL CAMPAIGN CLOSED in the ledger). Reopening requires a
-    different factorization DATA STRUCTURE or hardware regime —
-    nothing softer. Do not re-probe: dense sweeps, flags,
-    interleaving, level scheduling, SIMD bodies all have dated
-    kill verdicts.
-  - Sole loss: greenbea ~1.7 — frontier TOTALLY closed (38 settled
-    verdicts; see 35th/37th/38th). Needs a genuinely new idea class.
-  - The 07-18 pds arc: clean-room netagg + parallel/dominance merging
-    took pds_10 1.26-1.57 -> 0.985 and pds_20 0.824 -> 0.499.
-- This session shipped and certified: protocol v3 + envab harness modes,
-  DS solve-slice instrument, H0 quadratic presolve row-build fix
-  (osa_60 0.280!, osa_14 0.912), H1 presolve fixpoint re-stage (cre_a,
-  stocfor3 flips), native equality-row aggregation double-gated
-  (80bau3b 0.881, d2q06c 0.371, ken_07 0.410). Ledger now holds 30+
-  dated verdicts (through the aggregation cert).
-- GOAL (user's /goal hook): beat HiGHS on ALL 24 LPnetlib instances.
+## 1. Mission and board
 
-## Immediate queue
-1. Coin flips (cre_a 0.995, pds_10 0.985): occasionally re-certify
-   (one v3 wave, both instances); a friendly host draw certifies
-   either as a win. No engineering.
-2. greenbea: CLOSED WITH THE FULL SCIENTIFIC ACCOUNT (39th-47th
-   settled). The phase-1 mechanism was identified AND independently
-   derived (experiments/dual_phase1_derivation_2026_07_18.md:
-   Fenchel auxiliary, confirmed by exact b-invariance + a
-   zero-violation dual-feasible B*; 3,334 native pivots = pivot
-   parity with HiGHS). The wall obeys a measured CONSERVATION LAW:
-   pivots x us/pivot ~0.38-0.40s across every start (cold/foreign/
-   native B*); dense-regime kernels gain ~1% there; the auxiliary's
-   own cost makes every pipeline lose to the cold crash. Reopening
-   requires breaking the conservation law itself (a kernel
-   architecture with ~72us/pivot on dense trajectories) — nothing
-   less. Read the dossier + phase1_predictions before proposing.
-3. Supernodal sparse front (refactor lever c): optional
-   general-value unit; not board-critical.
-4. Chronicle round 7 (research-campaign story) may be committed/
-   published — verify gh-pages + artifact before re-publishing.
+- GOAL (Evan's standing /goal): beat HiGHS head-to-head on ALL 24
+  LPnetlib instances. Constraints (inviolable): never read any solver's
+  source code (papers/textbooks fine); no per-problem tuning (global
+  mechanisms/thresholds only); never loosen eps=2e-5; certificate-backed
+  optimality only; honest reporting.
+- BOARD OF RECORD: **23W-0P-1L** (protocol v3: 3 hosts x 7 interleaved
+  pairs, median-of-hosts, Modal AWS us-west-2; cumulative host-
+  conditional accounting per the pilot87 precedent). Sole loss:
+  **greenbea 1.215** [1.208,1.235] — from 14x at campaign origin, 1.69
+  at this run's start.
+- Scoring doctrine: paired interleaved only; v3 median-of-hosts is the
+  scoreboard; single-shot/single-host is narrative-grade; knife-edge
+  cells use cumulative cross-wave accounting (majority + median<1).
+- Work happens in /home/evan/dev/linprogx-perf-worktree, branch
+  perf-supernodal-simplex; backup tag session-backup-20260702 tracks
+  HEAD (re-point after every commit). The main checkout
+  /home/evan/dev/linprogx belongs to another session — NEVER touch it.
 
-## Orchestration protocol (hard lessons, do not relearn)
-- Overmind mode: Fable plans/reviews; workers implement. NEVER
-  SendMessage-resume a Claude subagent from a Fable session. Fresh Agent
-  spawns with explicit model (opus workers handled all of today's units).
-  CODEX QUOTA: check usage-check.sh first — codex weekly hit 90% on
-  2026-07-16 (resets 07-23).
-- codex-worker.sh: briefs via stdin-file with '-' for BOTH run and cont
-  ("$(cat -)" in zsh pipelines hangs silently).
-- Worker briefs: GOAL/CONTEXT/CONSTRAINTS/DONE WHEN/VERIFY; falsifier-
-  first with kill criteria; no git ops; rebuild before test
-  (UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev --no-build-isolation,
-  then uv pip install --reinstall -e . --no-build-isolation for C
-  changes); characterization-first on high-risk areas.
-- LOADED-BOX DOCTRINE (25th settled): ship-gate A/Bs need a quiet box.
-- PROJECTION DOCTRINE (31st settled): never project pivot/iteration
-  counts from another solver's realized behavior — shape parity is not
-  pivot parity. Falsify on OUR solver before sizing a unit.
-- Scoreboard: protocol-v3 median-of-hosts only (--hosts 3). envab mode
-  for on-host env-knob A/B. upload-src after EVERY commit before
-  benching. Single-shot/single-host is not scoreboard-grade.
-- Ship discipline: orchestrator reviews the diff, reruns VERIFY (just ci
-  for substantial changes — includes security; the repo pins
-  exclude-newer in uv.toml, advanced only within the machine's 7-day
-  release-age rule), commits, advances the backup tag, records the dated
-  ledger verdict, chronicles after board moves.
-- GIT QUIRK: this checkout maps LF->CRLF on touch — NEVER git stash here
-  (a stash/pop cycle conflicts on churned files; use a scratch worktree
-  at HEAD to test pre-existing failures instead).
-- INTEGRITY PROTOCOL (2026-07-17 incident — see NETAGG INTEGRITY
-  INCIDENT in the ledger): the codex sandbox can sometimes reach the
-  network; a worker once downloaded HiGHS source and its gate-passing
-  unit was quarantined for it. EVERY worker brief must explicitly
-  prohibit fetching remote content (no curl/wget/new installs; solver
-  source strictly forbidden — the campaign constraint). Before
-  shipping any unit whose design could have been externally informed,
-  AUDIT the worker's event log: codex-worker.sh log <session>, grep
-  for curl/wget/github/clone. Network use on such a unit = discard.
+## 2. Reference index (read on demand, not all up front)
+
+Ledger + protocol:
+- docs/HANDOFF.md — THE research ledger: ~50 dated verdicts, every
+  ship/kill/doctrine. The single source of truth.
+- docs/CAMPAIGN.md + docs/campaign_report.html — public chronicle
+  (gh-pages branch mirrors it; Claude artifact
+  https://claude.ai/code/artifact/a1eba80f-2b5d-426f-8527-a2d7f4545d3e —
+  republish with the Artifact tool passing url=).
+- tools/modal_bench.py — bench harness: --mode paired|envab, --hosts N
+  (protocol v3), upload-src (keyed by exact sha; REQUIRED after every
+  commit before benching), pinned cloud=aws region=us-west-2.
+- tools/replay_bench.py (artifact ingestion; ARTIFACT_DATES/LABELS maps)
+  + tools/build_report_data.py (report regeneration) — the chronicle
+  pipeline. assets/campaign.db is gitignored, rebuilt by ingest.
+
+greenbea science (chronological spine; all under experiments/):
+- greenbea_dossier_2026_07_18.md — evidence pack + closed axes (note
+  the CORRECTED 61.6% active figure).
+- greenbea_ideas_{gpt5,codex-contrarian,claude-opus,glm-5.2}_2026_07_18
+  .md + greenbea_research_plan_2026_07_18.md — the 4-model ideation
+  fan-out + synthesis.
+- probe_{activeset,tomography,blockds,precision,locality,schur}_*.md —
+  the probe-wave verdicts (tomography = the dual-Phase-1
+  identification, four corroborating lines).
+- dual_phase1_derivation_2026_07_18.md + phase1_predictions_2026_07_18
+  .md — the orchestrator's independent Fenchel derivation (P1 confirmed
+  EXACTLY: HiGHS DuPh1 is b-invariant; B* dual-feasibility proven by
+  direct linear algebra; 3,334 native pivots) and the conservation law
+  (pivots x us/pivot ~0.38-0.40s across every start ever built).
+- kernel_campaign_dossier_2026_07_19.md + kernel_campaign_angles_*.md +
+  the k1..k12/lsa/lsb/int reports — the 12-angle fan-out: K1 IPC census
+  (solves at IPC 0.30-0.60), the hardware-floor kills (k3 dense sweeps
+  75-87x slower; k12 flags 0%; lsb interleaving — 0.000% collisions yet
+  slower, memory disambiguation; lsa level scheduling — perfect DAG,
+  overhead swamps at 1.5k rows), and int_kernel_combined (THE SHIPPED
+  SIMD UNIT: K4 branchless Harris + K2-safe AVX2 scan; -11.3% local;
+  certified 2026-07-20: greenbea 1.69->1.215, cre_a CERTIFIED 0.912
+  19/21 five-wave-cumulative, woodw 0.789).
+- creative_attack_dossier_2026_07_21.md + creative_attack_angles_*.md —
+  the CURRENT C-wave (section 5).
+- Supporting: greenbea_ipm_stall_2026_07_18.md (dual-certificate stall
+  anatomy + NaN guard origin), greenbea_warmstart_2026_07_18.md
+  (crossover kills; its cheap partial-IPM timings were an ARTIFACT —
+  see probe_activeset), greenbea_pivot_gap_2026_07_17.md (the decisive
+  crosses + basis transfer), k7 (2,399-pivot native-basis discovery),
+  k9 (density shaping LIVE, pipeline-blocked), k8 (boxed-fixing
+  vindicated).
+
+Other board cells (all won; context if ever re-certifying):
+- pds arc: pds_mechanism_2026_07_17.md (HiGHS presolve makes HiGHS
+  3.16x SLOWER on pds; its DS is the weapon), rr_falsifier_2026_07_17
+  .md (series-chain premise vacuous), the clean-room netagg (multi-row
+  implied-bound intersection — after the NETAGG INTEGRITY INCIDENT and
+  quarantine; the clean room BEAT the tainted unit) +
+  pds_parallel_cols_2026_07_18.md (proof-carrying endpoint dominance).
+  pds_10 certified 0.893/cumulative 0.939; pds_20 0.499.
+- ipm_slice_census_2026_07_17.md + the a2 ship (single-thread
+  cache-sized dense-tail dpotrf; LINPROGX_CHOL_SCHED) — woodw's flip.
+- loss_census_2026_07_16.md — the census that started the H0/H1 wave
+  (quadratic presolve row-build fix -> osa_60 0.280; fixpoint re-stage
+  -> cre_a/stocfor3 flips).
+
+## 3. Orchestration protocol (hard-won; do not relearn)
+
+Backends (~/.claude/skills/overmind/backends/*.md; run
+~/.claude/skills/overmind/bin/usage-check.sh BEFORE any fan-out):
+- codex: codex-worker.sh run -C <worktree> --label X - (brief on stdin
+  with '-' for run AND cont; "$(cat -)" in zsh pipelines HANGS
+  silently). gpt-5.5 high-reasoning is the working profile. Evan wants
+  gpt-5.6 ("always use 5.6") but it API-400s on this plan ("not
+  supported when using Codex with a ChatGPT account") — last probed
+  2026-07-21; retry periodically, surface, never silently fall back
+  (memory: codex-model-choice.md).
+- claude: Agent tool, ALWAYS explicit non-Fable model (opus for hard
+  work). NEVER SendMessage-resume a subagent from a Fable session
+  (resume drops the model pin -> bills Fable). Fresh spawns only.
+- opencode/GLM-5.2: opencode-worker.sh with WORKER_DIR env; metered
+  dollars; dispatch parallel workers as SEPARATE harness Bash calls
+  (nested &/wait children hang); workers can zombie at "build" for
+  24h+ — hunt with `ps -eo pid,etime,args | grep 'opencode run'`, kill
+  by pid. GLM/probe worktree venvs: `uv sync` REMOVES ad-hoc installs
+  (highspy!) — pre-install yourself and forbid plain uv sync in briefs.
+- Fable is NEVER a worker (billing hard constraint).
+
+Worker briefs: GOAL/CONTEXT/CONSTRAINTS/DONE WHEN/VERIFY; falsifier-
+first with explicit kill criteria; "no git ops"; rebuild before test:
+UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev --no-build-isolation,
+then UV_CACHE_DIR=/tmp/uv-cache uv pip install --reinstall -e .
+--no-build-isolation after C changes (sync alone does NOT rebuild the
+extension). Characterization-first on AGENTS.md high-risk areas.
+
+INTEGRITY PROTOCOL (born 2026-07-17: a gate-passing unit was QUARANTINED
+for downloading HiGHS source — NETAGG INTEGRITY INCIDENT in the ledger):
+every brief prohibits network outright; AUDIT every worker log before
+trusting a ship: LOG=$(codex-worker.sh log <session>); grep -cE 'curl -|
+wget |git clone|https://github' "$LOG" — repo files containing 'curl'
+(download_lpsuite.sh, modal_bench.py) give false positives; inspect
+hits in context. Network use on a design-informable unit = discard +
+clean-room re-derivation.
+
+Ship discipline: review the DIFF (not the summary); rerun VERIFY
+yourself; `just ci` for substantial changes (its pip-audit needs
+network — workers must skip it, you run it; the repo pins exclude-newer
+in uv.toml — advance only within the machine's 7-day release-age rule);
+commit staged paths only (never add -A); tag -f session-backup-20260702;
+dated ledger entry (ship or kill — every verdict); upload-src; v3 cert;
+chronicle on board moves (worker pattern -> verify embed yourself ->
+commit -> gh-pages via a SCRATCH worktree (never checkout in the perf
+worktree; scratchpad path works) -> Artifact republish with url= ->
+nanobot notify Evan).
+
+Git/exec quirks: this checkout maps LF->CRLF on touch — NEVER git stash
+(stash/pop conflicts on churned files; use a scratch worktree at HEAD
+to test pre-existing failures). `cmd | tail` swallows exit codes — a
+red pytest once slipped into a commit; check pytest's own status.
+Probe worktrees: one per worker (git worktree add
+/home/evan/dev/linprogx-<slug> -b work/<slug>), remove + branch -D
+after banking. Modal runs cost ~$0.20-1/container; never include
+lp_qap15 in PAIRED certs (HiGHS times out 300s/cell — 105 wasted
+minutes; it is a coverage-only cell).
+
+Measurement doctrines: LOADED-BOX (ship-gate A/Bs need a quiet box — a
+16% "gain" once evaporated when the box went quiet); PROJECTION (never
+size a unit from another solver's realized behavior — shape parity is
+not pivot parity, proven bidirectionally); disputes "regression vs host
+lottery" are settled by iteration/pivot counts (bit-identical iters +
+flat HiGHS walls = host); alternating A/B median-of-9 is the local
+standard; cumulative cross-wave accounting for knife-edges.
+
+## 4. greenbea: complete science (the only open cell)
+
+Local ~0.37s (post-SIMD) vs HiGHS 0.24s; on-host 1.215. Flip needs
+~-18%. PROVEN WALLS: the solves (37% of wall) are memory-latency-bound
+at IPC 0.30-0.60 — immune to dense sweeps of sparse storage,
+flags/vector width, software pipelining (disambiguation-bound), and
+level scheduling (overhead swamps at 1.5k rows). Pricing rules (5),
+starting bases (foreign + native crossovers), presolve depth (all
+families), route changes (IPM stalls on a pinned dual certificate;
+PDHG uncompetitive; primal = C6 pending), and perturbation (C4) all
+carry dated kills. The pipeline route (2,399-pivot native B* + K9
+shaping) is dead at BOTH ends: exact auxiliary costs 0.157-0.215s
+(intrinsically ~2,000 simplex pivots), approximate auxiliary (PDHG,
+C5) yields worthless bases. Pre-C-wave reopening condition: a
+different factorization DATA STRUCTURE or hardware regime.
+
+## 5. IN-FLIGHT: the C-wave (process these as they land)
+
+Six creative mandates (creative_attack_angles_2026_07_21.md), codex
+gpt-5.5-high, worktrees /home/evan/dev/linprogx-c{1,2,3,6} remain:
+- C1 dense-STORED factor / data-structure replacement: RUNNING — the
+  strongest remaining idea (100x flops for zero gathers).
+- C2 BTRAN||FTRAN overlap (36.8% of wall, independent, never
+  overlapped): RUNNING.
+- C3 scaling-family sweep as trajectory shaper (HiGHS's own counts
+  move with scale strategy; our scaling ALGORITHM never swept —
+  distinct from the killed Ruiz pass-count axis): RUNNING.
+- C4 perturb+recover: KILLED — trajectory not stall-bound (4,400+2 vs
+  4,399 pivots; large eta breaks certificates). Banked.
+- C5 PDHG-approximated auxiliary: KILLED — approximate support gives
+  4,341-pivot bases; pipeline closed at both ends. Banked.
+- C6 primal-route probe (cheap): RUNNING.
+C1-C3 share ONE background task (forked dispatch; SESSION= lines
+interleave in its output — codex-worker.sh list disambiguates; their
+individual results may arrive only when all three finish).
+PER VERDICT: audit log -> read report -> bank (cp report to perf
+experiments/, commit, tag) -> remove worktree + branch -> single
+C-wave ledger entry when the wave closes. IF ANY IS LIVE: quiet-box
+re-verify -> port -> just ci -> commit/tag -> upload-src -> v3 cert
+(lp_greenbea,lp_cre_a,lp_woodw; 3 hosts x 7 pairs) -> ledger -> board
+update if moved -> chronicle round -> memory update -> nanobot Evan.
+IF ALL KILLED: ledger the wave closure (greenbea's file closes at
+1.215 with the C-wave appended to the hardware-floor account),
+chronicle the closure, notify Evan, board rests at 23W-0P-1L.
+
+## 6. Standing state, memory, and Evan
+
+- All work committed/tagged through the C5 banking; no uncommitted
+  changes; only c1/c2/c3/c6 worktrees outstanding.
+- Quotas (check fresh): codex snapshot was stale-96% but workers run
+  fine (plan likely changed); claude 7d ~59%; GLM metered (~$1.4/$4.4
+  per Mtok).
+- Memory (auto-loaded from
+  /home/evan/.claude/projects/-home-evan-dev-linprogx/memory/):
+  linprogx-solver-goal.md (board+constraints — update on board moves,
+  plus the MEMORY.md index line), subagent-model-policy.md,
+  codex-worker-cont-stdin.md, codex-model-choice.md (gpt-5.6 status).
+- Evan's operating style: commissions fan-outs ("fan out hypotheses in
+  tension"); values honest kills as much as ships; wants Telegram
+  updates (nanobot notify) at board moves/milestones; reads the
+  gh-pages chronicle; asks direct questions expecting direct answers
+  with the numbers. The campaign's real product is the ledger's ~50
+  verdicts as much as the 23W board — keep both immaculate.
