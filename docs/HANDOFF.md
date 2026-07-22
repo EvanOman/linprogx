@@ -2558,6 +2558,28 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   4,399 pivots while preserving fixed-eps certificates and
   global-policy rules.
 
+- SECOND SUCCESSOR AUDIT — THREE GLOBAL FALLBACKS MEASURED DEAD
+  (2026-07-22, native codex falsifiers, no network or external solver
+  source; experiments/sparse_primal_falsifier_2026_07_22.md,
+  phase_transition_falsifier_2026_07_22.md,
+  rankk_exchange_falsifier_2026_07_22.md): (1) The sparse revised-primal
+  escape left open by C6 is economically dead. Its best public trajectory is
+  7,427 pivots versus 4,399 cold dual; current mandatory kernels alone cost
+  0.643792s, while an intentionally favorable early-sparsity projection is
+  0.537669s (4.06%) against a 0.461235s board target. (2) Exact Phase-1/2
+  integration finds that cold is already auxiliary-optimal at pivot 2,060.
+  The best boundary totals 4,243 pivots (3.55% fewer), best optimistic
+  fused-core opportunity is 4.13%, and exact alternation bottoms at 4,328.
+  (3) The old P-A shadow-panel probe is now correctly scoped to its scalar
+  endpoint; a new exact changed-endpoint rank-k audit established fresh-warm
+  authority and tested no-flip plus exact flip-aware k=2/3/4 faces at four
+  checkpoints. All twelve endpoints made zero flips. The only surviving
+  exchanges total 4,404, 4,397, and 4,396 pivots against a 3,519 funding
+  ceiling and fail the public state gate. This closes the tested fixed-policy
+  simultaneous face exchange, not every conceivable rank-k method. No
+  production code changed; no v3 recertification was run. BOARD REMAINS
+  23W-0P-1L.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,

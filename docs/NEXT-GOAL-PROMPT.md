@@ -88,3 +88,20 @@ authoritative. C6 killed the tested dense tableau primal route, not
 every hypothetical sparse revised-primal design. Full evidence and
 the narrowed reopening condition are in SESSION-HANDOFF section 6
 and the three 2026-07-21 falsifier reports.
+
+SECOND SUCCESSOR AUDIT ADDENDUM (2026-07-22): three more fallback classes are
+now measured dead; do not re-probe them. Sparse revised primal found a best
+7,427-pivot public trajectory versus cold dual's 4,399; linprogx mandatory
+kernel accounting is 0.643792s, and even an intentionally favorable
+early-sparsity projection is 0.537669s (4.06%), above the 0.461235s board
+target. Integrated exact Phase 1 reaches its best boundary at
+`2050 + 10 + 2183 = 4243` pivots (3.55%); the best fused-core opportunity is
+4.13%, and exact alternation bottoms at 4,328 pivots. Finally, an exact
+changed-endpoint simultaneous rank-k audit established fresh-warm authority
+and tested no-flip plus flip-aware k=2/3/4 faces at four checkpoints. All 12
+flip-aware endpoints made zero flips; the only surviving totals were 4,404,
+4,397, and 4,396 pivots versus the 3,519 funding ceiling, with public state
+mismatches. This closes the tested fixed-policy face exchange—not every
+conceivable rank-k algorithm. Evidence is in SESSION-HANDOFF section 7 and the
+three 2026-07-22 falsifier reports. No production code changed; board remains
+23W-0P-1L without recertification.

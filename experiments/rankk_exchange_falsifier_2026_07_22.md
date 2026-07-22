@@ -1,6 +1,6 @@
 # Simultaneous rank-k exchange: S3 exact flip-aware face oracle
 
-Date: 2026-07-22  
+Date: 2026-07-22
 Verdict: **S3_CLOSE_FIXED_POLICY_RANKK_FACE_EXCHANGE.**
 
 S3 does not justify an in-process rank-k implementation. The exact flip-aware

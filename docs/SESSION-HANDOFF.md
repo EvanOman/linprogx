@@ -165,7 +165,8 @@ flags/vector width, software pipelining (disambiguation-bound), and
 level scheduling (overhead swamps at 1.5k rows). Pricing rules (5),
 starting bases (foreign + native crossovers), presolve depth (all
 families), route changes (IPM stalls on a pinned dual certificate;
-PDHG uncompetitive; primal = C6 pending), and perturbation (C4) all
+PDHG uncompetitive; dense tableau and sparse revised-primal routes killed),
+and perturbation (C4) all
 carry dated kills. The pipeline route (2,399-pivot native B* + K9
 shaping) is dead at BOTH ends: exact auxiliary costs 0.157-0.215s
 (intrinsically ~2,000 simplex pivots), approximate auxiliary (PDHG,
@@ -219,11 +220,46 @@ reopening condition survives in narrower form: a mechanism must change more
 than the current BTRAN slice or reduce the 4,399-pivot trajectory while
 preserving the fixed certificate and global-policy constraints.
 
-## 7. Standing state, memory, and Evan
+## 7. SECOND SUCCESSOR AUDIT: CLOSED (2026-07-22)
 
-- All campaign evidence through the successor reopening audit is committed
-  and tagged. Probe worktrees contain only default-off diagnostic changes;
-  none were merged into the production solver.
+Three further globally applicable fallback claims were tested without changing
+the production solver:
+
+- Sparse revised primal is not an unfunded implementation gap. The strongest
+  public trajectory found was 7,427 pivots versus cold dual's 4,399. Applying
+  only linprogx's mandatory current sparse-kernel costs gives 0.643792s; an
+  intentionally over-generous early-sparsity projection is 0.537669s, just
+  4.06% below its 0.560440s control and above the 0.461235s board target. Even
+  an impossible free partial-pricing projection reaches only 15.16%. KILLED.
+- Integrating exact homogeneous Phase 1 with Phase 2 does not remove its cost:
+  the cold path already reaches an auxiliary-optimal basis by pivot 2,060. The
+  best checkpoint is `2050 + 10 + 2183 = 4243` pivots (3.55% fewer); the best
+  optimistic fused-core opportunity is 4.13%. Exact block alternation bottoms
+  out at 4,328 pivots and is slower when charged. KILLED.
+- Exact simultaneous changed-endpoint rank-k exchange was tested at fresh warm
+  checkpoints 512/1536/3072/4096. A native trace established exact basis
+  import, allowlisted status normalization, deterministic iteration-0 state,
+  and exact k=1 replay. Both the no-flip and exact flip-aware face oracles were
+  tested for k=2/3/4; all twelve flip-aware endpoints made zero flips. The only
+  surviving bases honestly total 4,404, 4,397, and 4,396 pivots versus the
+  3,519 funding ceiling, and all fail the public bootstrap state gate. This
+  closes the tested fixed-policy face exchange, not every conceivable rank-k
+  algorithm. KILLED.
+
+Reports: `experiments/sparse_primal_falsifier_2026_07_22.md`,
+`experiments/phase_transition_falsifier_2026_07_22.md`, and
+`experiments/rankk_exchange_falsifier_2026_07_22.md`. Diagnostic rank-k C and
+probe code remained isolated and was not merged. With no production change,
+there is no v3 recertification: the board remains 23W-0P-1L. Reopening now
+requires a genuinely different mechanism, not scalar-endpoint shadow panels,
+sparse primal role-swapping, Phase-1 transition bookkeeping, or the tested
+fixed-policy simultaneous face exchange.
+
+## 8. Standing state, memory, and Evan
+
+- All campaign evidence through the second successor audit is committed
+  and tagged. The disposable rank-k worktree and its default-off diagnostics
+  were removed after the report was banked; none entered the production solver.
 - Quotas (check fresh): codex snapshot was stale-96% but workers run
   fine (plan likely changed); claude 7d ~59%; GLM metered (~$1.4/$4.4
   per Mtok).

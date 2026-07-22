@@ -223,8 +223,9 @@ The kill is robust to much more optimistic assumptions:
 3. FTRAN is sequential in the reconciled shadow-panel mechanism; including it
    can only reduce the attacked-pool speedup.
 
-Therefore the block/rank-k dual-simplex class does not earn implementation
-funding from probe P-A.
+Therefore the scalar-endpoint shadow-panel class tested by probe P-A does not
+earn implementation funding. The probe did not test changed-endpoint
+simultaneous rank-k exchanges.
 
 ## Reproduction
 
