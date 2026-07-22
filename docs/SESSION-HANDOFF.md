@@ -175,7 +175,7 @@ different factorization DATA STRUCTURE or hardware regime.
 ## 5. IN-FLIGHT: the C-wave (process these as they land)
 
 Six creative mandates (creative_attack_angles_2026_07_21.md), codex
-gpt-5.5-high, worktrees /home/evan/dev/linprogx-c{1,2,3,6} remain:
+gpt-5.5-high, worktrees /home/evan/dev/linprogx-c{1,2,3} remain:
 - C1 dense-STORED factor / data-structure replacement: RUNNING — the
   strongest remaining idea (100x flops for zero gathers).
 - C2 BTRAN||FTRAN overlap (36.8% of wall, independent, never
@@ -187,7 +187,7 @@ gpt-5.5-high, worktrees /home/evan/dev/linprogx-c{1,2,3,6} remain:
   4,399 pivots; large eta breaks certificates). Banked.
 - C5 PDHG-approximated auxiliary: KILLED — approximate support gives
   4,341-pivot bases; pipeline closed at both ends. Banked.
-- C6 primal-route probe (cheap): RUNNING.
+- C6 primal-route probe: KILLED — dense primal times out at 300s (>973x the flip target); the primal family closes. Banked.
 C1-C3 share ONE background task (forked dispatch; SESSION= lines
 interleave in its output — codex-worker.sh list disambiguates; their
 individual results may arrive only when all three finish).
