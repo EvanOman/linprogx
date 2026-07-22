@@ -172,32 +172,27 @@ shaping) is dead at BOTH ends: exact auxiliary costs 0.157-0.215s
 C5) yields worthless bases. Pre-C-wave reopening condition: a
 different factorization DATA STRUCTURE or hardware regime.
 
-## 5. IN-FLIGHT: the C-wave (process these as they land)
+## 5. THE C-WAVE: CLOSED (2026-07-21) — six mandates, six kills
 
 Six creative mandates (creative_attack_angles_2026_07_21.md), codex
-gpt-5.5-high, worktree /home/evan/dev/linprogx-c3 remains:
+gpt-5.5-high, No worktrees remain. Final disposition:
 - C1 data-structure replacement: KILLED — best alt format 10.7% SLOWER than CSC in fair microbench; the representation was never the problem. Banked.
 - C2 BTRAN||FTRAN overlap: KILLED — the dossier independence claim was WRONG (BTRAN's pivot row determines FTRAN's RHS; legal overlap = 0%). Dossier corrected by the falsifier. Banked.
-- C3 scaling-family sweep as trajectory shaper (HiGHS's own counts
-  move with scale strategy; our scaling ALGORITHM never swept —
-  distinct from the killed Ruiz pass-count axis): RUNNING.
+- C3 scaling families: KILLED — every alternative regresses (Pow2 +31% + cert-break; best clean +80%); 10-pass Ruiz is the optimum. Banked.
 - C4 perturb+recover: KILLED — trajectory not stall-bound (4,400+2 vs
   4,399 pivots; large eta breaks certificates). Banked.
 - C5 PDHG-approximated auxiliary: KILLED — approximate support gives
   4,341-pivot bases; pipeline closed at both ends. Banked.
 - C6 primal-route probe: KILLED — dense primal times out at 300s (>973x the flip target); the primal family closes. Banked.
-C1-C3 share ONE background task (forked dispatch; SESSION= lines
-interleave in its output — codex-worker.sh list disambiguates; their
-individual results may arrive only when all three finish).
-PER VERDICT: audit log -> read report -> bank (cp report to perf
-experiments/, commit, tag) -> remove worktree + branch -> single
-C-wave ledger entry when the wave closes. IF ANY IS LIVE: quiet-box
-re-verify -> port -> just ci -> commit/tag -> upload-src -> v3 cert
-(lp_greenbea,lp_cre_a,lp_woodw; 3 hosts x 7 pairs) -> ledger -> board
-update if moved -> chronicle round -> memory update -> nanobot Evan.
-IF ALL KILLED: ledger the wave closure (greenbea's file closes at
-1.215 with the C-wave appended to the hardware-floor account),
-chronicle the closure, notify Evan, board rests at 23W-0P-1L.
+ALL SIX KILLED. The wave-closure ledger entry ("C-WAVE CLOSED") is
+recorded; greenbea's file closes at 1.215; the board RESTS AT
+23W-0P-1L. Remaining successor duties: (1) optional chronicle round
+for the C-wave closure (the pattern in section 3's ship discipline;
+board unchanged so it is a science-story round like round 7/8);
+(2) nothing else is owed — no re-certs, no open probes, no
+uncommitted state. New work on greenbea requires genuinely new
+science (see section 4's reopening condition); everything softer
+has a dated kill.
 
 ## 6. Standing state, memory, and Evan
 

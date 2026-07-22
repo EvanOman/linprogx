@@ -2505,6 +2505,31 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   and scheduling; greenbea's reopening condition in final form —
   a different factorization DATA STRUCTURE or hardware regime.
 
+- C-WAVE CLOSED — SIX MANDATES, SIX KILLS (2026-07-21, codex
+  gpt-5.5-high x6, all logs network-audited clean; reports
+  c1..c6_*_2026_07_21.md): C1 factor data structure (best alt
+  format 10.7% SLOWER than CSC — the representation was never the
+  problem); C2 BTRAN||FTRAN overlap (ILLEGAL — the dossier's
+  independence claim was WRONG: BTRAN's pivot row determines
+  FTRAN's RHS; legal overlap 0%; dossier corrected); C3 scaling
+  families (Pow2 +31% and certificate-breaking, best clean
+  alternative +80% — 10-pass Ruiz is the optimum); C4 cost
+  perturbation + recovery (4,400+2 vs 4,399 pivots — the
+  trajectory is not stall-bound; large eta breaks certificates);
+  C5 PDHG-approximated auxiliary (4,341-pivot bases — the
+  pipeline route is closed at BOTH ends); C6 primal route (dense
+  primal times out at 300s, >973x target). GREENBEA'S FILE
+  CLOSES AT 1.215: the creative wave confirms the hardware-floor
+  account from every remaining direction — representation,
+  concurrency, conditioning, trajectory, pipeline, and route are
+  ALL at their measured optima or proven impossible. The cell's
+  ledger now holds the most complete negative-results dossier in
+  the campaign: ~25 greenbea-specific verdicts across 6 waves and
+  4 model families, one shipped SIMD unit (1.69 -> 1.215), one
+  derivation confirmed by exact prediction, and a reopening
+  condition that survived every attack: a fundamentally different
+  machine or factorization science. BOARD RESTS AT 23W-0P-1L.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
