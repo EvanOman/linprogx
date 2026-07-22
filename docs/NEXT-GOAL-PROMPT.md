@@ -161,3 +161,20 @@ candidate generator, or a different globalization merit. Evidence is in
 SESSION-HANDOFF section 10 and
 `experiments/pdas_lookahead_falsifier_2026_07_22.md`. No production code
 changed; board remains 23W-0P-1L without recertification.
+
+SIMULTANEOUS-BLOCK ADDENDUM (2026-07-22): exact coupled block algebra now
+closes the strongest bounded successor to the round-24 zero-single-improver
+state. Independent replay returned `TRUST_KILL`. In the fixed first-64
+scalar-merit pool, all 2,016 pairs were classified: 1,548 were rank-safe and
+jointly direction-valid, and zero strictly improved the old merit. The
+lex-best valid pair worsened L1 KKT by 24,937.299. A deterministic exact
+greedy augmentation path reached width 8 and then had no legal compatible
+addition, so no width-32/64 authority candidate existed. The rescue alone
+took 0.757180s versus the complete 0.448351702s gate. A separate fixed
+squared-KKT-potential ordering produced a width-32 rank-safe block, but 15 of
+32 entering motions reversed direction and its potential worsened 155.067x.
+This kills those bounded pool/path and potential-ordering policies, not every
+higher-order subset, wider generator, or temporary-worsening trajectory.
+Evidence is in SESSION-HANDOFF section 11 and
+`experiments/pdas_block_merit_falsifier_2026_07_22.md`. No production code
+changed; board remains 23W-0P-1L without recertification.

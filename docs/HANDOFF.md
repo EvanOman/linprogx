@@ -2639,6 +2639,21 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   a different globalization merit. No production code changed; no v3
   recertification was run. BOARD REMAINS 23W-0P-1L.
 
+- EXACT SIMULTANEOUS-BLOCK SUCCESSOR — BOUNDED INTERACTION PATH KILLED
+  (2026-07-22, native codex implementation + independent theory replay; no
+  network or external solver source;
+  experiments/pdas_block_merit_falsifier_2026_07_22.md): exact coupled primal
+  and dual block algebra classified all 2,016 pairs in the fixed first-64
+  pool. Of 1,548 rank-safe, jointly direction-valid pairs, zero strictly
+  improve the old merit; the best worsens L1 KKT by 24,937.299. Greedy exact
+  augmentation reaches width 8, then has no legal compatible addition, so no
+  width-32/64 authority candidate exists. Independent replay returned
+  `TRUST_KILL`. A fixed squared-KKT-potential ordering also fails: 15/32
+  entering motions reverse and its potential worsens 155.067x. This closes
+  those bounded subset/globalization rules, not arbitrary higher-order subsets,
+  wider generators, or actual temporary-worsening trajectories. No production
+  code changed; no v3 recertification was run. BOARD REMAINS 23W-0P-1L.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,

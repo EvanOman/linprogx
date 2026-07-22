@@ -346,9 +346,36 @@ candidate generator, or a different merit with a certificate and economic
 invariant. No production code changed; no v3 recertification was run; board
 remains 23W-0P-1L.
 
-## 11. Standing state, memory, and Evan
+## 11. EXACT SIMULTANEOUS-BLOCK SUCCESSOR: CLOSED (2026-07-22)
 
-- All campaign evidence through the lookahead full-KKT successor is committed
+The zero-single-improver stop received an exact coupled-block rescue rather
+than another scalar reordering. For matched rows `P` and entering columns `Q`,
+the probe uses `H=(B^-1 A_Q)[P,:]`, solves the exact primal and dual block
+systems, and rejects any coupled entering motion that reverses its legal bound
+direction. Fresh LU remains the only commit authority.
+
+The independently replayed `TRUST_KILL` result is decisive within its fixed
+scope. The first-64 scalar-merit pool contains 2,016 pairs; 1,548 are
+rank-safe and jointly legal, and none strictly improves the four-component
+merit. The lex-best pair worsens L1 KKT by 24,937.299. Greedy exact
+augmentation reaches width 8, then has no compatible jointly legal addition;
+no width-32/64 candidate exists and no rescue factor is authorized. The
+bounded rescue costs 0.757180s versus the entire 0.448351702s gate, while the
+unchanged certificate still has bound violation 21,460.6764.
+
+A separate phase-locked squared-KKT screen also fails its fixed wide-block
+rule: its width-32 exchange minor is rank-safe, but 15 entering motions reverse
+direction, artificial mass returns, and the potential worsens 155.067x. These
+results close the fixed pool, lex-best-pair/greedy path and fixed potential
+ordering—not arbitrary higher-order subsets, candidates outside the generator,
+or a predeclared trajectory that actually commits temporary worsening.
+
+Report: `experiments/pdas_block_merit_falsifier_2026_07_22.md`. No production
+source changed; no v3 recertification was run; board remains 23W-0P-1L.
+
+## 12. Standing state, memory, and Evan
+
+- All campaign evidence through the exact simultaneous-block successor is committed
   and tagged. Disposable diagnostic worktrees were removed after their reports
   were banked; none entered the production solver.
 - Quotas (check fresh): codex snapshot was stale-96% but workers run

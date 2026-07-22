@@ -174,6 +174,29 @@ temporary merit worsening, candidates outside the fixed generator, or a
 different globalization merit. Evidence:
 `experiments/pdas_lookahead_falsifier_2026_07_22.md`.
 
+## Exact simultaneous-block successor
+
+The round-24 hard stop was then tested with exact coupled block algebra. The
+fixed first-64 scalar-merit pool contains 2,016 pairs: 1,548 are rank-safe and
+jointly direction-valid, and none strictly improves the old merit. The
+lex-best valid pair worsens the decisive L1 component by 24,937.299. A
+deterministic exact greedy augmentation path reaches width 8, then every
+remaining edge conflicts, loses rank, or reverses at least one jointly solved
+entering direction. It therefore produces no width-32/64 candidate and spends
+no rescue factor. Independent replay returned `TRUST_KILL`.
+
+The bounded rescue itself takes 0.757180s versus the complete 0.448351702s
+gate, although its geometric failure is decisive without promoting Python
+timing to a native lower bound. A separate fixed squared-KKT-potential ordering
+also fails: its rank-safe width-32 block reverses 15 entering directions,
+reintroduces artificial mass, and worsens that potential 155.067x.
+
+This closes the fixed pool, lex-best-pair/greedy augmentation path and fixed
+potential ordering. It does not enumerate arbitrary higher-order subsets,
+candidate edges outside the current generator, or trajectories that actually
+commit temporary worsening. Evidence:
+`experiments/pdas_block_merit_falsifier_2026_07_22.md`.
+
 ## Scoped closure
 
 The remaining funded frontier is empty under the current facts: fixed
@@ -184,8 +207,8 @@ and certificate-backed optimality. Reopening requires new evidence for one of:
    20.03us on these changing bases and is not the tested oracle top-`K`
    whole-inverse construction;
 2. a predeclared Phase-1 or full-KKT invariant with a complete certificate
-   path and a reason to cross the measured zero-single-improver state without
-   collapsing below the width gate; or
+   path and concrete evidence for a legal wide move beyond the measured
+   zero-single and zero-pair-improver state; or
 3. an explicitly new head-to-head hardware protocol.
 
 No production source changed, so no v3 recertification is warranted.
