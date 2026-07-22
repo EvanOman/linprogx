@@ -170,7 +170,7 @@ jointly direction-valid, and zero strictly improved the old merit. The
 lex-best valid pair worsened L1 KKT by 24,937.299. A deterministic exact
 greedy augmentation path reached width 8 and then had no legal compatible
 addition, so no width-32/64 authority candidate existed. The rescue alone
-took 0.757180s versus the complete 0.448351702s gate. A separate fixed
+took 0.789946s versus the complete 0.448351702s gate. A separate fixed
 squared-KKT-potential ordering produced a width-32 rank-safe block, but 15 of
 32 entering motions reversed direction and its potential worsened 155.067x.
 This kills those bounded pool/path and potential-ordering policies, not every

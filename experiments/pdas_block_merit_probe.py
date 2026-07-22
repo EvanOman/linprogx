@@ -365,7 +365,9 @@ def predict_block(
 
     primal_backward = dense_backward_residual(h, delta, primal_rhs)
     dual_backward = dense_backward_residual(h.T, dual_step, dual_rhs)
-    backward_limit = DENSE_BACKWARD_MULTIPLIER * np.finfo(np.float64).eps * max(1, len(edges))
+    backward_limit = float(
+        DENSE_BACKWARD_MULTIPLIER * np.finfo(np.float64).eps * max(1, len(edges))
+    )
     if max(primal_backward, dual_backward) > backward_limit:
         return (
             None,
@@ -384,7 +386,7 @@ def predict_block(
         float(np.max(np.abs(state.x_basis[rows]), initial=0.0)),
         float(np.max(np.abs(leaving_endpoints), initial=0.0)),
     )
-    endpoint_limit = backward_limit * endpoint_scale
+    endpoint_limit = float(backward_limit * endpoint_scale)
     if leaving_error > endpoint_limit:
         return (
             None,

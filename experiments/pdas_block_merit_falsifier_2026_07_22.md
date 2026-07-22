@@ -179,17 +179,17 @@ sentinels.
 
 | component | seconds |
 |---|---:|
-| exact lookahead-prefix reproduction | 5.549653 |
-| terminal reconstruction factor | 0.010686 |
-| rescue candidate generation | 0.136477 |
-| rescue scalar pool | 0.073297 |
-| all pool-pair scoring | 0.483113 |
-| greedy augmentation | 0.064293 |
+| exact lookahead-prefix reproduction | 5.833100 |
+| terminal reconstruction factor | 0.012412 |
+| rescue candidate generation | 0.136861 |
+| rescue scalar pool | 0.073910 |
+| all pool-pair scoring | 0.507750 |
+| greedy augmentation | 0.071424 |
 | rescue authority factor | 0 |
-| whole probe | 6.609422 |
+| whole probe | 6.963315 |
 
-The bounded rescue work alone takes 0.757180s, 1.69 times the unchanged
-0.448351702s characterization gate. The whole diagnostic is 14.74 times that
+The bounded rescue work alone takes 0.789946s, 1.76 times the unchanged
+0.448351702s characterization gate. The whole diagnostic is 15.53 times that
 gate. Python diagnostic timing is not promoted to a production lower bound;
 the geometric failure is independently decisive.
 
@@ -229,11 +229,11 @@ path is exhausted.
 
 - Probe: `experiments/pdas_block_merit_probe.py`
 - Probe SHA-256:
-  `1da89d80f18bad2be7241744844be8aac8a39a4e3b65981737130b61f4308c99`
+  `516c2626cdd8d3743c9124beec74aa0ea8bbdaf5e53f7fef18ed220c0f040f64`
 - Raw result: `/tmp/pdas-block-merit-falsifier/results.json`
 - Raw SHA-256:
-  `cede07ea6086caf2b7600b4a4782217252728bc4c605b999a78411f90e16a19c`
-- Raw directory mode: `0700`; result mode: `0600`; result size: 34,968
+  `b7140e504597593ca55744073f7b06c068119d36bdd339d0a9a99638749fdf1d`
+- Raw directory mode: `0700`; result mode: `0600`; result size: 34,964
   bytes.
 
 Reproduction:

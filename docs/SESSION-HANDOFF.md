@@ -360,7 +360,7 @@ rank-safe and jointly legal, and none strictly improves the four-component
 merit. The lex-best pair worsens L1 KKT by 24,937.299. Greedy exact
 augmentation reaches width 8, then has no compatible jointly legal addition;
 no width-32/64 candidate exists and no rescue factor is authorized. The
-bounded rescue costs 0.757180s versus the entire 0.448351702s gate, while the
+bounded rescue costs 0.789946s versus the entire 0.448351702s gate, while the
 unchanged certificate still has bound violation 21,460.6764.
 
 A separate phase-locked squared-KKT screen also fails its fixed wide-block

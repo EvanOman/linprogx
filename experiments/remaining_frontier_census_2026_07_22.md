@@ -185,7 +185,7 @@ remaining edge conflicts, loses rank, or reverses at least one jointly solved
 entering direction. It therefore produces no width-32/64 candidate and spends
 no rescue factor. Independent replay returned `TRUST_KILL`.
 
-The bounded rescue itself takes 0.757180s versus the complete 0.448351702s
+The bounded rescue itself takes 0.789946s versus the complete 0.448351702s
 gate, although its geometric failure is decisive without promoting Python
 timing to a native lower bound. A separate fixed squared-KKT-potential ordering
 also fails: its rank-safe width-32 block reverses 15 entering directions,
