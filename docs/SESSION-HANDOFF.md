@@ -175,11 +175,9 @@ different factorization DATA STRUCTURE or hardware regime.
 ## 5. IN-FLIGHT: the C-wave (process these as they land)
 
 Six creative mandates (creative_attack_angles_2026_07_21.md), codex
-gpt-5.5-high, worktrees /home/evan/dev/linprogx-c{1,2,3} remain:
-- C1 dense-STORED factor / data-structure replacement: RUNNING — the
-  strongest remaining idea (100x flops for zero gathers).
-- C2 BTRAN||FTRAN overlap (36.8% of wall, independent, never
-  overlapped): RUNNING.
+gpt-5.5-high, worktree /home/evan/dev/linprogx-c3 remains:
+- C1 data-structure replacement: KILLED — best alt format 10.7% SLOWER than CSC in fair microbench; the representation was never the problem. Banked.
+- C2 BTRAN||FTRAN overlap: KILLED — the dossier independence claim was WRONG (BTRAN's pivot row determines FTRAN's RHS; legal overlap = 0%). Dossier corrected by the falsifier. Banked.
 - C3 scaling-family sweep as trajectory shaper (HiGHS's own counts
   move with scale strategy; our scaling ALGORITHM never swept —
   distinct from the killed Ruiz pass-count axis): RUNNING.
