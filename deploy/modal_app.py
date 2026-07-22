@@ -19,12 +19,13 @@ protections still apply: 30 req/min/IP rate limit, size caps, 5 s solve cap.
 
 Cost knob: `min_containers=0` = scale-to-zero. Set to 1 for always-warm if
 first-hit latency ever matters more than idle cost; `scaledown_window` keeps
-a warmed container around briefly so bursts don't each cold-start.
+a warmed container around for up to Modal's 20-minute maximum so clustered
+visits don't each cold-start.
 """
 
 from __future__ import annotations
 
-import modal
+import modal  # ty: ignore[unresolved-import] -- optional deploy-only dependency
 
 # Pins match demo API requirements (see render-build.sh / README-DEMO.md).
 # The solver itself is dependency-free; its source is copied in directly.
@@ -41,7 +42,9 @@ app = modal.App("linprogx-demo")
 @app.function(
     image=image,
     min_containers=0,  # scale-to-zero; set to 1 for always-warm
-    scaledown_window=300,  # keep a warm container ~5 min after last request
+    # Modal's maximum idle window: absorb clustered personal-site visits while
+    # retaining scale-to-zero instead of paying for permanent warm capacity.
+    scaledown_window=1200,
     # Restore from a memory snapshot instead of cold-importing Python on
     # scale-from-zero — measured ~20 s worst-case cold starts drop to a few
     # seconds. The app is snapshot-safe: no GPU, no open sockets at import.
