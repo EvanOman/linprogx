@@ -402,11 +402,35 @@ Diagnostics: `experiments/fresh_factor_census.py` and
 not every future algorithm. No v3 recertification was run; board remains
 23W-0P-1L.
 
-## 13. Standing state, memory, and Evan
+## 13. REOPENED CRASH AND OWNER FRONTIER: CLOSED (2026-07-22)
 
-- All campaign evidence through the post-dossier literature and structure audit is committed
-  and tagged. Disposable diagnostic worktrees were removed after their reports
-  were banked; none entered the production solver.
+The final Overmind campaign found two real mechanisms but no fundable ship:
+
+- A zero-cost degree-minimal rank-repaired crash produced a deterministic,
+  certificate-clean 4,073-pivot continuation with best solver wall 0.384285s.
+  Its dense exact repair cost 2.463s. Native repair either fell back after 31
+  repairs and took 7,603 pivots, or—with cap 128—made 48 repairs, took 9,381
+  pivots, and returned `dual_infeasible`. The tested crash family is closed.
+- A lifecycle-safe four-column-owner C prototype preserved all 4,399 pivots,
+  public results, and internal trace hashes. Fresh-process wall improved from
+  377.574ms to 350.676ms (ratio 0.928762), but the required ratio was
+  0.822987 and woodw regressed to 1.121962. It is not production-fundable.
+- Fusing two dispatches per pivot can save only 8.457ms versus 39.938ms still
+  needed. Stable row-owner prepartitioning has a favorable critical-work
+  factor of 0.786674 and projects only 0.883578 whole-wall ratio, still 22.878ms
+  short; woodw remains unsupported. Both successors are `KILL_PRECODE`.
+- Independent exact dualization, decomposition, sifting, randomized sampled
+  pricing, and full-KKT screens found no funded alternate route.
+
+Report: `experiments/reopened_frontier_falsifier_2026_07_22.md`. Experimental C
+and Python remained in isolated worktrees. No production code changed, so no
+v3 recertification was run and the board remains 23W-0P-1L.
+
+## 14. Standing state, memory, and Evan
+
+- All campaign evidence through the reopened crash and exact-dataflow audit is
+  committed and tagged. Experimental worktrees are disposable and none entered
+  the production solver.
 - Quotas (check fresh): codex snapshot was stale-96% but workers run
   fine (plan likely changed); claude 7d ~59%; GLM metered (~$1.4/$4.4
   per Mtok).

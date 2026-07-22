@@ -251,3 +251,25 @@ and certificate-backed optimality. Reopening requires new evidence for one of:
 3. an explicitly new head-to-head hardware protocol.
 
 No production source changed, so no v3 recertification is warranted.
+
+## Reopened exact-dataflow and basis-construction audit
+
+A final campaign reopened the two strongest gaps in this census. A zero-cost
+degree-minimal crash found a certificate-clean 4,073-pivot continuation, but
+its exact rank repair cost 2.463s; native repair either fell back to the
+logical basis or produced a 9,381-pivot `dual_infeasible` path. A four-owner
+dual-simplex pipeline preserved every one of 4,399 pivots and every public and
+internal trace hash, but after lifecycle repair its fresh-process greenbea
+ratio was only 0.928762 and woodw regressed to 1.121962.
+
+The two strongest owner successors also fail favorable pre-code screens.
+Removing two dispatches per pivot saves only 8.457ms versus 39.938ms required.
+Stable row-owner prepartitioning reduces the most favorable retained
+pivot-row critical-work model to 0.786674, projecting whole wall to 0.883578
+versus the 0.822987 gate; it also lacks a route to the woodw `<=1.01` sentinel
+gate. The exact mechanism, safety review, artifacts, and zero-cost crash
+results are recorded in
+`experiments/reopened_frontier_falsifier_2026_07_22.md`.
+
+No production source changed, so the certified board remains 23W-0P-1L
+without v3 recertification.

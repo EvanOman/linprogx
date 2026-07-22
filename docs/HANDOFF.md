@@ -2682,3 +2682,18 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   local opportunity, endpoint, certificate, or whole-cost premises. Standalone
   diagnostics bank the factor and structural counts. No production code
   changed; no v3 recertification was run. BOARD REMAINS 23W-0P-1L.
+
+- REOPENED CRASH + EXACT-DATAFLOW FRONTIER — NO FUNDED SUCCESSOR
+  (2026-07-22, native workers + control-plane verification; no network or
+  external solver source;
+  experiments/reopened_frontier_falsifier_2026_07_22.md): (1) A zero-cost
+  rank-repaired crash gives a clean 4,073-pivot continuation, but exact repair
+  costs 2.463s; native repair falls back or yields a 9,381-pivot
+  `dual_infeasible` path. (2) A lifecycle-safe four-column-owner C prototype
+  preserves all 4,399 decisions and traces, but fresh-process greenbea ratio
+  is 0.928762 versus the 0.822987 gate and woodw regresses to 1.121962. (3)
+  Dispatch fusion can save only 8.457ms versus 39.938ms required. (4) Stable
+  row-owner prepartitioning projects a favorable 0.883578 whole-wall ratio and
+  cannot clear the woodw sentinel. Experimental code remained isolated. No
+  production source changed; no v3 recertification was run. BOARD REMAINS
+  23W-0P-1L.

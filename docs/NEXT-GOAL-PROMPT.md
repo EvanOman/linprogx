@@ -197,3 +197,21 @@ complete-cost gates. Evidence is in
 `experiments/post_dossier_literature_census_2026_07_22.md` and its two
 standalone diagnostics. Do not re-probe these constructions under new labels.
 No production code changed; board remains 23W-0P-1L without recertification.
+
+REOPENED CRASH/OWNER FRONTIER ADDENDUM (2026-07-22): the strongest remaining
+basis-construction and exact-dataflow mechanisms have now been built or bounded;
+do not re-probe them under new labels. A zero-cost degree-minimal crash found a
+deterministic certificate-clean 4,073-pivot continuation, but exact dense rank
+repair cost 2.463s; native repair either fell back and took 7,603 pivots or
+avoided fallback only to take 9,381 pivots and return `dual_infeasible`. A
+lifecycle-safe four-column-owner C prototype preserved every one of 4,399
+pivots and all public/internal trace hashes, yet fresh-process greenbea ratio
+was only 0.928762 against the 0.822987 gate and woodw regressed to 1.121962.
+Fusing two dispatches per pivot saves only 8.457ms of the missing 39.938ms.
+Stable row-owner prepartitioning, even with zero incremental setup charge,
+projects 0.883578 whole-wall ratio and cannot repair the woodw sentinel.
+Evidence is in SESSION-HANDOFF section 13 and
+`experiments/reopened_frontier_falsifier_2026_07_22.md`. No production code
+changed; board remains 23W-0P-1L without recertification. A genuine reopening
+must present a different measured mechanism, not owner-filter rearrangement,
+dispatch fusion, stable row prepartitioning, or zero-cost rank repair.
