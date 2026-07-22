@@ -291,7 +291,7 @@ def _edge_json(state: State, item: ScoredEdge) -> dict[str, Any]:
 
 def _authority_tolerances(state: State, trial: State) -> tuple[float, float]:
     conditioning = math.sqrt(max(1.0, state.growth_proxy) * max(1.0, trial.growth_proxy))
-    relative = AUTHORITY_FP_MULTIPLIER * np.finfo(np.float64).eps * conditioning
+    relative = float(AUTHORITY_FP_MULTIPLIER * np.finfo(np.float64).eps * conditioning)
     return relative, relative
 
 
