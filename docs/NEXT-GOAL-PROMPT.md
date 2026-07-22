@@ -124,3 +124,24 @@ invariant with measured 29--34% opportunity, or explicit authority for a new
 head-to-head hardware protocol. Evidence is in SESSION-HANDOFF section 8 and
 the remaining-frontier and Krylov falsifier reports. No production code
 changed; board remains 23W-0P-1L without recertification.
+
+POST-FRONTIER FRESH-EYES ADDENDUM (2026-07-22): three concrete extensions of
+the remaining abstract openings are now measured; do not re-probe them under a
+new label. Fixed non-diagonal row transformation is exact and maps dual
+certificates by `y=U^T y'`, but the natural `U=B_512^-1` construction makes
+`UA` 3.906x denser and later sampled LU fill rises 78.48%, 134.26%, and
+156.81%. Oracle top-`K` whole-inverse sparsification reaches 404/404 sampled
+Harris authority only at `K=128`, whose favorable traffic is
+93.280us/equivalent pair; raw-funded `K=16` fails half the decisions and
+models only an 8.46% whole-wall gain after exact fallback. Full-KKT block PDAS
+was genuinely outside the earlier rank-k scope, but after review forced repair
+of a backward-step bug, the fixed greedy-prefix+Bland policy accepted widths
+60/8/2/2, median 5 versus the gate of 18, and stopped uncertified with bound
+violation 62,263.4827. That last result kills only the tested selection policy:
+improving forward-valid edges exist outside its selected prefixes. Evidence is
+in SESSION-HANDOFF section 9 and the global-reformulation, rich-inverse, and
+block-PDAS reports. No production code changed; the board remains 23W-0P-1L
+without recertification. Reopening now needs a different predeclared full-KKT
+selection/globalization invariant, a different concrete approximate-inverse
+representation with full authority/cost evidence, or new factor/hardware
+science.

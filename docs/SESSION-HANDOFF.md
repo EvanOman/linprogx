@@ -292,9 +292,39 @@ with complete funding and authority evidence, a new Phase-1 invariant with a
 demonstrated 29--34% continuation opportunity, or an explicitly new hardware
 protocol.
 
-## 9. Standing state, memory, and Evan
+## 9. POST-FRONTIER FRESH-EYES AUDIT: CLOSED (2026-07-22)
 
-- All campaign evidence through the remaining-frontier census is committed
+The earlier statement “no funded CPU mechanism” remains a funding census, not
+an impossibility theorem. A new Overmind wave tested the strongest concrete
+constructions outside its measured scope:
+
+- Fixed non-diagonal left transformation is exact and certificate-mappable,
+  but `U=B_512^-1` makes `UA` 3.906x denser and later sampled LU fill rises
+  78.48%, 134.26%, and 156.81%. Natural algebraic reformulations are KILLED.
+- Oracle top-`K` whole-inverse sparsification reaches full sampled Harris
+  authority only at `K=128`, whose favorable traffic is 93.280us/equivalent
+  pair. The only raw-funded `K=16` point fails half the decisions; exact
+  fallback leaves an 8.46% modeled wall gain. KILLED in scope.
+- Full-KKT block PDAS was a real gap: it permits both primal and dual
+  infeasibility and accepted a width-60 exchange, beyond the previous `k<=4`
+  face audit. Adversarial review found a backward-step bug; after repair and a
+  fresh authoritative run, the fixed greedy-prefix+Bland policy accepted
+  widths 60/8/2/2, had median width 5 versus the gate of 18, and stopped with
+  bound violation 62,263.4827. It is KILLED only for that exact global
+  selection policy; improving forward-valid edges exist outside its prefixes.
+
+Reports: `experiments/global_reformulation_falsifier_2026_07_22.md`,
+`experiments/rich_inverse_falsifier_2026_07_22.md`, and
+`experiments/block_pdas_falsifier_2026_07_22.md`. The latter two include
+standalone reproducible probes. No production source changed, so there is no
+v3 recertification and the board remains 23W-0P-1L. Reopening requires a
+different predeclared full-KKT selection/globalization rule, a different
+concrete approximate-inverse representation with complete authority and cost,
+or a genuinely new factor/hardware protocol.
+
+## 10. Standing state, memory, and Evan
+
+- All campaign evidence through the post-frontier fresh-eyes audit is committed
   and tagged. Disposable diagnostic worktrees were removed after their reports
   were banked; none entered the production solver.
 - Quotas (check fresh): codex snapshot was stale-96% but workers run

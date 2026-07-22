@@ -123,6 +123,34 @@ still needs a concrete globally fixed construction, complete charge, and
 decision-authority evidence. No diagnostic C or production implementation is
 justified.
 
+## Post-closure fresh-eyes audit
+
+A subsequent independent wave converted the remaining abstract openings into
+three concrete falsifiers:
+
+- A fixed nonsingular left transform `A'=UA, b'=Ub` preserves the exact
+  tableau and maps dual certificates by `y=U^T y'`. The natural strongest
+  construction `U=B_512^-1` reduces factor fill 68.02% at its reference basis,
+  but makes `UA` 3.906x denser and increases later sampled LU fill by 78.48%,
+  134.26%, and 156.81%. Natural global reformulations do not earn a build.
+- An oracle-favorable top-`K` row/column sparsification of the whole inverse
+  reproduces 202/404, 202/404, 303/404, and 404/404 Harris decisions for
+  `K=16/32/64/128`. The only fully decision-authoritative point costs a
+  favorable 93.280us/equivalent pair before application or residual work. The
+  only raw-traffic-funded point needs 50% observed exact fallback and models
+  only an 8.46% whole-wall gain. KILLED in that construction.
+- Full-KKT block principal pivoting was genuinely outside the old rank-k
+  scope, so it received a standalone characterization. After an adversarial
+  review caught and repaired a backward-step bug, the fixed greedy-prefix plus
+  Bland policy accepted widths 60/8/2/2, then stopped uncertified. Median width
+  was 5 versus the predeclared 18 gate and bound violation remained 62,263.
+  This kills that exact selection policy, not every criss-cross ordering or
+  merit globalization.
+
+Evidence: `experiments/global_reformulation_falsifier_2026_07_22.md`,
+`experiments/rich_inverse_falsifier_2026_07_22.md`, and
+`experiments/block_pdas_falsifier_2026_07_22.md`.
+
 ## Scoped closure
 
 The remaining funded frontier is empty under the current facts: fixed
@@ -130,9 +158,10 @@ four-vCPU hardware, global policies, fixed `eps=2e-5`, exact status semantics,
 and certificate-backed optimality. Reopening requires new evidence for one of:
 
 1. a factor/solve arithmetic method whose complete authoritative pair is below
-   20.03us on these changing bases;
-2. a new Phase-1 construction or pivot invariant with a demonstrated 29--34%
-   continuation-count opportunity; or
+   20.03us on these changing bases and is not the tested oracle top-`K`
+   whole-inverse construction;
+2. a predeclared Phase-1 or full-KKT selection/globalization invariant with a
+   demonstrated trajectory opportunity and complete certificate path; or
 3. an explicitly new head-to-head hardware protocol.
 
 No production source changed, so no v3 recertification is warranted.

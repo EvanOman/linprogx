@@ -2602,6 +2602,26 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   approximate inverse or recycled space. No production code changed; no v3
   recertification was run. BOARD REMAINS 23W-0P-1L.
 
+- POST-FRONTIER FRESH-EYES AUDIT — THREE CONCRETE OPENINGS FALSIFIED
+  (2026-07-22, native codex theory/implementation/review lanes; no network or
+  external solver source; experiments/global_reformulation_falsifier_2026_07_22.md,
+  experiments/rich_inverse_falsifier_2026_07_22.md,
+  experiments/block_pdas_falsifier_2026_07_22.md): (1) Fixed non-diagonal row
+  transforms preserve the exact tableau and map dual certificates by
+  `y=U^T y'`, but
+  natural basis normalization makes `UA` 3.906x denser and later sampled LU
+  fill grows 78.48%, 134.26%, and 156.81%. (2) An oracle-favorable sparsified
+  whole inverse reaches 404/404 sampled Harris authority only at `K=128`,
+  whose favorable traffic is 93.280us/equivalent pair. The raw-funded `K=16`
+  point fails 50% of decisions; exact fallback models only an 8.46% wall gain.
+  (3) Full-KKT block PDAS is distinct from the old `k<=4` face audit. Its first
+  artifact was rejected after adversarial review found backward-time dual
+  edges. The repaired authoritative greedy-prefix+Bland policy accepts widths
+  60/8/2/2, median 5 versus the 18 gate, then stops uncertified with bound
+  violation 62,263.4827. Improving forward-valid edges outside its prefixes
+  prevent a broader criss-cross impossibility claim. No production code
+  changed; no v3 recertification was run. BOARD REMAINS 23W-0P-1L.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
