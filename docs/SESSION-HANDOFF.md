@@ -255,11 +255,48 @@ requires a genuinely different mechanism, not scalar-endpoint shadow panels,
 sparse primal role-swapping, Phase-1 transition bookkeeping, or the tested
 fixed-policy simultaneous face exchange.
 
-## 8. Standing state, memory, and Evan
+## 8. REMAINING FRONTIER CENSUS: CLOSED (2026-07-22)
 
-- All campaign evidence through the second successor audit is committed
-  and tagged. The disposable rank-k worktree and its default-off diagnostics
-  were removed after the report was banked; none entered the production solver.
+A final clean-room census found no funded CPU mechanism under the current v3
+protocol, without changing production code:
+
+- Sequential dual suboptimization is distinct from the old scalar shadow
+  panels and the fixed-policy rank-k endpoint audit, but a public-API screen on
+  the exact reduced greenbea model took 4,669 pivots versus serial dual's
+  3,309. Four-thread median wall was 0.659879s versus 0.380202s. This is
+  corroboration, not a wall projection onto linprogx; together with the prior
+  panels it supplies no funding invariant for a native build.
+- The homogeneous auxiliary's only basis-dependent joint signal is its
+  reduced-cost sign score. Cold reaches the auxiliary-optimal face at pivot
+  2,060, after which a board flip still requires a 29.44% continuation cut and
+  the 20% gate requires 34.01%. Integrated and alternating measurements reach
+  only 3.55% and 1.61% total-pivot gains. KILLED without implementation.
+- The four-vCPU solve slice cannot fund ordinary multicore level scheduling.
+  Accelerator-resident simplex is ineligible because v3 allocates CPU only;
+  changing both solvers' hardware would be a new campaign protocol.
+- Certificate-corrected basis-solve replay used four actual bases and next
+  right-hand sides. Exact BTRAN rows match 404/404 Harris decisions; fixed
+  matched-Jacobi true-residual correction at degrees 1/2/3/4/8/16/32 matches
+  0/404 at every degree, with BTRAN residuals stagnant at 0.742--0.998.
+  Every sample therefore pays exact fallback and is a strict regression.
+  This kills ordinary frozen-refactor LU Krylov and this recurrence through
+  degree 32, not every imaginable sparse approximate inverse or recycled
+  space.
+
+Reports: `experiments/remaining_frontier_census_2026_07_22.md` and
+`experiments/krylov_basis_solve_falsifier_2026_07_22.md`. The diagnostic is a
+standalone Python probe; no C or production solver behavior changed. There is
+therefore no v3 recertification, and the certified board remains 23W-0P-1L.
+Reopening requires a concrete richer approximate-inverse/recycled construction
+with complete funding and authority evidence, a new Phase-1 invariant with a
+demonstrated 29--34% continuation opportunity, or an explicitly new hardware
+protocol.
+
+## 9. Standing state, memory, and Evan
+
+- All campaign evidence through the remaining-frontier census is committed
+  and tagged. Disposable diagnostic worktrees were removed after their reports
+  were banked; none entered the production solver.
 - Quotas (check fresh): codex snapshot was stale-96% but workers run
   fine (plan likely changed); claude 7d ~59%; GLM metered (~$1.4/$4.4
   per Mtok).

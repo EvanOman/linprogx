@@ -105,3 +105,22 @@ mismatches. This closes the tested fixed-policy face exchange—not every
 conceivable rank-k algorithm. Evidence is in SESSION-HANDOFF section 7 and the
 three 2026-07-22 falsifier reports. No production code changed; board remains
 23W-0P-1L without recertification.
+
+REMAINING FRONTIER CENSUS ADDENDUM (2026-07-22): do not re-probe ordinary
+sequential suboptimization, the unfunded joint homogeneous-Phase-1 face rule,
+frozen-last-refactor LU Krylov, or the tested matched-Jacobi correction. A
+public-API screen on the exact reduced model took 4,669 PAMI pivots versus
+3,309 serial pivots and was slower at both one and four threads. Cold reaches
+the auxiliary-optimal face at pivot 2,060, but flipping the board still needs
+a 29.44% continuation cut and the 20% gate needs 34.01%, far beyond the 3.55%
+integrated and 1.61% alternating gains. On four actual greenbea bases, exact
+BTRAN rows reproduce 404/404 Harris decisions while true-residual
+matched-Jacobi degrees 1/2/3/4/8/16/32 reproduce 0/404 at every degree; every
+sample requires exact fallback. Accelerator-resident simplex is outside the
+CPU-only v3 protocol. These are scoped funding kills, not impossibility
+theorems. Reopening requires a concrete richer approximate-inverse/recycled
+construction with complete charge and decision authority, a new Phase-1
+invariant with measured 29--34% opportunity, or explicit authority for a new
+head-to-head hardware protocol. Evidence is in SESSION-HANDOFF section 8 and
+the remaining-frontier and Krylov falsifier reports. No production code
+changed; board remains 23W-0P-1L without recertification.

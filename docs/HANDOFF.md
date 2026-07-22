@@ -2580,6 +2580,28 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   production code changed; no v3 recertification was run. BOARD REMAINS
   23W-0P-1L.
 
+- REMAINING FRONTIER CENSUS — NO FUNDED CPU MECHANISM (2026-07-22,
+  native codex clean-room theory/falsifier lanes; public papers and APIs only,
+  no external solver source; experiments/remaining_frontier_census_2026_07_22.md,
+  experiments/krylov_basis_solve_falsifier_2026_07_22.md): (1) Sequential dual
+  suboptimization remained a formally distinct candidate, but an exact-model
+  public-API screen took 4,669 PAMI pivots versus serial dual's 3,309 and was
+  slower at both one and four threads. This is corroboration rather than a
+  linprogx timing projection, and supplies no native-build funding invariant.
+  (2) The homogeneous auxiliary's only joint basis signal is its reduced-cost
+  sign score. Cold reaches that auxiliary-optimal face at pivot 2,060; the
+  continuation still needs a 29.44% cut to flip or 34.01% to clear the gate,
+  versus measured total-pivot gains of only 3.55% integrated and 1.61%
+  alternating. (3) Four-vCPU triangular-solve parallelism is unfunded, while
+  accelerator-resident simplex is outside the CPU-only v3 protocol. (4) Four
+  actual greenbea basis/next-RHS samples gave exact Harris replay 404/404, but
+  fixed matched-Jacobi true-residual correction at every degree
+  1/2/3/4/8/16/32 gave 0/404; BTRAN residuals stagnated at 0.742--0.998, so
+  every sample pays exact fallback. This closes ordinary frozen-refactor LU
+  Krylov and the tested recurrence through degree 32, not every conceivable
+  approximate inverse or recycled space. No production code changed; no v3
+  recertification was run. BOARD REMAINS 23W-0P-1L.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,
