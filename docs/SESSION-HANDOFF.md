@@ -322,9 +322,33 @@ different predeclared full-KKT selection/globalization rule, a different
 concrete approximate-inverse representation with complete authority and cost,
 or a genuinely new factor/hardware protocol.
 
-## 10. Standing state, memory, and Evan
+## 10. LOOKAHEAD FULL-KKT SUCCESSOR: CLOSED (2026-07-22)
 
-- All campaign evidence through the post-frontier fresh-eyes audit is committed
+The repaired greedy block-PDAS trace left individually improving edges outside
+its prefixes, so the strongest direct successor received a separate probe. It
+scored every generated edge by exact algebraic single-exchange KKT merit,
+sorted strict improvers, formed a rank-safe matching, tried only exact
+power-of-two prefixes, and fresh-factored every proposed block. The best
+predicted scalar was its fail-closed fallback.
+
+Adversarial review caught a first implementation that truncated requested
+power-of-two widths; that artifact was rejected. After repair, independent
+replay returned `TRUST_KILL`: 23 accepted exchanges, 39 fresh-factor attempts,
+median width 4 versus the gate of 18, and no cycles. At round 24 all 512
+forward-valid generated edges had been scored and none was a strict merit
+improver. The run remained uncertified with original bound violation
+21,460.6764. KILLED in scope.
+
+Report: `experiments/pdas_lookahead_falsifier_2026_07_22.md`. The remaining
+full-KKT openings are materially different: exact simultaneous-block merit, a
+predeclared globalization that can accept temporary merit worsening, a wider
+candidate generator, or a different merit with a certificate and economic
+invariant. No production code changed; no v3 recertification was run; board
+remains 23W-0P-1L.
+
+## 11. Standing state, memory, and Evan
+
+- All campaign evidence through the lookahead full-KKT successor is committed
   and tagged. Disposable diagnostic worktrees were removed after their reports
   were banked; none entered the production solver.
 - Quotas (check fresh): codex snapshot was stale-96% but workers run

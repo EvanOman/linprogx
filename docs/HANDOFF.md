@@ -2622,6 +2622,23 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   prevent a broader criss-cross impossibility claim. No production code
   changed; no v3 recertification was run. BOARD REMAINS 23W-0P-1L.
 
+- LOOKAHEAD FULL-KKT SUCCESSOR — EXACT SINGLE-EDGE MERIT PATH KILLED
+  (2026-07-22, native codex implementation + independent theory replay; no
+  network or external solver source;
+  experiments/pdas_lookahead_falsifier_2026_07_22.md): the repaired greedy
+  block-PDAS probe left improving edges outside its prefixes, so this successor
+  scores every generated edge by exact algebraic single-exchange post-merit,
+  forms a rank-safe matching, tries exact power-of-two prefixes, and uses the
+  best predicted scalar fallback. Review rejected the first artifact because
+  it truncated requested widths. The repaired authoritative trace earned
+  `TRUST_KILL`: 23 accepts / 39 fresh-factor attempts, median width 4 versus
+  the 18 gate, no cycles, and zero strict improvers among all 512 final
+  forward-valid generated edges. It remains uncertified with original bound
+  violation 21,460.6764. This closes the exact single-edge-merit ordering, not
+  simultaneous-block merit, temporary merit worsening, a wider generator, or
+  a different globalization merit. No production code changed; no v3
+  recertification was run. BOARD REMAINS 23W-0P-1L.
+
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
   tables); /tmp bench artifacts rescued into assets/ (knife chunks,

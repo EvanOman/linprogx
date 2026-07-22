@@ -145,3 +145,19 @@ without recertification. Reopening now needs a different predeclared full-KKT
 selection/globalization invariant, a different concrete approximate-inverse
 representation with full authority/cost evidence, or new factor/hardware
 science.
+
+LOOKAHEAD FULL-KKT ADDENDUM (2026-07-22): the improving edges outside the first
+block-PDAS probe have now been tested rather than left as a generic reopening.
+The successor scores every generated edge by exact algebraic single-exchange
+post-merit, sorts strict improvers, forms a rank-safe matching, tries exact
+power-of-two prefixes, and uses the best predicted scalar fallback. Review
+rejected a first artifact that truncated requested widths; the repaired trace
+was independently replayed `TRUST_KILL`. It accepts 23 exchanges across 39
+fresh factors but has median width 4 versus the gate of 18. At round 24 all 512
+forward-valid generated edges have zero strict improvers, while original bound
+violation remains 21,460.6764. This kills that exact selection policy, not an
+exact simultaneous-block merit model, temporary merit worsening, a wider
+candidate generator, or a different globalization merit. Evidence is in
+SESSION-HANDOFF section 10 and
+`experiments/pdas_lookahead_falsifier_2026_07_22.md`. No production code
+changed; board remains 23W-0P-1L without recertification.

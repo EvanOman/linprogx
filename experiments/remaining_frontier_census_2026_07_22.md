@@ -151,6 +151,29 @@ Evidence: `experiments/global_reformulation_falsifier_2026_07_22.md`,
 `experiments/rich_inverse_falsifier_2026_07_22.md`, and
 `experiments/block_pdas_falsifier_2026_07_22.md`.
 
+## Full-KKT lookahead successor
+
+The repaired greedy block policy left individually improving edges outside its
+selected prefixes, so a separate globally fixed successor scored every
+generated edge by its exact algebraic single-exchange post-state. It sorted
+strict improvers by predicted KKT merit, formed rank-safe matchings, tried only
+exact power-of-two prefixes, and used the best predicted scalar as fallback.
+Fresh LU remained the authority for every proposed batch and scalar.
+
+After review repaired an implementation that had incorrectly truncated the
+power-of-two ladder, the authoritative trace accepted 23 exchanges across 39
+fresh-factor attempts. Accepted widths were
+`32/16/32/8/16/2/1/8/4/4/4/8/1/1/8/4/8/4/4/2/1/2/2`, with median 4 versus the
+predeclared 18 gate. The final round scored all 512 forward-valid generated
+edges and found zero tolerance-aware strict improvers, yet original bound
+violation remained 21,460.6764. Independent replay returned `TRUST_KILL`.
+
+This closes that exact single-exchange-merit ordering and power-of-two
+matching-prefix policy. It does not test exact simultaneous-block merit,
+temporary merit worsening, candidates outside the fixed generator, or a
+different globalization merit. Evidence:
+`experiments/pdas_lookahead_falsifier_2026_07_22.md`.
+
 ## Scoped closure
 
 The remaining funded frontier is empty under the current facts: fixed
@@ -160,8 +183,9 @@ and certificate-backed optimality. Reopening requires new evidence for one of:
 1. a factor/solve arithmetic method whose complete authoritative pair is below
    20.03us on these changing bases and is not the tested oracle top-`K`
    whole-inverse construction;
-2. a predeclared Phase-1 or full-KKT selection/globalization invariant with a
-   demonstrated trajectory opportunity and complete certificate path; or
+2. a predeclared Phase-1 or full-KKT invariant with a complete certificate
+   path and a reason to cross the measured zero-single-improver state without
+   collapsing below the width gate; or
 3. an explicitly new head-to-head hardware protocol.
 
 No production source changed, so no v3 recertification is warranted.
