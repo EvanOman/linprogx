@@ -75,3 +75,16 @@ greenbea stays closed, the board rests honestly at 23W-0P-1L —
 protect it (re-cert only on code changes), keep the chronicle
 current, and spend the campaign's machinery on whatever Evan aims
 it at next.
+
+SUCCESSOR AUDIT ADDENDUM (2026-07-21): a fresh Overmind pass tested
+the strongest surviving claims and corrected two overbroad closures.
+Do not re-probe active-bound sifting (95.5% omniscient live set,
+23.9% projected slowdown), next-pivot BTRAN lookahead (4,398/4,398
+leaving predictions but 15 floating-point Harris-choice mismatches),
+or selected-inverse row caching (16.92% erase-all ceiling, 1.91%
+optimistic charged ceiling). C2 forbids only same-pivot BTRAN/FTRAN
+overlap; exact-real cross-pivot algebra exists but is not numerically
+authoritative. C6 killed the tested dense tableau primal route, not
+every hypothetical sparse revised-primal design. Full evidence and
+the narrowed reopening condition are in SESSION-HANDOFF section 6
+and the three 2026-07-21 falsifier reports.

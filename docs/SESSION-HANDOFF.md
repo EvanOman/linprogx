@@ -177,13 +177,13 @@ different factorization DATA STRUCTURE or hardware regime.
 Six creative mandates (creative_attack_angles_2026_07_21.md), codex
 gpt-5.5-high, No worktrees remain. Final disposition:
 - C1 data-structure replacement: KILLED — best alt format 10.7% SLOWER than CSC in fair microbench; the representation was never the problem. Banked.
-- C2 BTRAN||FTRAN overlap: KILLED — the dossier independence claim was WRONG (BTRAN's pivot row determines FTRAN's RHS; legal overlap = 0%). Dossier corrected by the falsifier. Banked.
+- C2 BTRAN||FTRAN overlap: KILLED — the dossier independence claim was WRONG (BTRAN's pivot row determines FTRAN's RHS; legal same-pivot overlap = 0%). A successor audit later derived exact-real next-pivot lookahead; section 6 records why it is still unusable. Banked.
 - C3 scaling families: KILLED — every alternative regresses (Pow2 +31% + cert-break; best clean +80%); 10-pass Ruiz is the optimum. Banked.
 - C4 perturb+recover: KILLED — trajectory not stall-bound (4,400+2 vs
   4,399 pivots; large eta breaks certificates). Banked.
 - C5 PDHG-approximated auxiliary: KILLED — approximate support gives
   4,341-pivot bases; pipeline closed at both ends. Banked.
-- C6 primal-route probe: KILLED — dense primal times out at 300s (>973x the flip target); the primal family closes. Banked.
+- C6 primal-route probe: KILLED — the tested dense tableau primal times out at 300s (>973x the flip target). This kills that route, not every possible sparse revised-primal implementation. Banked.
 ALL SIX KILLED. The wave-closure ledger entry ("C-WAVE CLOSED") is
 recorded; greenbea's file closes at 1.215; the board RESTS AT
 23W-0P-1L. Remaining successor duties: (1) optional chronicle round
@@ -194,10 +194,36 @@ uncommitted state. New work on greenbea requires genuinely new
 science (see section 4's reopening condition); everything softer
 has a dated kill.
 
-## 6. Standing state, memory, and Evan
+## 6. SUCCESSOR REOPENING AUDIT: CLOSED (2026-07-21)
 
-- All work committed/tagged through the C5 banking; no uncommitted
-  changes; only c1/c2/c3/c6 worktrees outstanding.
+Fresh-eyes review found three claims worth falsifying rather than inheriting:
+
+- Active-bound sifting was explicitly unprobed. A 4,399-pivot trace and 12
+  sound epoch/age replays show that 3,611 of 3,868 columns are mandatory;
+  even an omniscient policy keeps 95.5% live. Every real policy misses
+  entrants, and charged shadow timing projects a 23.9% slowdown. KILLED.
+- C2's same-pivot dependency does not forbid exact-real next-pivot BTRAN
+  lookahead. The derived rank-one transform predicts all 4,398 leaving rows
+  and survives all 33 refactors, but its floating row changes 15 Harris
+  entering choices (maximum error 7.495e-6). KILLED at exactness.
+- Selected rows of B^-1 can be updated by an exact-real rank-one recurrence,
+  but erasing every BTRAN is only 16.92% of wall, below the 17.7013% board
+  gap. Compulsory misses cap free caching at 12.81%; fully charged optimistic
+  caching is 1.91%, and the same floating-authority failure applies. KILLED.
+
+Reports: `experiments/sifting_falsifier_2026_07_21.md`,
+`lookahead_btran_falsifier_2026_07_21.md`, and
+`selected_inverse_cache_falsifier_2026_07_21.md`. No production solver code
+changed, so the v3 board remains 23W-0P-1L without recertification. The
+reopening condition survives in narrower form: a mechanism must change more
+than the current BTRAN slice or reduce the 4,399-pivot trajectory while
+preserving the fixed certificate and global-policy constraints.
+
+## 7. Standing state, memory, and Evan
+
+- All campaign evidence through the successor reopening audit is committed
+  and tagged. Probe worktrees contain only default-off diagnostic changes;
+  none were merged into the production solver.
 - Quotas (check fresh): codex snapshot was stale-96% but workers run
   fine (plan likely changed); claude 7d ~59%; GLM metered (~$1.4/$4.4
   per Mtok).

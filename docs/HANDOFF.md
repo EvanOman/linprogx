@@ -2509,16 +2509,17 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   gpt-5.5-high x6, all logs network-audited clean; reports
   c1..c6_*_2026_07_21.md): C1 factor data structure (best alt
   format 10.7% SLOWER than CSC — the representation was never the
-  problem); C2 BTRAN||FTRAN overlap (ILLEGAL — the dossier's
-  independence claim was WRONG: BTRAN's pivot row determines
-  FTRAN's RHS; legal overlap 0%; dossier corrected); C3 scaling
+  problem); C2 BTRAN||FTRAN overlap (ILLEGAL within the same pivot —
+  the dossier's independence claim was WRONG: BTRAN's pivot row
+  determines FTRAN's RHS; dossier corrected); C3 scaling
   families (Pow2 +31% and certificate-breaking, best clean
   alternative +80% — 10-pass Ruiz is the optimum); C4 cost
   perturbation + recovery (4,400+2 vs 4,399 pivots — the
   trajectory is not stall-bound; large eta breaks certificates);
   C5 PDHG-approximated auxiliary (4,341-pivot bases — the
-  pipeline route is closed at BOTH ends); C6 primal route (dense
-  primal times out at 300s, >973x target). GREENBEA'S FILE
+  pipeline route is closed at BOTH ends); C6 tested dense tableau
+  primal route (times out at 300s, >973x target; this is not a
+  theorem about every sparse revised-primal design). GREENBEA'S FILE
   CLOSES AT 1.215: the creative wave confirms the hardware-floor
   account from every remaining direction — representation,
   concurrency, conditioning, trajectory, pipeline, and route are
@@ -2529,6 +2530,33 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   derivation confirmed by exact prediction, and a reopening
   condition that survived every attack: a fundamentally different
   machine or factorization science. BOARD RESTS AT 23W-0P-1L.
+
+- SUCCESSOR REOPENING AUDIT — THREE SURVIVING CLAIMS MEASURED DEAD
+  (2026-07-21, native codex falsifiers + explicit Claude
+  literature/hardware lane, worker network audits clean;
+  experiments/sifting_falsifier_2026_07_21.md,
+  lookahead_btran_falsifier_2026_07_21.md,
+  selected_inverse_cache_falsifier_2026_07_21.md): fresh review
+  corrected two terminal overstatements and tested the one explicitly
+  unprobed mechanism. (1) Certificate-preserving active-bound sifting
+  cannot exploit the old 61.6% terminal bound statistic: 3,611/3,868
+  columns are one-sided/free and mandatory, the omniscient minimum
+  remains 95.5% live, all 12 policies miss entrants, and charged
+  timing projects **23.9% SLOWER**. (2) C2's same-pivot dependency
+  does not forbid exact-real next-pivot BTRAN lookahead: its rank-one
+  transform predicts 4,398/4,398 leaving rows and survives 33/33
+  refactors, but changes **15 Harris entering choices** in floating
+  point (max row error 7.495e-6), so it fails trajectory authority.
+  (3) Exact selected-inverse row caching is arithmetically valid but
+  cannot fund the flip: deleting every BTRAN is only **16.92%** of
+  wall, compulsory misses cap free caching at **12.81%**, and an
+  optimistic fully charged model peaks at **1.91%**; repeated
+  rank-one rows inherit the same numerical authority failure. No
+  production code changed and no v3 recert was run. BOARD REMAINS
+  23W-0P-1L. The closure is now narrower and stronger: a future
+  mechanism must exceed the entire current BTRAN slice or reduce the
+  4,399 pivots while preserving fixed-eps certificates and
+  global-policy rules.
 
 - CHRONICLE CAUGHT UP (2026-07-16, codex + orchestrator): artifact
   ingestion added to replay_bench.py (idempotent, artifact-keyed
