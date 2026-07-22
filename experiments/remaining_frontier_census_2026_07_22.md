@@ -197,6 +197,45 @@ candidate edges outside the current generator, or trajectories that actually
 commit temporary worsening. Evidence:
 `experiments/pdas_block_merit_falsifier_2026_07_22.md`.
 
+## Post-dossier primary literature and orthogonal structure audit
+
+A final fresh-eyes wave checked three primary works published after the earlier
+dossier cutoff plus independent factor, trajectory, and structure families.
+None clears a preimplementation opportunity gate:
+
+- ElasticDivide-style exact stale scheduling is a many-core mechanism. Perfect
+  two-core scaling of greenbea's entire 34.62% solve slice saves only 17.31%
+  whole wall, below the 17.7013% board gap; three ideal cores leave only
+  4.220us for all synchronization and changing-FT schedule maintenance under
+  the 20.028us/pair gate.
+- The published bounded-variable dual-support long step is the generalized
+  ratio / BFRT geometry already present locally. Every edge in the terminal
+  first-64 pool is lower-only, so there is no boxed-variable flip runway at the
+  measured barrier; the existing BFRT saves 101 pivots but regresses the
+  instrumented phase from 411.1ms to 530.7ms.
+- Exact inequality-only Fourier-Motzkin presolve is semantically distinct from
+  equality aggregation, but only 13 eligible columns survive current
+  greenbea presolve and touch eight prepared rows. Even fantasy deletion of
+  all eight has a dense-cubic proxy of 1.566% versus the 17.7013% gap.
+- Dynamic HSS/HODLR inverse compression fails a favorable traffic screen. The
+  best observed top-level rank sum is 60, requiring at least 91,500 generator
+  coefficients; one read+write per pivot already costs 25.078us/equivalent
+  pair before hierarchy, application, recompression, or authority work.
+- Exact component decomposition, thin-border decomposition,
+  generalized-network specialization, and exact row sketching all lack a
+  material greenbea structural footprint. The matrix is one connected
+  component, a 15%-row border still leaves 92.01% of columns in one core while
+  owning 54.81% of nnz, degree-at-most-two columns carry only 5.14% of nnz,
+  and structural row rank is the full 1,525/1,525.
+- Lexicographic scalar criss-cross retains scalar decision economics, while
+  homogeneous/interior globalization leaves legal endpoint bases and collides
+  with the existing certificate, crossover, and whole-wall failures.
+
+Detailed evidence and reproducible diagnostics:
+`experiments/post_dossier_literature_census_2026_07_22.md`,
+`experiments/fresh_factor_census.py`, and
+`experiments/fresh_structural_census.py`.
+
 ## Scoped closure
 
 The remaining funded frontier is empty under the current facts: fixed

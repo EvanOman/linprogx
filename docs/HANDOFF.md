@@ -2663,3 +2663,22 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   26a9359 (setup fast-path) and 82cd31d (native V2 port) still
   pending — queued behind the current kernel probes (needs a quiet
   box).
+
+- POST-DOSSIER PRIMARY LITERATURE + STRUCTURE AUDIT — NO FUNDED CPU MECHANISM
+  (2026-07-22, native codex factor/trajectory/structure lanes; primary papers
+  read only by control plane; workers had no network or external solver source;
+  experiments/post_dossier_literature_census_2026_07_22.md): (1) Exact stale
+  triangular scheduling has a perfect-two-core ceiling of 17.31% versus the
+  17.7013% board gap and cannot amortize a static schedule across a factor that
+  changes every pivot. (2) The new bounded-variable long step is the existing
+  BFRT breakpoint walk; all 64 terminal pool edges are lower-only, so there is
+  no bound-flip runway at the barrier. (3) Inequality-only FME has only 13
+  surviving greenbea candidates touching eight prepared rows; fantasy cubic
+  credit is 1.566%. (4) Dynamic hierarchical inverse compression needs at
+  least 91,500 top-level generator coefficients; favorable maintenance
+  traffic alone is 25.078us/equivalent pair versus the 20.028us gate. (5)
+  Exact components/thin borders, network specialization, exact row sketches,
+  scalar criss-cross macro-batching, and interior globalization all fail their
+  local opportunity, endpoint, certificate, or whole-cost premises. Standalone
+  diagnostics bank the factor and structural counts. No production code
+  changed; no v3 recertification was run. BOARD REMAINS 23W-0P-1L.

@@ -178,3 +178,22 @@ higher-order subset, wider generator, or temporary-worsening trajectory.
 Evidence is in SESSION-HANDOFF section 11 and
 `experiments/pdas_block_merit_falsifier_2026_07_22.md`. No production code
 changed; board remains 23W-0P-1L without recertification.
+
+POST-DOSSIER LITERATURE/STRUCTURE ADDENDUM (2026-07-22): three newly published
+primary directions and seven orthogonal fresh-eyes constructions now have
+quantitative local verdicts. ElasticDivide-style exact stale scheduling cannot
+fund four-vCPU v3: perfect two-core scaling of the entire solve slice saves
+17.31%, below the 17.7013% gap, and live FT factors change every pivot. The new
+bounded-variable dual-support long step is the existing BFRT breakpoint walk;
+all 64 terminal pool edges are lower-only, so it has zero boxed-variable flip
+runway there. Exact inequality-only FME is distinct but only 13 eligible
+greenbea columns survive and touch eight prepared rows; even fantasy cubic
+credit is 1.566%. Dynamic HSS/HODLR inverse maintenance costs a favorable
+25.078us/equivalent pair from top-level generator traffic alone versus the
+20.028us gate. Component/thin-border decomposition, network specialization,
+exact row sketches, lexicographic scalar criss-cross batching, and interior
+globalization also fail their measured opportunity, endpoint, certificate, or
+complete-cost gates. Evidence is in
+`experiments/post_dossier_literature_census_2026_07_22.md` and its two
+standalone diagnostics. Do not re-probe these constructions under new labels.
+No production code changed; board remains 23W-0P-1L without recertification.

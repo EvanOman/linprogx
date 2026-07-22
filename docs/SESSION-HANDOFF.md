@@ -373,9 +373,38 @@ or a predeclared trajectory that actually commits temporary worsening.
 Report: `experiments/pdas_block_merit_falsifier_2026_07_22.md`. No production
 source changed; no v3 recertification was run; board remains 23W-0P-1L.
 
-## 12. Standing state, memory, and Evan
+## 12. POST-DOSSIER LITERATURE AND STRUCTURE AUDIT: CLOSED (2026-07-22)
 
-- All campaign evidence through the exact simultaneous-block successor is committed
+The final Overmind wave read three primary works published after the earlier
+dossier cutoff and ran independent factor, trajectory, and structural
+censuses. No production code changed:
+
+- ElasticDivide-style exact triangular scheduling cannot fund v3: perfect
+  two-core scaling of the entire solve slice saves 17.31%, below the 17.7013%
+  gap, while live FT factors invalidate a static schedule every pivot.
+- The new bounded-variable dual-support long step is the same piecewise-linear
+  breakpoint/BFRT geometry already present. All 64 terminal pool edges are
+  lower-only, so the literature rule has zero bound-flip runway there.
+- Exact inequality-only FME is genuinely distinct, but only 13 eligible
+  greenbea columns survive and touch eight prepared rows; even fantasy cubic
+  credit is 1.566%.
+- Dynamic hierarchical inverse compression needs at least 91,500 top-level
+  generator coefficients at the best observed rank. Favorable maintenance
+  traffic alone is 25.078us/equivalent pair versus the 20.028us gate.
+- Component/thin-border decomposition, generalized-network routing, exact row
+  sketching, scalar criss-cross macro-batching, and interior globalization all
+  fail their greenbea structure, endpoint, certificate, or complete-cost
+  premises.
+
+Report: `experiments/post_dossier_literature_census_2026_07_22.md`.
+Diagnostics: `experiments/fresh_factor_census.py` and
+`experiments/fresh_structural_census.py`. This closes the named constructions,
+not every future algorithm. No v3 recertification was run; board remains
+23W-0P-1L.
+
+## 13. Standing state, memory, and Evan
+
+- All campaign evidence through the post-dossier literature and structure audit is committed
   and tagged. Disposable diagnostic worktrees were removed after their reports
   were banked; none entered the production solver.
 - Quotas (check fresh): codex snapshot was stale-96% but workers run
