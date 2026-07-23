@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-from typing import Literal, cast
 
 import numpy as np
 import pytest
@@ -92,6 +91,33 @@ class TestNormalEquationsSolve:
 
         assert first == second
 
+    def test_symbolic_fingerprint_is_deterministic(self) -> None:
+        matrix = csr_matrix(
+            4,
+            6,
+            [0, 3, 6, 9, 12],
+            [0, 1, 4, 1, 2, 5, 0, 3, 5, 2, 3, 4],
+            [1.0, -2.0, 0.5, 3.0, 1.5, -1.0, 2.0, 4.0, -0.5, 2.5, 1.0, 1.25],
+        )
+
+        first = matrix.cholesky_symbolic_fingerprint()
+        second = matrix.cholesky_symbolic_fingerprint()
+
+        assert first == second
+        assert set(first) == {
+            "perm_hash",
+            "lp_hash",
+            "li_hash",
+            "snode_hash",
+            "m",
+            "nnzL",
+            "n_snodes",
+            "block_gate",
+            "auto_supernodal",
+        }
+        assert first["m"] == 4
+        assert first["nnzL"] >= 4
+
 
 class TestMinDegree:
     def test_chain_pattern(self) -> None:
@@ -128,6 +154,17 @@ class TestMinDegree:
 
 
 class TestSolveEqBoxIpm:
+    @pytest.mark.parametrize("post_mu", [float("nan"), float("inf"), float("-inf")])
+    def test_mu_safeguard_rejects_nonfinite_post_step(self, post_mu: float) -> None:
+        assert _csparse.ipm_mu_step_rejected_test(1e-9, post_mu)
+
+    def test_mu_safeguard_preserves_finite_threshold(self) -> None:
+        pre_mu = 1e-9
+        threshold = 10.0 * pre_mu
+
+        assert not _csparse.ipm_mu_step_rejected_test(pre_mu, threshold)
+        assert _csparse.ipm_mu_step_rejected_test(pre_mu, np.nextafter(threshold, np.inf))
+
     def test_equality_bounds_known_solution(self) -> None:
         matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
 
@@ -139,6 +176,23 @@ class TestSolveEqBoxIpm:
         assert result["objective"] == pytest.approx(4.0, abs=1e-6)
         assert result["x"] == pytest.approx([2.0, 1.0], abs=1e-6)
         assert result["max_primal_residual"] < 1e-8
+
+    def test_supernodal_kwarg_uses_ipm_path(self) -> None:
+        matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
+
+        result = matrix.solve_eq_box_ipm(
+            [1.0, 2.0],
+            [3.0],
+            [0.0, 0.0],
+            [2.0, 3.0],
+            max_iter=60,
+            tol=1e-9,
+            supernodal=True,
+        )
+
+        assert result["status"] == "optimal"
+        assert result["objective"] == pytest.approx(4.0, abs=1e-6)
+        assert result["x"] == pytest.approx([2.0, 1.0], abs=1e-6)
 
     def test_respects_active_lower_bound(self) -> None:
         matrix = csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0])
@@ -347,7 +401,7 @@ class TestAlgorithmEquivalence:
         objectives = {}
         for algorithm in ("ipm", "pdhg", "simplex"):
             result = SparseSolver(
-                algorithm=cast('Literal["ipm", "pdhg", "simplex"]', algorithm),
+                algorithm=algorithm,
                 eps=1e-7 if algorithm != "simplex" else 1e-9,
                 max_iterations=50_000,
                 check_interval=5_000,
@@ -461,6 +515,152 @@ def test_normal_equations_dense_tail_matches_dense_reference(
     assert residual <= 1e-10
 
 
+def test_normal_equations_supernodal_factor_matches_dense_reference() -> None:
+    rng = np.random.default_rng(15)
+    m, n = 48, 120
+    A = (
+        scipy.sparse.random(
+            m,
+            n,
+            density=0.08,
+            random_state=rng,
+            data_rvs=lambda size: rng.uniform(-1.5, 1.5, size),
+        ).tocsr()
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    )
+    matrix = from_scipy_sparse(scipy.sparse.csr_matrix(A))
+    d = rng.uniform(0.25, 2.0, n)
+    rhs = rng.uniform(-1, 1, m)
+    delta = 1e-7
+
+    out = np.array(matrix.normal_equations_solve(d.tolist(), rhs.tolist(), delta, True))
+
+    G = (A @ scipy.sparse.diags(d) @ A.T).toarray() + delta * np.eye(m)
+    residual = np.max(np.abs(G @ out - rhs))
+    assert residual <= 1e-10
+
+
+def test_supernodal_factor_correct_across_relax_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # the relaxed-amalgamation padding must not change the numeric
+    # factor: solves stay correct with amalgamation disabled, at the
+    # default, and at an aggressive setting
+    rng = np.random.default_rng(23)
+    m, n = 64, 160
+    A = (
+        scipy.sparse.random(
+            m,
+            n,
+            density=0.06,
+            random_state=rng,
+            data_rvs=lambda size: rng.uniform(-1.5, 1.5, size),
+        ).tocsr()
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    )
+    d = rng.uniform(0.25, 2.0, n)
+    rhs = rng.uniform(-1, 1, m)
+    delta = 1e-7
+    G = (A @ scipy.sparse.diags(d) @ A.T).toarray() + delta * np.eye(m)
+    for relax in ("0", "0.15", "0.4"):
+        monkeypatch.setenv("LINPROGX_SNODE_RELAX", relax)
+        matrix = from_scipy_sparse(scipy.sparse.csr_matrix(A))
+        out = np.array(matrix.normal_equations_solve(d.tolist(), rhs.tolist(), delta, True))
+        residual = np.max(np.abs(G @ out - rhs))
+        assert residual <= 1e-10, f"relax={relax} residual={residual}"
+
+
+def test_relaxed_amalgamation_reduces_supernode_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # amalgamation may only coarsen the fundamental partition, and both
+    # partitions must tile the columns exactly
+    from pathlib import Path
+
+    from scipy.io import loadmat
+
+    path = Path(__file__).parent / "data" / "lp_cre_a.mat"
+    raw = loadmat(path)["Problem"][0, 0]
+    A = raw["A"].tocsr().astype(float)
+    monkeypatch.setenv("LINPROGX_SNODE_RELAX", "0")
+    fundamental = from_scipy_sparse(A).supernode_sizes()
+    monkeypatch.delenv("LINPROGX_SNODE_RELAX")
+    relaxed = from_scipy_sparse(A).supernode_sizes()
+    assert sum(fundamental) == sum(relaxed) == A.shape[0]
+    assert len(relaxed) <= len(fundamental)
+
+
+def test_gondzio_correctors_preserve_solution_and_save_iterations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # the multiple-centrality correctors may only change the trajectory,
+    # not the answer: same optimal status and matching objective with the
+    # correctors off and on, and never more iterations with them on
+    from pathlib import Path
+
+    from scipy.io import loadmat
+
+    path = Path(__file__).parent / "data" / "lp_cre_a.mat"
+    raw = loadmat(path)["Problem"][0, 0]
+    aux = raw["aux"][0, 0]
+    A = raw["A"].tocsr().astype(float)
+    b = raw["b"].ravel().astype(float).tolist()
+    c = aux["c"].ravel().astype(float).tolist()
+    lo = aux["lo"].ravel().astype(float).tolist()
+    hi = aux["hi"].ravel().astype(float).tolist()
+
+    results = {}
+    for mcc in ("0", "2"):
+        monkeypatch.setenv("LINPROGX_IPM_MCC", mcc)
+        matrix = from_scipy_sparse(A)
+        results[mcc] = matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=200, tol=1e-9, feas_tol=2e-5)
+    # correctors must never break certification, and when the corrector-free
+    # run also certifies, the solutions must agree and correctors may not
+    # cost iterations. The MCC=0 leg is allowed to hit the iteration limit:
+    # trajectory shifts from global ordering changes can leave the strict
+    # tolerance unreached without correctors, which is part of why the
+    # correctors exist.
+    assert results["2"]["status"] == "optimal"
+    if results["0"]["status"] == "optimal":
+        obj0 = sum(v * coef for v, coef in zip(results["0"]["x"], c, strict=True))
+        obj2 = sum(v * coef for v, coef in zip(results["2"]["x"], c, strict=True))
+        assert abs(obj0 - obj2) <= 1e-5 * (1.0 + abs(obj0))
+        assert results["2"]["iterations"] <= results["0"]["iterations"]
+
+
+def test_supernodal_profile_reports_single_thread_blas(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    rng = np.random.default_rng(16)
+    m, n = 48, 120
+    A = (
+        scipy.sparse.random(
+            m,
+            n,
+            density=0.08,
+            random_state=rng,
+            data_rvs=lambda size: rng.uniform(-1.5, 1.5, size),
+        ).tocsr()
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    )
+    matrix = from_scipy_sparse(scipy.sparse.csr_matrix(A))
+    d = rng.uniform(0.25, 2.0, n)
+    rhs = rng.uniform(-1, 1, m)
+    monkeypatch.setenv("LINPROGX_SUPERNODAL_PROFILE", "1")
+
+    matrix.normal_equations_solve(d.tolist(), rhs.tolist(), 1e-7, True)
+
+    captured = capfd.readouterr()
+    assert "supernodal profile:" in captured.err
+    assert "blas_threads=1" in captured.err
+
+
 def test_ipm_threads_kwarg_bit_identical() -> None:
     # the threaded tail GEMM partitions rows in 4-aligned chunks so each
     # output element is computed wholly by one thread in the same order
@@ -483,6 +683,73 @@ def test_ipm_threads_kwarg_bit_identical() -> None:
     r4 = matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=60, tol=1e-9, threads=4)
     assert r1["x"] == r4["x"]
     assert r1["y"] == r4["y"]
+
+
+def test_ipm_loop_profile_is_env_gated(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    A = scipy.sparse.csr_matrix([[1.0, 1.0]])
+    matrix = from_scipy_sparse(A)
+    c = [1.0, 2.0]
+    b = [1.0]
+    lo = [0.0, 0.0]
+    hi = [float("inf"), float("inf")]
+
+    matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=2, tol=1e-9)
+    captured = capfd.readouterr()
+    assert "ipm loop profile:" not in captured.err
+
+    monkeypatch.setenv("LINPROGX_IPM_LOOP_PROFILE", "1")
+    matrix.solve_eq_box_ipm(c, b, lo, hi, max_iter=2, tol=1e-9)
+    captured = capfd.readouterr()
+    assert "ipm loop profile:" in captured.err
+    assert "resid_matvec=" in captured.err
+    assert "best_copy=" in captured.err
+    assert "mu_safeguard=" in captured.err
+
+
+def test_ipm_slice_result_is_env_gated_and_numerically_inert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matrix = from_scipy_sparse(scipy.sparse.csr_matrix([[1.0, 1.0]]))
+    args = ([1.0, 2.0], [1.0], [0.0, 0.0], [float("inf"), float("inf")])
+
+    monkeypatch.delenv("LINPROGX_IPM_SLICE", raising=False)
+    without_slice = matrix.solve_eq_box_ipm(*args, max_iter=20, tol=1e-9)
+    assert "ipm_slice_us" not in without_slice
+
+    monkeypatch.setenv("LINPROGX_IPM_SLICE", "1")
+    with_slice = matrix.solve_eq_box_ipm(*args, max_iter=20, tol=1e-9)
+    slice_us = with_slice.pop("ipm_slice_us")
+
+    assert with_slice == without_slice
+    assert set(slice_us) == {
+        "setup_order",
+        "symbolic",
+        "refactor",
+        "triangular_solves",
+        "matvecs_residuals",
+        "other",
+    }
+    assert all(value >= 0.0 for value in slice_us.values())
+    assert sum(slice_us.values()) > 0.0
+
+
+def test_sparse_solver_threads_ipm_slice_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LINPROGX_IPM_SLICE", "1")
+    result = SparseSolver(algorithm="ipm", eps=1e-9, presolve=False).solve(
+        SparseLPProblem(
+            [1.0, 2.0],
+            A_eq=csr_matrix(1, 2, [0, 2], [0, 1], [1.0, 1.0]),
+            b_eq=[1.0],
+            objective="min",
+            bounds=[(0.0, None), (0.0, None)],
+        )
+    )
+
+    assert result.backend == "native-c-sparse-ipm"
+    assert result.ipm_slice_us is not None
+    assert "refactor" in result.ipm_slice_us
 
 
 def test_ipm_blas_and_floored_tail_agree_on_residual() -> None:
@@ -531,6 +798,130 @@ def _build_sparse_csr(m: int, n: int, per_col: int, seed: int) -> scipy.sparse.c
     return scipy.sparse.csr_matrix((data, (rows, cols)), shape=(m, n))
 
 
+def _reference_supernode_symbolic(
+    A: scipy.sparse.csr_matrix,
+) -> list[tuple[int, list[int], list[tuple[int, list[int], list[int], list[int], list[int]]]]]:
+    G = (A @ A.T).tocsc()
+    G.setdiag(1.0)
+    G.eliminate_zeros()
+    perm = np.array(_csparse.min_degree(G.indptr.tolist(), G.indices.tolist()))
+    Gp = G[perm][:, perm].tocsc()
+    m = Gp.shape[0]
+    parent = np.full(m, -1, dtype=np.int64)
+    ancestor = np.full(m, -1, dtype=np.int64)
+    for k in range(m):
+        for p in range(Gp.indptr[k], Gp.indptr[k + 1]):
+            i = int(Gp.indices[p])
+            while i != -1 and i < k:
+                nxt = int(ancestor[i])
+                ancestor[i] = k
+                if nxt == -1:
+                    parent[i] = k
+                i = nxt
+
+    col_rows: list[np.ndarray] = []
+    below = [set[int]() for _ in range(m)]
+    for k in range(m):
+        reach: set[int] = set()
+        for p in range(Gp.indptr[k], Gp.indptr[k + 1]):
+            i = int(Gp.indices[p])
+            while i < k and i not in reach:
+                reach.add(i)
+                i = int(parent[i])
+        for i in reach:
+            below[i].add(k)
+        below[k].add(k)
+    for rows in below:
+        col_rows.append(np.array(sorted(rows), dtype=np.int64))
+
+    nchild = np.zeros(m, dtype=np.int64)
+    for p in parent:
+        if p >= 0:
+            nchild[p] += 1
+    starts: list[int] = []
+    for j in range(m):
+        merges_previous = (
+            j > 0
+            and parent[j - 1] == j
+            and nchild[j] == 1
+            and len(col_rows[j - 1]) == len(col_rows[j]) + 1
+        )
+        if not merges_previous:
+            starts.append(j)
+    starts.append(m)
+
+    # relaxed amalgamation: merge an adjacent chain of fundamental
+    # supernodes when the elimination tree links them and the merged
+    # panel carries at most `relax_frac` structural zeros. Mirrors the
+    # C default in chol_setup (LINPROGX_SNODE_RELAX).
+    relax_frac = 0.15
+    cc = [len(rows) for rows in col_rows]
+    merged: list[int] = []
+    ns = len(starts) - 1
+    s = 0
+    while s < ns:
+        g0 = starts[s]
+        true_nnz = sum(cc[j] for j in range(g0, starts[s + 1]))
+        t = s + 1
+        while t < ns:
+            j1, j2 = starts[t], starts[t + 1]
+            if parent[j1 - 1] != j1:
+                break
+            next_nnz = sum(cc[j] for j in range(j1, j2))
+            width = j2 - g0
+            union_rows = width + cc[j2 - 1] - 1
+            padded = width * union_rows - width * (width - 1) // 2
+            if padded - (true_nnz + next_nnz) > relax_frac * padded:
+                break
+            true_nnz += next_nnz
+            t += 1
+        merged.append(g0)
+        s = t
+    merged.append(m)
+    starts = merged
+
+    out: list[
+        tuple[int, list[int], list[tuple[int, list[int], list[int], list[int], list[int]]]]
+    ] = []
+    snode_rows = [
+        list(range(starts[s], starts[s + 1])) + col_rows[starts[s + 1] - 1].tolist()[1:]
+        for s in range(len(starts) - 1)
+    ]
+    for s, rows_s_list in enumerate(snode_rows):
+        j0, j1 = starts[s], starts[s + 1]
+        rows_s = np.array(rows_s_list, dtype=np.int64)
+        updates: list[tuple[int, list[int], list[int], list[int], list[int]]] = []
+        for source in range(s):
+            k0, k1 = starts[source], starts[source + 1]
+            width = k1 - k0
+            rows_k = np.array(snode_rows[source], dtype=np.int64)
+            pivot_source_positions: list[int] = []
+            pivot_columns: list[int] = []
+            target_source_positions: list[int] = []
+            target_row_positions: list[int] = []
+            for pos in range(width, len(rows_k)):
+                row = int(rows_k[pos])
+                if j0 <= row < j1:
+                    pivot_source_positions.append(pos)
+                    pivot_columns.append(row - j0)
+                target_pos = int(np.searchsorted(rows_s, row))
+                if target_pos < len(rows_s) and int(rows_s[target_pos]) == row:
+                    target_source_positions.append(pos)
+                    target_row_positions.append(target_pos)
+            if pivot_source_positions and target_source_positions:
+                updates.append(
+                    (
+                        source,
+                        pivot_source_positions,
+                        pivot_columns,
+                        target_source_positions,
+                        target_row_positions,
+                    )
+                )
+        out.append((j0, rows_s_list, updates))
+    return out
+
+
 def test_supernode_partition_covers_all_columns() -> None:
     # the fundamental supernode sizes must tile the columns exactly
     A = _build_sparse_csr(40, 160, 4, seed=11)
@@ -564,3 +955,27 @@ def test_supernode_partition_on_cre_a_fixture() -> None:
     sizes = from_scipy_sparse(A).supernode_sizes()
     assert sum(sizes) == A.shape[0]
     assert max(sizes) > 1
+
+
+def test_supernode_symbolic_updates_match_reference() -> None:
+    rng = np.random.default_rng(1)
+    m, n = 32, 96
+    random_part = scipy.sparse.random(
+        m,
+        n,
+        density=0.06,
+        random_state=rng,
+        data_rvs=lambda size: rng.uniform(0.5, 2.0, size),
+    ).tocsr()
+    A = (
+        random_part
+        + scipy.sparse.hstack(
+            [scipy.sparse.identity(m), scipy.sparse.csr_matrix((m, n - m))]
+        ).tocsr()
+    ).tocsr()
+
+    expected = _reference_supernode_symbolic(A)
+    actual = from_scipy_sparse(A).supernode_symbolic_structure()
+
+    assert actual == expected
+    assert sum(len(updates) for _, _, updates in actual) > 0

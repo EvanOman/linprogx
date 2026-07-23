@@ -1,0 +1,248 @@
+{
+  "evaluation": {
+    "criteria": {
+      "all_residuals": {
+        "pass": true,
+        "runs": {
+          "80bau3b:bfrt=0": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 1.4210854715202004e-12
+          },
+          "80bau3b:bfrt=1": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 5.343281372915953e-12
+          },
+          "greenbea:bfrt=0": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 1.3081449878882268e-07
+          },
+          "greenbea:bfrt=1": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 2.1859170828975039e-07
+          },
+          "woodw:bfrt=0": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 2.2737367544323206e-13
+          },
+          "woodw:bfrt=1": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 2.2737367544323206e-13
+          }
+        }
+      },
+      "all_statuses_optimal": {
+        "pass": true,
+        "runs": {
+          "80bau3b:bfrt=0": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "80bau3b:bfrt=1": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "greenbea:bfrt=0": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "greenbea:bfrt=1": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "woodw:bfrt=0": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "woodw:bfrt=1": {
+            "pass": true,
+            "status": "optimal"
+          }
+        }
+      },
+      "greenbea_iteration_reduction": {
+        "pass": false,
+        "threshold": 0.15,
+        "value": -0.0781420765027323
+      },
+      "guard_pivot_regression": {
+        "instances": {
+          "80bau3b": {
+            "pass": true,
+            "ratio": 0.6032012195121951,
+            "threshold": 1.1
+          },
+          "woodw": {
+            "pass": true,
+            "ratio": 1.0,
+            "threshold": 1.1
+          }
+        },
+        "pass": true
+      },
+      "objectives_match_baseline": {
+        "instances": {
+          "80bau3b": {
+            "pass": true,
+            "relative_delta": 2.358437378704231e-16,
+            "threshold": 2e-05
+          },
+          "greenbea": {
+            "pass": true,
+            "relative_delta": 2.2513399542735757e-12,
+            "threshold": 2e-05
+          },
+          "woodw": {
+            "pass": true,
+            "relative_delta": 0.0,
+            "threshold": 2e-05
+          }
+        },
+        "pass": true
+      }
+    },
+    "verdict": "KILL"
+  },
+  "probe": "ds-bfrt-post-ft-post-suhl",
+  "results": [
+    {
+      "instance": "greenbea",
+      "nnz": 31070,
+      "presolve": {
+        "removed_cols": 447,
+        "removed_rows": 450
+      },
+      "runs": {
+        "0": {
+          "bound_flips": 4881,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 14,
+            "ft_updates": 9136
+          },
+          "iterations": 9150,
+          "max_residual": 1.3081449878882268e-07,
+          "objective": -72555248.12984714,
+          "status": "optimal",
+          "wall": 1.6464636399177834
+        },
+        "1": {
+          "bound_flips": 6209,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 12,
+            "ft_updates": 9853
+          },
+          "iterations": 9865,
+          "max_residual": 2.1859170828975039e-07,
+          "objective": -72555248.1296838,
+          "status": "optimal",
+          "wall": 2.6044571390375495
+        }
+      },
+      "shape": [
+        2392,
+        5598
+      ]
+    },
+    {
+      "instance": "woodw",
+      "nnz": 37487,
+      "presolve": {
+        "removed_cols": 1,
+        "removed_rows": 1
+      },
+      "runs": {
+        "0": {
+          "bound_flips": 761,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 2015
+          },
+          "iterations": 2015,
+          "max_residual": 2.2737367544323206e-13,
+          "objective": 1.3044763330842286,
+          "status": "optimal",
+          "wall": 0.2525355629622936
+        },
+        "1": {
+          "bound_flips": 761,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 2015
+          },
+          "iterations": 2015,
+          "max_residual": 2.2737367544323206e-13,
+          "objective": 1.3044763330842286,
+          "status": "optimal",
+          "wall": 0.2597697679884732
+        }
+      },
+      "shape": [
+        1098,
+        8418
+      ]
+    },
+    {
+      "instance": "80bau3b",
+      "nnz": 23264,
+      "presolve": {
+        "removed_cols": 183,
+        "removed_rows": 183
+      },
+      "runs": {
+        "0": {
+          "bound_flips": 2701,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 6560
+          },
+          "iterations": 6560,
+          "max_residual": 1.4210854715202004e-12,
+          "objective": 987224.1924090902,
+          "status": "optimal",
+          "wall": 0.5666181889828295
+        },
+        "1": {
+          "bound_flips": 3227,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 3957
+          },
+          "iterations": 3957,
+          "max_residual": 5.343281372915953e-12,
+          "objective": 987224.1924090905,
+          "status": "optimal",
+          "wall": 0.36334304395131767
+        }
+      },
+      "shape": [
+        2262,
+        12061
+      ]
+    }
+  ],
+  "settings": {
+    "bfrt_values": [
+      0,
+      1
+    ],
+    "expand": 1,
+    "instances": [
+      "greenbea",
+      "woodw",
+      "80bau3b"
+    ],
+    "max_iter": 50000,
+    "tol": 1e-08
+  }
+}

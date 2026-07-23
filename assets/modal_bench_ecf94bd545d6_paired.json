@@ -1,0 +1,40 @@
+{
+  "ref": "ecf94bd545d679a9791b7eb9a060983d6343febc",
+  "mode": "paired",
+  "use_snapshot": true,
+  "machine_info": {
+    "cpu_model": "unknown",
+    "cpu_count": 20,
+    "mem_total_kb": 395663580,
+    "loadavg": "0.00 0.00 0.00 0/0 0",
+    "modal_region": "japanwest",
+    "modal_cloud": "CLOUD_PROVIDER_AZURE",
+    "modal_task_id": "ta-01KXMM8CNS976M7X3JTVGJPSMR"
+  },
+  "load_checks": {
+    "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+    "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+  },
+  "paired": {
+    "lp_pds_20": {
+      "pairs": 15,
+      "lx": {
+        "median": 19.971866712999997,
+        "min": 19.271520455999998,
+        "n": 15,
+        "status": "optimal",
+        "backend": "pdhg"
+      },
+      "hx": {
+        "median": 10.636655709999957,
+        "min": 10.453832143999989,
+        "n": 15,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.8776453104732558,
+      "ratio_min": 1.8434886069087066,
+      "verdict": "highs_faster"
+    }
+  }
+}

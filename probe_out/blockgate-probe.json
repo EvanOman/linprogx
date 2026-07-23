@@ -1,0 +1,1081 @@
+{
+  "evaluation": {
+    "abort_reasons": [],
+    "flips": [],
+    "near_threshold_flips": [],
+    "recommendation": {
+      "change_gate": false,
+      "implied_threshold": null,
+      "margin_to_highest_gated_off_loser": null,
+      "text": "Keep the saveable-fraction gate at 0.5."
+    },
+    "summaries": [
+      {
+        "comparability": {
+          "identical_iterations": true,
+          "objective_match": true,
+          "objective_rel_delta_max": 6.313615691198481e-08,
+          "residual_match": true,
+          "residual_max": 2.783702748006076e-09
+        },
+        "configs": {
+          "auto": {
+            "backends": [
+              "native-c-sparse-ipm"
+            ],
+            "iterations": [
+              62
+            ],
+            "max_residual": 4.738459483879243e-11,
+            "objectives": {
+              "max": 987224.1964661973,
+              "min": 987224.1964661973
+            },
+            "statuses": [
+              "optimal"
+            ],
+            "trials": 9,
+            "wall_max": 0.23834748496301472,
+            "wall_median": 0.19741315499413759,
+            "wall_min": 0.17317446798551828
+          },
+          "block4": {
+            "backends": [
+              "native-c-sparse-ipm"
+            ],
+            "iterations": [
+              62
+            ],
+            "max_residual": 2.783702748006076e-09,
+            "objectives": {
+              "max": 987224.258795739,
+              "min": 987224.258795739
+            },
+            "statuses": [
+              "optimal"
+            ],
+            "trials": 9,
+            "wall_max": 0.23333478707354516,
+            "wall_median": 0.2083359039388597,
+            "wall_min": 0.1916655310196802
+          }
+        },
+        "forced_block_median_speedup": -0.0553293874719063,
+        "instance": "80bau3b",
+        "saveable_fraction": 0.446,
+        "verdict": "KEEP_OFF"
+      },
+      {
+        "comparability": {
+          "identical_iterations": true,
+          "objective_match": true,
+          "objective_rel_delta_max": 4.5028524476226675e-14,
+          "residual_match": true,
+          "residual_max": 7.02442548572435e-11
+        },
+        "configs": {
+          "auto": {
+            "backends": [
+              "native-c-sparse-ipm"
+            ],
+            "iterations": [
+              128
+            ],
+            "max_residual": 4.9041659622162115e-11,
+            "objectives": {
+              "max": 301.710466104786,
+              "min": 301.710466104786
+            },
+            "statuses": [
+              "optimal"
+            ],
+            "trials": 9,
+            "wall_max": 5.2684924060013145,
+            "wall_median": 3.9941232909914106,
+            "wall_min": 3.7754170530242845
+          },
+          "block4": {
+            "backends": [
+              "native-c-sparse-ipm"
+            ],
+            "iterations": [
+              128
+            ],
+            "max_residual": 7.02442548572435e-11,
+            "objectives": {
+              "max": 301.7104661047996,
+              "min": 301.7104661047996
+            },
+            "statuses": [
+              "optimal"
+            ],
+            "trials": 9,
+            "wall_max": 4.873008453054354,
+            "wall_median": 3.985602486995049,
+            "wall_min": 3.3674651470500976
+          }
+        },
+        "forced_block_median_speedup": 0.002133335246706114,
+        "instance": "pilot87",
+        "saveable_fraction": 0.455,
+        "verdict": "KEEP_OFF"
+      },
+      {
+        "comparability": {
+          "identical_iterations": true,
+          "objective_match": true,
+          "objective_rel_delta_max": 5.082847374282248e-10,
+          "residual_match": true,
+          "residual_max": 7.840725643859514e-06
+        },
+        "configs": {
+          "auto": {
+            "backends": [
+              "native-c-sparse-ipm"
+            ],
+            "iterations": [
+              36
+            ],
+            "max_residual": 3.86220165182749e-06,
+            "objectives": {
+              "max": 23595464.519969083,
+              "min": 23595464.519969083
+            },
+            "statuses": [
+              "optimal"
+            ],
+            "trials": 9,
+            "wall_max": 0.12127707002218813,
+            "wall_median": 0.11902425496373326,
+            "wall_min": 0.11827838607132435
+          },
+          "block4": {
+            "backends": [
+              "native-c-sparse-ipm"
+            ],
+            "iterations": [
+              36
+            ],
+            "max_residual": 7.840725643859514e-06,
+            "objectives": {
+              "max": 23595464.531962298,
+              "min": 23595464.531962298
+            },
+            "statuses": [
+              "optimal"
+            ],
+            "trials": 9,
+            "wall_max": 0.13123301300220191,
+            "wall_median": 0.12943668093066663,
+            "wall_min": 0.10442051407881081
+          }
+        },
+        "forced_block_median_speedup": -0.087481547102362,
+        "instance": "cre_a",
+        "saveable_fraction": 0.317,
+        "verdict": "KEEP_OFF"
+      },
+      {
+        "comparability": {
+          "identical_iterations": true,
+          "objective_match": true,
+          "objective_rel_delta_max": 1.1744743521656135e-14,
+          "residual_match": true,
+          "residual_max": 5.50367137224731e-09
+        },
+        "configs": {
+          "auto": {
+            "backends": [
+              "native-c-sparse-ipm"
+            ],
+            "iterations": [
+              36
+            ],
+            "max_residual": 5.50367137224731e-09,
+            "objectives": {
+              "max": 1.304505092987056,
+              "min": 1.304505092987056
+            },
+            "statuses": [
+              "optimal"
+            ],
+            "trials": 9,
+            "wall_max": 0.17353533790446818,
+            "wall_median": 0.15535781695507467,
+            "wall_min": 0.1355951529694721
+          },
+          "block4": {
+            "backends": [
+              "native-c-sparse-ipm"
+            ],
+            "iterations": [
+              36
+            ],
+            "max_residual": 5.503671372039342e-09,
+            "objectives": {
+              "max": 1.3045050929870714,
+              "min": 1.3045050929870714
+            },
+            "statuses": [
+              "optimal"
+            ],
+            "trials": 9,
+            "wall_max": 0.22265711205545813,
+            "wall_median": 0.16504886001348495,
+            "wall_min": 0.15245103696361184
+          }
+        },
+        "forced_block_median_speedup": -0.06237885706911461,
+        "instance": "woodw",
+        "saveable_fraction": 0.366,
+        "verdict": "KEEP_OFF"
+      }
+    ]
+  },
+  "probe": "block-row-uplook-gate-falsifier",
+  "results": [
+    {
+      "instance": "80bau3b",
+      "runs": [
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 62,
+          "max_residual": 4.738459483879243e-11,
+          "message": "native sparse IPM converged; max equality residual 4.738e-11; presolve removed 183 rows and 183 cols",
+          "objective": 987224.1964661973,
+          "status": "optimal",
+          "trial": 1,
+          "wall": 0.19121859595179558
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 62,
+          "max_residual": 2.783702748006076e-09,
+          "message": "native sparse IPM converged; max equality residual 2.784e-09; presolve removed 183 rows and 183 cols",
+          "objective": 987224.258795739,
+          "status": "optimal",
+          "trial": 1,
+          "wall": 0.23333478707354516
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 62,
+          "max_residual": 2.783702748006076e-09,
+          "message": "native sparse IPM converged; max equality residual 2.784e-09; presolve removed 183 rows and 183 cols",
+          "objective": 987224.258795739,
+          "status": "optimal",
+          "trial": 2,
+          "wall": 0.19492679997347295
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 62,
+          "max_residual": 4.738459483879243e-11,
+          "message": "native sparse IPM converged; max equality residual 4.738e-11; presolve removed 183 rows and 183 cols",
+          "objective": 987224.1964661973,
+          "status": "optimal",
+          "trial": 2,
+          "wall": 0.19741315499413759
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 62,
+          "max_residual": 4.738459483879243e-11,
+          "message": "native sparse IPM converged; max equality residual 4.738e-11; presolve removed 183 rows and 183 cols",
+          "objective": 987224.1964661973,
+          "status": "optimal",
+          "trial": 3,
+          "wall": 0.17317446798551828
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 62,
+          "max_residual": 2.783702748006076e-09,
+          "message": "native sparse IPM converged; max equality residual 2.784e-09; presolve removed 183 rows and 183 cols",
+          "objective": 987224.258795739,
+          "status": "optimal",
+          "trial": 3,
+          "wall": 0.21008824405726045
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 62,
+          "max_residual": 2.783702748006076e-09,
+          "message": "native sparse IPM converged; max equality residual 2.784e-09; presolve removed 183 rows and 183 cols",
+          "objective": 987224.258795739,
+          "status": "optimal",
+          "trial": 4,
+          "wall": 0.1916655310196802
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 62,
+          "max_residual": 4.738459483879243e-11,
+          "message": "native sparse IPM converged; max equality residual 4.738e-11; presolve removed 183 rows and 183 cols",
+          "objective": 987224.1964661973,
+          "status": "optimal",
+          "trial": 4,
+          "wall": 0.19512716797180474
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 62,
+          "max_residual": 4.738459483879243e-11,
+          "message": "native sparse IPM converged; max equality residual 4.738e-11; presolve removed 183 rows and 183 cols",
+          "objective": 987224.1964661973,
+          "status": "optimal",
+          "trial": 5,
+          "wall": 0.18660814897157252
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 62,
+          "max_residual": 2.783702748006076e-09,
+          "message": "native sparse IPM converged; max equality residual 2.784e-09; presolve removed 183 rows and 183 cols",
+          "objective": 987224.258795739,
+          "status": "optimal",
+          "trial": 5,
+          "wall": 0.20969376899302006
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 62,
+          "max_residual": 2.783702748006076e-09,
+          "message": "native sparse IPM converged; max equality residual 2.784e-09; presolve removed 183 rows and 183 cols",
+          "objective": 987224.258795739,
+          "status": "optimal",
+          "trial": 6,
+          "wall": 0.2083359039388597
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 62,
+          "max_residual": 4.738459483879243e-11,
+          "message": "native sparse IPM converged; max equality residual 4.738e-11; presolve removed 183 rows and 183 cols",
+          "objective": 987224.1964661973,
+          "status": "optimal",
+          "trial": 6,
+          "wall": 0.23834748496301472
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 62,
+          "max_residual": 4.738459483879243e-11,
+          "message": "native sparse IPM converged; max equality residual 4.738e-11; presolve removed 183 rows and 183 cols",
+          "objective": 987224.1964661973,
+          "status": "optimal",
+          "trial": 7,
+          "wall": 0.20630792493466288
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 62,
+          "max_residual": 2.783702748006076e-09,
+          "message": "native sparse IPM converged; max equality residual 2.784e-09; presolve removed 183 rows and 183 cols",
+          "objective": 987224.258795739,
+          "status": "optimal",
+          "trial": 7,
+          "wall": 0.19186200306285173
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 62,
+          "max_residual": 2.783702748006076e-09,
+          "message": "native sparse IPM converged; max equality residual 2.784e-09; presolve removed 183 rows and 183 cols",
+          "objective": 987224.258795739,
+          "status": "optimal",
+          "trial": 8,
+          "wall": 0.20078187808394432
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 62,
+          "max_residual": 4.738459483879243e-11,
+          "message": "native sparse IPM converged; max equality residual 4.738e-11; presolve removed 183 rows and 183 cols",
+          "objective": 987224.1964661973,
+          "status": "optimal",
+          "trial": 8,
+          "wall": 0.20421925000846386
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 62,
+          "max_residual": 4.738459483879243e-11,
+          "message": "native sparse IPM converged; max equality residual 4.738e-11; presolve removed 183 rows and 183 cols",
+          "objective": 987224.1964661973,
+          "status": "optimal",
+          "trial": 9,
+          "wall": 0.20123101701028645
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 62,
+          "max_residual": 2.783702748006076e-09,
+          "message": "native sparse IPM converged; max equality residual 2.784e-09; presolve removed 183 rows and 183 cols",
+          "objective": 987224.258795739,
+          "status": "optimal",
+          "trial": 9,
+          "wall": 0.21834568004123867
+        }
+      ]
+    },
+    {
+      "instance": "pilot87",
+      "runs": [
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 128,
+          "max_residual": 4.9041659622162115e-11,
+          "message": "native sparse IPM converged; max equality residual 4.904e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.710466104786,
+          "status": "optimal",
+          "trial": 1,
+          "wall": 3.8182905740104616
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 128,
+          "max_residual": 7.02442548572435e-11,
+          "message": "native sparse IPM converged; max equality residual 7.024e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.7104661047996,
+          "status": "optimal",
+          "trial": 1,
+          "wall": 3.3674651470500976
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 128,
+          "max_residual": 7.02442548572435e-11,
+          "message": "native sparse IPM converged; max equality residual 7.024e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.7104661047996,
+          "status": "optimal",
+          "trial": 2,
+          "wall": 3.7208239230094478
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 128,
+          "max_residual": 4.9041659622162115e-11,
+          "message": "native sparse IPM converged; max equality residual 4.904e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.710466104786,
+          "status": "optimal",
+          "trial": 2,
+          "wall": 5.2684924060013145
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 128,
+          "max_residual": 4.9041659622162115e-11,
+          "message": "native sparse IPM converged; max equality residual 4.904e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.710466104786,
+          "status": "optimal",
+          "trial": 3,
+          "wall": 3.901494390098378
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 128,
+          "max_residual": 7.02442548572435e-11,
+          "message": "native sparse IPM converged; max equality residual 7.024e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.7104661047996,
+          "status": "optimal",
+          "trial": 3,
+          "wall": 4.873008453054354
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 128,
+          "max_residual": 7.02442548572435e-11,
+          "message": "native sparse IPM converged; max equality residual 7.024e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.7104661047996,
+          "status": "optimal",
+          "trial": 4,
+          "wall": 3.985602486995049
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 128,
+          "max_residual": 4.9041659622162115e-11,
+          "message": "native sparse IPM converged; max equality residual 4.904e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.710466104786,
+          "status": "optimal",
+          "trial": 4,
+          "wall": 4.08226036792621
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 128,
+          "max_residual": 4.9041659622162115e-11,
+          "message": "native sparse IPM converged; max equality residual 4.904e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.710466104786,
+          "status": "optimal",
+          "trial": 5,
+          "wall": 3.7754170530242845
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 128,
+          "max_residual": 7.02442548572435e-11,
+          "message": "native sparse IPM converged; max equality residual 7.024e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.7104661047996,
+          "status": "optimal",
+          "trial": 5,
+          "wall": 3.6377622509608045
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 128,
+          "max_residual": 7.02442548572435e-11,
+          "message": "native sparse IPM converged; max equality residual 7.024e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.7104661047996,
+          "status": "optimal",
+          "trial": 6,
+          "wall": 3.801662105950527
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 128,
+          "max_residual": 4.9041659622162115e-11,
+          "message": "native sparse IPM converged; max equality residual 4.904e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.710466104786,
+          "status": "optimal",
+          "trial": 6,
+          "wall": 4.073638707981445
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 128,
+          "max_residual": 4.9041659622162115e-11,
+          "message": "native sparse IPM converged; max equality residual 4.904e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.710466104786,
+          "status": "optimal",
+          "trial": 7,
+          "wall": 3.9941232909914106
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 128,
+          "max_residual": 7.02442548572435e-11,
+          "message": "native sparse IPM converged; max equality residual 7.024e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.7104661047996,
+          "status": "optimal",
+          "trial": 7,
+          "wall": 4.052414139965549
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 128,
+          "max_residual": 7.02442548572435e-11,
+          "message": "native sparse IPM converged; max equality residual 7.024e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.7104661047996,
+          "status": "optimal",
+          "trial": 8,
+          "wall": 4.134386083926074
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 128,
+          "max_residual": 4.9041659622162115e-11,
+          "message": "native sparse IPM converged; max equality residual 4.904e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.710466104786,
+          "status": "optimal",
+          "trial": 8,
+          "wall": 3.8090038020163774
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 128,
+          "max_residual": 4.9041659622162115e-11,
+          "message": "native sparse IPM converged; max equality residual 4.904e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.710466104786,
+          "status": "optimal",
+          "trial": 9,
+          "wall": 4.097011593985371
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 128,
+          "max_residual": 7.02442548572435e-11,
+          "message": "native sparse IPM converged; max equality residual 7.024e-11; presolve removed 14 rows and 14 cols",
+          "objective": 301.7104661047996,
+          "status": "optimal",
+          "trial": 9,
+          "wall": 4.038689140928909
+        }
+      ]
+    },
+    {
+      "instance": "cre_a",
+      "runs": [
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 3.86220165182749e-06,
+          "message": "native sparse IPM converged; max equality residual 3.862e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.519969083,
+          "status": "optimal",
+          "trial": 1,
+          "wall": 0.11902425496373326
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 7.840725643859514e-06,
+          "message": "native sparse IPM converged; max equality residual 7.841e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.531962298,
+          "status": "optimal",
+          "trial": 1,
+          "wall": 0.12965125602204353
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 7.840725643859514e-06,
+          "message": "native sparse IPM converged; max equality residual 7.841e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.531962298,
+          "status": "optimal",
+          "trial": 2,
+          "wall": 0.13065395900048316
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 3.86220165182749e-06,
+          "message": "native sparse IPM converged; max equality residual 3.862e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.519969083,
+          "status": "optimal",
+          "trial": 2,
+          "wall": 0.11994275893084705
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 3.86220165182749e-06,
+          "message": "native sparse IPM converged; max equality residual 3.862e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.519969083,
+          "status": "optimal",
+          "trial": 3,
+          "wall": 0.11850001499988139
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 7.840725643859514e-06,
+          "message": "native sparse IPM converged; max equality residual 7.841e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.531962298,
+          "status": "optimal",
+          "trial": 3,
+          "wall": 0.12951108103152364
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 7.840725643859514e-06,
+          "message": "native sparse IPM converged; max equality residual 7.841e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.531962298,
+          "status": "optimal",
+          "trial": 4,
+          "wall": 0.10442051407881081
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 3.86220165182749e-06,
+          "message": "native sparse IPM converged; max equality residual 3.862e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.519969083,
+          "status": "optimal",
+          "trial": 4,
+          "wall": 0.11933654500171542
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 3.86220165182749e-06,
+          "message": "native sparse IPM converged; max equality residual 3.862e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.519969083,
+          "status": "optimal",
+          "trial": 5,
+          "wall": 0.11890488001517951
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 7.840725643859514e-06,
+          "message": "native sparse IPM converged; max equality residual 7.841e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.531962298,
+          "status": "optimal",
+          "trial": 5,
+          "wall": 0.13123301300220191
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 7.840725643859514e-06,
+          "message": "native sparse IPM converged; max equality residual 7.841e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.531962298,
+          "status": "optimal",
+          "trial": 6,
+          "wall": 0.12918661907315254
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 3.86220165182749e-06,
+          "message": "native sparse IPM converged; max equality residual 3.862e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.519969083,
+          "status": "optimal",
+          "trial": 6,
+          "wall": 0.11871406005229801
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 3.86220165182749e-06,
+          "message": "native sparse IPM converged; max equality residual 3.862e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.519969083,
+          "status": "optimal",
+          "trial": 7,
+          "wall": 0.11827838607132435
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 7.840725643859514e-06,
+          "message": "native sparse IPM converged; max equality residual 7.841e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.531962298,
+          "status": "optimal",
+          "trial": 7,
+          "wall": 0.12943668093066663
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 7.840725643859514e-06,
+          "message": "native sparse IPM converged; max equality residual 7.841e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.531962298,
+          "status": "optimal",
+          "trial": 8,
+          "wall": 0.12905565195251256
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 3.86220165182749e-06,
+          "message": "native sparse IPM converged; max equality residual 3.862e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.519969083,
+          "status": "optimal",
+          "trial": 8,
+          "wall": 0.12127707002218813
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 3.86220165182749e-06,
+          "message": "native sparse IPM converged; max equality residual 3.862e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.519969083,
+          "status": "optimal",
+          "trial": 9,
+          "wall": 0.11989509989507496
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 7.840725643859514e-06,
+          "message": "native sparse IPM converged; max equality residual 7.841e-06; presolve removed 475 rows and 387 cols",
+          "objective": 23595464.531962298,
+          "status": "optimal",
+          "trial": 9,
+          "wall": 0.12815814604982734
+        }
+      ]
+    },
+    {
+      "instance": "woodw",
+      "runs": [
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 5.50367137224731e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.304505092987056,
+          "status": "optimal",
+          "trial": 1,
+          "wall": 0.13811588298995048
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 5.503671372039342e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.3045050929870714,
+          "status": "optimal",
+          "trial": 1,
+          "wall": 0.16209006204735488
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 5.503671372039342e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.3045050929870714,
+          "status": "optimal",
+          "trial": 2,
+          "wall": 0.15245103696361184
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 5.50367137224731e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.304505092987056,
+          "status": "optimal",
+          "trial": 2,
+          "wall": 0.15336869994644076
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 5.50367137224731e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.304505092987056,
+          "status": "optimal",
+          "trial": 3,
+          "wall": 0.15535781695507467
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 5.503671372039342e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.3045050929870714,
+          "status": "optimal",
+          "trial": 3,
+          "wall": 0.22265711205545813
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 5.503671372039342e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.3045050929870714,
+          "status": "optimal",
+          "trial": 4,
+          "wall": 0.17391036602202803
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 5.50367137224731e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.304505092987056,
+          "status": "optimal",
+          "trial": 4,
+          "wall": 0.16454655199777335
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 5.50367137224731e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.304505092987056,
+          "status": "optimal",
+          "trial": 5,
+          "wall": 0.16273476998321712
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 5.503671372039342e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.3045050929870714,
+          "status": "optimal",
+          "trial": 5,
+          "wall": 0.16234454198274761
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 5.503671372039342e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.3045050929870714,
+          "status": "optimal",
+          "trial": 6,
+          "wall": 0.16504886001348495
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 5.50367137224731e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.304505092987056,
+          "status": "optimal",
+          "trial": 6,
+          "wall": 0.1355951529694721
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 5.50367137224731e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.304505092987056,
+          "status": "optimal",
+          "trial": 7,
+          "wall": 0.1562738480279222
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 5.503671372039342e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.3045050929870714,
+          "status": "optimal",
+          "trial": 7,
+          "wall": 0.15717056102585047
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 5.503671372039342e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.3045050929870714,
+          "status": "optimal",
+          "trial": 8,
+          "wall": 0.17402522405609488
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 5.50367137224731e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.304505092987056,
+          "status": "optimal",
+          "trial": 8,
+          "wall": 0.14732710097450763
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "auto",
+          "iterations": 36,
+          "max_residual": 5.50367137224731e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.304505092987056,
+          "status": "optimal",
+          "trial": 9,
+          "wall": 0.17353533790446818
+        },
+        {
+          "backend": "native-c-sparse-ipm",
+          "config": "block4",
+          "iterations": 36,
+          "max_residual": 5.503671372039342e-09,
+          "message": "native sparse IPM converged; max equality residual 5.504e-09; presolve removed 1 rows and 1 cols",
+          "objective": 1.3045050929870714,
+          "status": "optimal",
+          "trial": 9,
+          "wall": 0.16650431999005377
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "check_interval": 50000,
+    "configs": {
+      "auto": {
+        "LINPROGX_UPLOOK_BLOCK": null
+      },
+      "block4": {
+        "LINPROGX_UPLOOK_BLOCK": "4"
+      }
+    },
+    "env_cache_note": "LINPROGX_UPLOOK_BLOCK is cached statically by chol_block_size; each solve is isolated in a fresh subprocess.",
+    "eps": 2e-05,
+    "flip_threshold_median_speedup": 0.03,
+    "instances": [
+      "80bau3b",
+      "pilot87",
+      "cre_a",
+      "woodw"
+    ],
+    "max_iterations": 50000,
+    "objective_relative_match_limit": 1e-06,
+    "residual_match_limit": 2e-05,
+    "route": "SparseSolver algorithm=auto",
+    "saveable_fractions": {
+      "80bau3b": 0.446,
+      "cre_a": 0.317,
+      "pilot87": 0.455,
+      "woodw": 0.366
+    },
+    "trials_per_config": 9
+  }
+}
