@@ -1,0 +1,260 @@
+{
+  "ref": "6ec6e2eb48d99096668ffd9dd4355c912af3918d",
+  "mode": "paired",
+  "use_snapshot": true,
+  "machine_info": {
+    "cpu_model": "unknown",
+    "cpu_count": 20,
+    "mem_total_kb": 395296452,
+    "loadavg": "0.00 0.00 0.00 0/0 0",
+    "modal_region": "us-west-2",
+    "modal_cloud": "CLOUD_PROVIDER_AWS",
+    "modal_task_id": "ta-01KXMX5R50VG6GEF3PN9ZZ2E0R"
+  },
+  "load_checks": {
+    "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+    "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+  },
+  "paired": {
+    "lp_qap12": {
+      "pairs": 7,
+      "lx": {
+        "median": 2.1623646060000397,
+        "min": 2.0864909079999734,
+        "n": 7,
+        "status": "optimal",
+        "backend": "pdhg"
+      },
+      "hx": {
+        "median": 124.25692978199999,
+        "min": 119.88447118399995,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.017402366288896368,
+      "ratio_min": 0.017404179935845112,
+      "verdict": "lx_faster"
+    },
+    "lp_ken_18": {
+      "pairs": 7,
+      "lx": {
+        "median": 5.934692278999933,
+        "min": 5.624604669000064,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 12.888291768000045,
+        "min": 12.398994714999958,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.460471595912734,
+      "ratio_min": 0.453633927450229,
+      "verdict": "lx_faster"
+    },
+    "lp_d2q06c": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.4778854200001206,
+        "min": 0.43145630499998333,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 1.1347971659999985,
+        "min": 1.1141042050001033,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.4211196805192949,
+      "ratio_min": 0.3872674594204079,
+      "verdict": "lx_faster"
+    },
+    "lp_fit2p": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.10949007399995025,
+        "min": 0.10845640299999104,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 1.3023198960001992,
+        "min": 1.2615059899999324,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.08407310241993993,
+      "ratio_min": 0.08597375189633215,
+      "verdict": "lx_faster"
+    },
+    "lp_truss": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.14998906599998918,
+        "min": 0.1398576829999456,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 3.50043103400003,
+        "min": 3.460265745000015,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.04284874192438893,
+      "ratio_min": 0.04041819134904189,
+      "verdict": "lx_faster"
+    },
+    "lp_ken_07": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.028910502999906385,
+        "min": 0.02663749899988943,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.06617918300003112,
+        "min": 0.06286473799991654,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.4368519176172482,
+      "ratio_min": 0.4237271934534237,
+      "verdict": "lx_faster"
+    },
+    "lp_ken_11": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.24612404999993487,
+        "min": 0.24130540400005884,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.4046069640000951,
+        "min": 0.3975983709999582,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.6083040379895117,
+      "ratio_min": 0.6069074261878307,
+      "verdict": "lx_faster"
+    },
+    "lp_ken_13": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.6950979820001066,
+        "min": 0.6362670050000361,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 1.3016188110000257,
+        "min": 1.2209587519998877,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.534025765551181,
+      "ratio_min": 0.5211208027772052,
+      "verdict": "lx_faster"
+    },
+    "lp_cre_b": {
+      "pairs": 7,
+      "lx": {
+        "median": 1.5839849169999525,
+        "min": 1.4918941159999122,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 2.5617507169999953,
+        "min": 2.472356622999996,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.6183212544797954,
+      "ratio_min": 0.6034299834097658,
+      "verdict": "lx_faster"
+    },
+    "lp_stocfor3": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.8478031700001338,
+        "min": 0.8104810410000027,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.8397623649998422,
+        "min": 0.7967605509998066,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 1,
+      "ratio_median": 1.009575095688282,
+      "ratio_min": 1.0172203430290057,
+      "verdict": "highs_faster"
+    },
+    "lp_cre_a": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.14492445599989878,
+        "min": 0.13615829300010773,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.14996397000004436,
+        "min": 0.145311281999966,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 4,
+      "ratio_median": 0.9663951681184215,
+      "ratio_min": 0.9370111606347233,
+      "verdict": "lx_faster"
+    },
+    "lp_maros_r7": {
+      "pairs": 7,
+      "lx": {
+        "median": 0.73784650399989,
+        "min": 0.6978390270001,
+        "n": 7,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.9535122130000673,
+        "min": 0.9495089889999235,
+        "n": 7,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 0.7738196678974661,
+      "ratio_min": 0.7349472570397712,
+      "verdict": "lx_faster"
+    }
+  }
+}

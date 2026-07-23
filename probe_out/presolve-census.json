@@ -1,0 +1,562 @@
+{
+  "instances": [
+    {
+      "cols": 5151,
+      "column_singletons": {
+        "boxed": 166,
+        "fixed": 57,
+        "free": 0,
+        "lower_bounded": 229,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 33300000.0,
+        "dense_tail_len": 464,
+        "factor_flops_estimate": 1891137.9310344828,
+        "prefix_flops": 1317000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 158,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": -5.60754896382906,
+      "fixed_columns": 146,
+      "instance": "greenbea",
+      "nnz": 29809,
+      "nnz_reduction_pct": 9.118051595155826,
+      "projected_cols": 4566,
+      "projected_dense_tail": {
+        "dense_tail_flops": 2304430875.0,
+        "dense_tail_len": 464,
+        "factor_flops_estimate": 39731566.81034483,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 27091,
+      "projected_rows": 1905,
+      "removable_col_pct": 11.357018054746652,
+      "removable_cols": 585,
+      "removable_row_pct": 1.905252317198764,
+      "removable_rows": 37,
+      "row_activity": {
+        "forcing": 37,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 1942
+    },
+    {
+      "cols": 77076,
+      "column_singletons": {
+        "boxed": 0,
+        "fixed": 0,
+        "free": 0,
+        "lower_bounded": 4690,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 1658000000.0,
+        "dense_tail_len": 1707,
+        "factor_flops_estimate": 52326206.89655173,
+        "prefix_flops": 23740000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 0,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": -57.63006569901497,
+      "fixed_columns": 0,
+      "instance": "cre_b",
+      "nnz": 260469,
+      "nnz_reduction_pct": 55.79742694908031,
+      "projected_cols": 37346,
+      "projected_dense_tail": {
+        "dense_tail_flops": 52255065429.333336,
+        "dense_tail_len": 1707,
+        "factor_flops_estimate": 900949403.954023,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 115134,
+      "projected_rows": 5392,
+      "removable_col_pct": 51.546525507291506,
+      "removable_cols": 39730,
+      "removable_row_pct": 24.892046245995264,
+      "removable_rows": 1787,
+      "row_activity": {
+        "forcing": 1787,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 7179
+    },
+    {
+      "cols": 73883,
+      "column_singletons": {
+        "boxed": 0,
+        "fixed": 0,
+        "free": 0,
+        "lower_bounded": 3968,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 1508000000.0,
+        "dense_tail_len": 1654,
+        "factor_flops_estimate": 51460000.0,
+        "prefix_flops": 25460000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 0,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": -64.93077322332111,
+      "fixed_columns": 20,
+      "instance": "cre_d",
+      "nnz": 246290,
+      "nnz_reduction_pct": 59.44983555970604,
+      "projected_cols": 33104,
+      "projected_dense_tail": {
+        "dense_tail_flops": 30802237587.0,
+        "dense_tail_len": 1654,
+        "factor_flops_estimate": 531073061.8448276,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 99871,
+      "projected_rows": 4521,
+      "removable_col_pct": 55.194022982282796,
+      "removable_cols": 40779,
+      "removable_row_pct": 29.48058025269069,
+      "removable_rows": 1890,
+      "row_activity": {
+        "forcing": 1890,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 6411
+    },
+    {
+      "cols": 47812,
+      "column_singletons": {
+        "boxed": 0,
+        "fixed": 0,
+        "free": 0,
+        "lower_bounded": 1139,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 4337000000.0,
+        "dense_tail_len": 2352,
+        "factor_flops_estimate": 111865862.06896552,
+        "prefix_flops": 37090000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 0,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": 0.0,
+      "fixed_columns": 242,
+      "instance": "pds_10",
+      "nnz": 103230,
+      "nnz_reduction_pct": 0.937711905453841,
+      "projected_cols": 47570,
+      "projected_dense_tail": {
+        "dense_tail_flops": 1003228491890.6666,
+        "dense_tail_len": 2352,
+        "factor_flops_estimate": 17297042963.632183,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 102262,
+      "projected_rows": 14438,
+      "removable_col_pct": 0.5061490839119887,
+      "removable_cols": 242,
+      "removable_row_pct": 0.0,
+      "removable_rows": 0,
+      "row_activity": {
+        "forcing": 0,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 14438
+    },
+    {
+      "cols": 104579,
+      "column_singletons": {
+        "boxed": 0,
+        "fixed": 0,
+        "free": 0,
+        "lower_bounded": 2375,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 22910000000.0,
+        "dense_tail_len": 4096,
+        "factor_flops_estimate": 1208200000.0,
+        "prefix_flops": 813200000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 0,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": 0.0,
+      "fixed_columns": 484,
+      "instance": "pds_20",
+      "nnz": 225131,
+      "nnz_reduction_pct": 0.8599437660739747,
+      "projected_cols": 104095,
+      "projected_dense_tail": {
+        "dense_tail_flops": 9183026867469.334,
+        "dense_tail_len": 4096,
+        "factor_flops_estimate": 158328049439.12643,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 223195,
+      "projected_rows": 30202,
+      "removable_col_pct": 0.46280802073073946,
+      "removable_cols": 484,
+      "removable_row_pct": 0.0,
+      "removable_rows": 0,
+      "row_activity": {
+        "forcing": 0,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 30202
+    },
+    {
+      "cols": 8417,
+      "column_singletons": {
+        "boxed": 1,
+        "fixed": 0,
+        "free": 0,
+        "lower_bounded": 180,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 28390000.0,
+        "dense_tail_len": 440,
+        "factor_flops_estimate": 948482.7586206896,
+        "prefix_flops": 459000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 2100,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": -56.687386062671564,
+      "fixed_columns": 0,
+      "instance": "woodw",
+      "nnz": 37485,
+      "nnz_reduction_pct": 40.205415499533146,
+      "projected_cols": 4630,
+      "projected_dense_tail": {
+        "dense_tail_flops": 190595666.66666666,
+        "dense_tail_len": 440,
+        "factor_flops_estimate": 3286132.1839080458,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 22414,
+      "projected_rows": 830,
+      "removable_col_pct": 44.992277533563026,
+      "removable_cols": 3787,
+      "removable_row_pct": 24.339106654512307,
+      "removable_rows": 267,
+      "row_activity": {
+        "forcing": 267,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 1097
+    },
+    {
+      "cols": 9408,
+      "column_singletons": {
+        "boxed": 0,
+        "fixed": 0,
+        "free": 0,
+        "lower_bounded": 6272,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 3516000000.0,
+        "dense_tail_len": 2193,
+        "factor_flops_estimate": 137380689.6551724,
+        "prefix_flops": 76760000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 0,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": 0.0,
+      "fixed_columns": 0,
+      "instance": "maros_r7",
+      "nnz": 144848,
+      "nnz_reduction_pct": 0.0,
+      "projected_cols": 9408,
+      "projected_dense_tail": {
+        "dense_tail_flops": 10280326485.333334,
+        "dense_tail_len": 2193,
+        "factor_flops_estimate": 177247008.3678161,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 144848,
+      "projected_rows": 3136,
+      "removable_col_pct": 0.0,
+      "removable_cols": 0,
+      "removable_row_pct": 0.0,
+      "removable_rows": 0,
+      "row_activity": {
+        "forcing": 0,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 3136
+    },
+    {
+      "cols": 11878,
+      "column_singletons": {
+        "boxed": 2286,
+        "fixed": 268,
+        "free": 0,
+        "lower_bounded": 2237,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 14790000.0,
+        "dense_tail_len": 354,
+        "factor_flops_estimate": 580900.0,
+        "prefix_flops": 325900.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 1,
+        "total": 1,
+        "upper": 0
+      },
+      "duplicate_columns": 1390,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": -1.1499647121075909,
+      "fixed_columns": 530,
+      "instance": "80bau3b",
+      "nnz": 22923,
+      "nnz_reduction_pct": 9.182916721197051,
+      "projected_cols": 10027,
+      "projected_dense_tail": {
+        "dense_tail_flops": 2960867970.3333335,
+        "dense_tail_len": 354,
+        "factor_flops_estimate": 51049447.76436782,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 20818,
+      "projected_rows": 2071,
+      "removable_col_pct": 15.583431554133693,
+      "removable_cols": 1851,
+      "removable_row_pct": 0.3848003848003848,
+      "removable_rows": 8,
+      "row_activity": {
+        "forcing": 8,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 2079
+    },
+    {
+      "cols": 21499,
+      "column_singletons": {
+        "boxed": 0,
+        "fixed": 0,
+        "free": 0,
+        "lower_bounded": 9313,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 30580000.0,
+        "dense_tail_len": 451,
+        "factor_flops_estimate": 8066241.379310345,
+        "prefix_flops": 7539000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 1,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": 0.0,
+      "fixed_columns": 0,
+      "instance": "stocfor3",
+      "nnz": 68419,
+      "nnz_reduction_pct": 0.02484689925313144,
+      "projected_cols": 21498,
+      "projected_dense_tail": {
+        "dense_tail_flops": 1044428858045.6666,
+        "dense_tail_len": 451,
+        "factor_flops_estimate": 18007394104.23563,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 68402,
+      "projected_rows": 14633,
+      "removable_col_pct": 0.004651379133913205,
+      "removable_cols": 1,
+      "removable_row_pct": 0.0,
+      "removable_rows": 0,
+      "row_activity": {
+        "forcing": 0,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 14633
+    },
+    {
+      "cols": 2571,
+      "column_singletons": {
+        "boxed": 0,
+        "fixed": 0,
+        "free": 0,
+        "lower_bounded": 795,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 101600000.0,
+        "dense_tail_len": 673,
+        "factor_flops_estimate": 3223724.1379310344,
+        "prefix_flops": 1472000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 0,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": 0.0,
+      "fixed_columns": 0,
+      "instance": "degen3",
+      "nnz": 25366,
+      "nnz_reduction_pct": 0.0,
+      "projected_cols": 2571,
+      "projected_dense_tail": {
+        "dense_tail_flops": 1058841000.0,
+        "dense_tail_len": 673,
+        "factor_flops_estimate": 18255879.310344826,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 25366,
+      "projected_rows": 1470,
+      "removable_col_pct": 0.0,
+      "removable_cols": 0,
+      "removable_row_pct": 0.0,
+      "removable_rows": 0,
+      "row_activity": {
+        "forcing": 0,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 1470
+    },
+    {
+      "cols": 6666,
+      "column_singletons": {
+        "boxed": 0,
+        "fixed": 0,
+        "free": 0,
+        "lower_bounded": 1808,
+        "upper_bounded": 0
+      },
+      "dense_tail": {
+        "dense_tail_flops": 524300000.0,
+        "dense_tail_len": 1163,
+        "factor_flops_estimate": 12228655.172413792,
+        "prefix_flops": 3189000.0,
+        "source": "chol_debug"
+      },
+      "dense_tail_len_delta": 0,
+      "dominated_boxed_columns": {
+        "lower": 0,
+        "total": 0,
+        "upper": 0
+      },
+      "duplicate_columns": 46,
+      "duplicate_rows": 0,
+      "factor_flops_estimate_change_pct": -0.29732388826524214,
+      "fixed_columns": 223,
+      "instance": "pilot87",
+      "nnz": 74917,
+      "nnz_reduction_pct": 4.334129770279109,
+      "projected_cols": 6393,
+      "projected_dense_tail": {
+        "dense_tail_flops": 2723059581.3333335,
+        "dense_tail_len": 1163,
+        "factor_flops_estimate": 46949303.126436785,
+        "prefix_flops": 0.0,
+        "source": "projected_m_cubed_proxy"
+      },
+      "projected_nnz": 71670,
+      "projected_rows": 2014,
+      "removable_col_pct": 4.095409540954096,
+      "removable_cols": 273,
+      "removable_row_pct": 0.0992063492063492,
+      "removable_rows": 2,
+      "row_activity": {
+        "forcing": 2,
+        "infeasible": 0,
+        "redundant": 0
+      },
+      "rows": 2016
+    }
+  ],
+  "notes": {
+    "cascade_modeling": "none; projected size removes counted rows/columns once",
+    "dominance_test": "------------------------\nThe source problems are equality-plus-box LPs. For a conservative standard\nsign-based dual-fixing test, each equality is viewed as both ``<=`` and ``>=``.\nA boxed column can pass the lower-bound dominance test only when ``c_j > 0``\nand its coefficient has the required nonnegative sign in the ``<=`` row and\nthe required nonnegative sign in the negated ``>=`` row. Likewise, upper-bound\ndominance requires ``c_j < 0`` with both opposite signs. For equalities, these\ntwo sign requirements are compatible only for an all-zero column, so this probe\ncounts only non-fixed boxed empty columns with objective sign pointing to one\nbound as dominated. That deliberately undercounts rather than inventing hope\nfrom inequality-only rules that do not apply to free equality duals.",
+    "duplicate_columns": "same nonzero pattern, coefficient values, objective, and bounds after 1e-12-ish quantization",
+    "duplicate_rows": "same nonzero pattern, coefficient values, and rhs after 1e-12-ish quantization",
+    "projected_factor_flops": "current tail from chol debug when available; projected change uses m^3/3 row-removal proxy divided by dense-tail speed factor 58",
+    "scope": "post-current-presolve equality-plus-box census"
+  }
+}

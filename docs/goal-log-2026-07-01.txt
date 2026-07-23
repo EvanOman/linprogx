@@ -1,0 +1,86 @@
+Goal Log - 2026-07-01
+
+Session closed: Wednesday, July 01, 2026 at 10:35 PM CDT
+Repository: /home/evan/dev/linprogx
+Branch: perf-supernodal-simplex
+
+Current goal
+------------
+Keep pushing linprogx toward beating open-source solvers on the main
+benchmark cases without adding runtime solver dependencies beyond
+BLAS/LAPACK-style numeric support.
+
+Status
+------
+Iteration closed and committed-ready. The overall goal is still open.
+Current work improves sparse solver instrumentation, threading behavior,
+certificate preservation, and the IPM/PDHG comparison loop, but linprogx
+still trails HiGHS on the main Netlib-scale timing targets.
+
+Completed this iteration
+------------------------
+- Added PDHG timing/profile instrumentation in the C sparse extension.
+- Fused accepted PDHG x-average accumulation into the transpose matvec path.
+- Exposed public SparseSolver threads control and defaulted PDHG public route
+  to 4 threads based on measured performance.
+- Fixed the persistent PDHG thread pool so it can grow safely after a smaller
+  solve and so profiling reports both requested threads and pool capacity.
+- Added tests for thread option validation, deterministic threaded PDHG
+  results, profiling output, and thread-pool growth.
+- Added targeted BLAS thread control: dense-tail factorization keeps the
+  existing BLAS threading behavior, while supernodal panel BLAS calls use one
+  OpenBLAS thread to avoid oversubscription.
+- Added a supernodal profile test confirming the one-thread BLAS setting.
+- Hardened sparse auto/IPM acceptance by recomputing raw feasibility and
+  retaining a feasible IPM candidate when PDHG fallback is worse or fails.
+- Expanded dual-cleanup and IPM characterization coverage around cre_a,
+  raw feasibility polish, and finite iterates.
+- Updated docs/HANDOFF.md with the current evidence, rejected experiments,
+  performance measurements, and next-step notes.
+
+Verification
+------------
+- just ci passed.
+- CI details: ruff, format check, ty, bandit, pip-audit, and coverage-gated
+  pytest all passed.
+- Test count: 150 passed.
+- Coverage: 86.56%, above the configured 85% floor.
+- pip-audit found no known vulnerabilities, with the expected local-package
+  skip for linprogx not being published on PyPI.
+
+Performance evidence captured
+-----------------------------
+- maros_r7: the supernodal IPM path reaches an optimal result with residual
+  around 2.9e-11 in 15 iterations, but public timings are still about 3s or
+  more versus HiGHS at roughly 1s on the same loaded workstation.
+- pds_20: current 4-thread PDHG default remains the best measured public
+  setting on this machine. A fresh comparison showed 4 threads around 34.5s
+  and 8 threads around 49.6s with identical iteration count and objective.
+- greenbea: PDHG can produce acceptable residuals but objective cleanup is
+  still the limiting issue. The likely next lever is a basis/primal simplex
+  cleanup path rather than more blind PDHG iteration tuning.
+- woodw / 80bau3b / d2q06c: small-case investigation found woodw may be
+  certificate-threshold limited, while 80bau3b appears dual-gap limited.
+  No woodw fixture or behavior change was committed from that unfinished
+  experiment.
+
+Open problems for the next session
+----------------------------------
+- Main gap: linprogx still does not beat HiGHS on maros_r7 or pds_20.
+- Sparse revised simplex remains the largest plausible path for greenbea and
+  other cases where PDHG gets near feasibility but needs a certificate-backed
+  vertex-quality solution.
+- maros_r7 still spends too much time in numeric factorization/refactor work;
+  the supernodal path is correct enough for testing but not yet competitive.
+- Any relaxation of acceptance criteria is off-limits unless it preserves the
+  public eps=2e-5 contract and remains certificate-backed.
+
+Suggested next pickup
+---------------------
+1. Finish the woodw characterization only if adding a real test and global
+   certificate-backed rule; do not commit an orphan fixture.
+2. Profile maros_r7 refactor phases after the one-thread supernodal BLAS split
+   and identify whether symbolic reuse, panel updates, or dense-tail solves are
+   now the dominant cost.
+3. Start a sparse revised simplex/basis cleanup spike for greenbea-class cases,
+   guarded by external-oracle comparisons and residual/certificate checks.

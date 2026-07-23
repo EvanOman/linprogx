@@ -1,0 +1,100 @@
+{
+  "ref": "ecf94bd545d679a9791b7eb9a060983d6343febc",
+  "mode": "paired",
+  "use_snapshot": true,
+  "machine_info": {
+    "cpu_model": "unknown",
+    "cpu_count": 20,
+    "mem_total_kb": 791981132,
+    "loadavg": "0.00 0.00 0.00 0/0 0",
+    "modal_region": "southeastasia",
+    "modal_cloud": "CLOUD_PROVIDER_AZURE",
+    "modal_task_id": "ta-01KXMM0T02E64BRSHTW8X0VBQR"
+  },
+  "load_checks": {
+    "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+    "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+  },
+  "paired": {
+    "lp_pilot87": {
+      "pairs": 15,
+      "lx": {
+        "median": 3.6435864960000046,
+        "min": 3.362265461999982,
+        "n": 15,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 2.97908159,
+        "min": 2.965056149000006,
+        "n": 15,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.2230569677012455,
+      "ratio_min": 1.1339635045811658,
+      "verdict": "highs_faster"
+    },
+    "lp_stocfor3": {
+      "pairs": 15,
+      "lx": {
+        "median": 0.6411514830000158,
+        "min": 0.5698418320000087,
+        "n": 15,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.5769098780000093,
+        "min": 0.5421677260000024,
+        "n": 15,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.1113546629201685,
+      "ratio_min": 1.0510434403836244,
+      "verdict": "highs_faster"
+    },
+    "lp_cre_a": {
+      "pairs": 15,
+      "lx": {
+        "median": 0.12823872000001302,
+        "min": 0.11196459900000377,
+        "n": 15,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.12373383100000979,
+        "min": 0.11560249699999758,
+        "n": 15,
+        "status": "optimal"
+      },
+      "lx_wins": 4,
+      "ratio_median": 1.0364079004391522,
+      "ratio_min": 0.9685309738595536,
+      "verdict": "highs_faster"
+    },
+    "lp_degen3": {
+      "pairs": 15,
+      "lx": {
+        "median": 0.24045154700002058,
+        "min": 0.20315196599997876,
+        "n": 15,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.18540443800000617,
+        "min": 0.18235738399999946,
+        "n": 15,
+        "status": "optimal"
+      },
+      "lx_wins": 0,
+      "ratio_median": 1.2969028659390158,
+      "ratio_min": 1.114032026254442,
+      "verdict": "highs_faster"
+    }
+  }
+}

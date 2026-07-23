@@ -1,0 +1,409 @@
+{
+  "evaluation": {
+    "criteria": {
+      "all_residuals": {
+        "pass": true,
+        "runs": {
+          "80bau3b:default-devex": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 1.4210854715202004e-12
+          },
+          "80bau3b:plain-dantzig": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 7.048583938740194e-12
+          },
+          "cre_d:default-devex": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 1.8189894035458565e-12
+          },
+          "cre_d:plain-dantzig": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 4.547473508864641e-13
+          },
+          "greenbea:default-devex": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 1.3081449878882268e-07
+          },
+          "greenbea:plain-dantzig": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 6.21621438767761e-08
+          },
+          "stocfor3:default-devex": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 1.8189894035458565e-12
+          },
+          "stocfor3:plain-dantzig": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 1.8189894035458565e-12
+          },
+          "woodw:default-devex": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 2.2737367544323206e-13
+          },
+          "woodw:plain-dantzig": {
+            "pass": true,
+            "threshold": 2e-05,
+            "value": 1.1368683772161603e-13
+          }
+        }
+      },
+      "all_statuses_optimal": {
+        "pass": true,
+        "runs": {
+          "80bau3b:default-devex": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "80bau3b:plain-dantzig": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "cre_d:default-devex": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "cre_d:plain-dantzig": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "greenbea:default-devex": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "greenbea:plain-dantzig": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "stocfor3:default-devex": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "stocfor3:plain-dantzig": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "woodw:default-devex": {
+            "pass": true,
+            "status": "optimal"
+          },
+          "woodw:plain-dantzig": {
+            "pass": true,
+            "status": "optimal"
+          }
+        }
+      },
+      "greenbea_certificate": {
+        "max_residual": 6.21621438767761e-08,
+        "objective_relative_delta": 2.7931238257727268e-14,
+        "objective_relative_threshold": 2e-05,
+        "pass": true,
+        "residual_threshold": 2e-05,
+        "status": "optimal"
+      },
+      "greenbea_lift": {
+        "iteration_reduction": 0.2860109289617486,
+        "pass": true,
+        "threshold": 0.15,
+        "wall_reduction": 0.5015044654648889
+      },
+      "guard_count_regression": {
+        "instances": {
+          "80bau3b": {
+            "count_ratio": 1.1042682926829268,
+            "count_regression": 0.10426829268292681,
+            "pass": false,
+            "threshold": 1.1
+          },
+          "cre_d": {
+            "count_ratio": 1.4560358330840035,
+            "count_regression": 0.45603583308400353,
+            "pass": false,
+            "threshold": 1.1
+          },
+          "stocfor3": {
+            "count_ratio": 1.0439024390243903,
+            "count_regression": 0.04390243902439028,
+            "pass": true,
+            "threshold": 1.1
+          },
+          "woodw": {
+            "count_ratio": 0.888833746898263,
+            "count_regression": -0.111166253101737,
+            "pass": true,
+            "threshold": 1.1
+          }
+        },
+        "pass": false
+      },
+      "objectives_match_baseline": {
+        "instances": {
+          "80bau3b": {
+            "pass": true,
+            "relative_delta": 3.5376560680563465e-16,
+            "threshold": 2e-05
+          },
+          "cre_d": {
+            "pass": true,
+            "relative_delta": 0.0,
+            "threshold": 2e-05
+          },
+          "greenbea": {
+            "pass": true,
+            "relative_delta": 2.7931238257727268e-14,
+            "threshold": 2e-05
+          },
+          "stocfor3": {
+            "pass": true,
+            "relative_delta": 1.8200457606693577e-16,
+            "threshold": 2e-05
+          },
+          "woodw": {
+            "pass": true,
+            "relative_delta": 5.106522808276065e-16,
+            "threshold": 2e-05
+          }
+        },
+        "pass": true
+      },
+      "old_note_gated_band": {
+        "max_regression_threshold": 1.13,
+        "pass": false
+      }
+    },
+    "verdict": "KILL"
+  },
+  "probe": "ds-plain-dantzig-post-ft-post-suhl",
+  "results": [
+    {
+      "instance": "greenbea",
+      "max_iter": 50000,
+      "nnz": 31070,
+      "presolve": {
+        "removed_cols": 447,
+        "removed_rows": 450
+      },
+      "runs": {
+        "default-devex": {
+          "bound_flips": 4881,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 14,
+            "ft_updates": 9136
+          },
+          "iterations": 9150,
+          "max_residual": 1.3081449878882268e-07,
+          "objective": -72555248.12984714,
+          "status": "optimal",
+          "wall": 1.607156174024567
+        },
+        "plain-dantzig": {
+          "bound_flips": 3927,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 4,
+            "ft_updates": 6529
+          },
+          "iterations": 6533,
+          "max_residual": 6.21621438767761e-08,
+          "objective": -72555248.12984511,
+          "status": "optimal",
+          "wall": 0.8011601760517806
+        }
+      },
+      "shape": [
+        2392,
+        5598
+      ]
+    },
+    {
+      "instance": "woodw",
+      "max_iter": 50000,
+      "nnz": 37487,
+      "presolve": {
+        "removed_cols": 1,
+        "removed_rows": 1
+      },
+      "runs": {
+        "default-devex": {
+          "bound_flips": 761,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 2015
+          },
+          "iterations": 2015,
+          "max_residual": 2.2737367544323206e-13,
+          "objective": 1.3044763330842286,
+          "status": "optimal",
+          "wall": 0.24297712708357722
+        },
+        "plain-dantzig": {
+          "bound_flips": 789,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 1791
+          },
+          "iterations": 1791,
+          "max_residual": 1.1368683772161603e-13,
+          "objective": 1.3044763330842293,
+          "status": "optimal",
+          "wall": 0.19245921005494893
+        }
+      },
+      "shape": [
+        1098,
+        8418
+      ]
+    },
+    {
+      "instance": "stocfor3",
+      "max_iter": 50000,
+      "nnz": 72721,
+      "presolve": {
+        "removed_cols": 2042,
+        "removed_rows": 2042
+      },
+      "runs": {
+        "default-devex": {
+          "bound_flips": 3541,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 9225
+          },
+          "iterations": 9225,
+          "max_residual": 1.8189894035458565e-12,
+          "objective": -39976.78394364958,
+          "status": "optimal",
+          "wall": 1.3451073420001194
+        },
+        "plain-dantzig": {
+          "bound_flips": 3545,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 9630
+          },
+          "iterations": 9630,
+          "max_residual": 1.8189894035458565e-12,
+          "objective": -39976.783943649585,
+          "status": "optimal",
+          "wall": 1.427888139965944
+        }
+      },
+      "shape": [
+        16675,
+        23541
+      ]
+    },
+    {
+      "instance": "80bau3b",
+      "max_iter": 50000,
+      "nnz": 23264,
+      "presolve": {
+        "removed_cols": 183,
+        "removed_rows": 183
+      },
+      "runs": {
+        "default-devex": {
+          "bound_flips": 2701,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 6560
+          },
+          "iterations": 6560,
+          "max_residual": 1.4210854715202004e-12,
+          "objective": 987224.1924090902,
+          "status": "optimal",
+          "wall": 0.5875632170354947
+        },
+        "plain-dantzig": {
+          "bound_flips": 2771,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 7244
+          },
+          "iterations": 7244,
+          "max_residual": 7.048583938740194e-12,
+          "objective": 987224.1924090906,
+          "status": "optimal",
+          "wall": 0.5712363029597327
+        }
+      },
+      "shape": [
+        2262,
+        12061
+      ]
+    },
+    {
+      "instance": "cre_d",
+      "max_iter": 300000,
+      "nnz": 246614,
+      "presolve": {
+        "removed_cols": 65,
+        "removed_rows": 2515
+      },
+      "runs": {
+        "default-devex": {
+          "bound_flips": 0,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 113638
+          },
+          "iterations": 113638,
+          "max_residual": 1.8189894035458565e-12,
+          "objective": 24454969.764549248,
+          "status": "optimal",
+          "wall": 136.8718662620522
+        },
+        "plain-dantzig": {
+          "bound_flips": 0,
+          "ft_stats": {
+            "ft_on": 1,
+            "ft_rejects": 0,
+            "ft_updates": 165461
+          },
+          "iterations": 165461,
+          "max_residual": 4.547473508864641e-13,
+          "objective": 24454969.764549248,
+          "status": "optimal",
+          "wall": 192.71038922504522
+        }
+      },
+      "shape": [
+        8926,
+        73948
+      ]
+    }
+  ],
+  "settings": {
+    "configs": {
+      "default-devex": 0,
+      "plain-dantzig": 1
+    },
+    "expand": 1,
+    "instances": [
+      "greenbea",
+      "woodw",
+      "stocfor3",
+      "80bau3b",
+      "cre_d"
+    ],
+    "max_iter_cre_d": 300000,
+    "max_iter_default": 50000,
+    "tol": 1e-08
+  }
+}

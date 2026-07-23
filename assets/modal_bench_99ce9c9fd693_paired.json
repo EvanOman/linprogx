@@ -1,0 +1,140 @@
+{
+  "ref": "99ce9c9fd693b6f45a4d37c1aebfc1815e90ee45",
+  "mode": "paired",
+  "use_snapshot": true,
+  "machine_info": {
+    "cpu_model": "unknown",
+    "cpu_count": 20,
+    "mem_total_kb": 395296456,
+    "loadavg": "0.00 0.00 0.00 0/0 0",
+    "modal_region": "us-west-2",
+    "modal_cloud": "CLOUD_PROVIDER_AWS",
+    "modal_task_id": "ta-01KXMPT63HSJ71RJQRS42C5AFR"
+  },
+  "load_checks": {
+    "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+    "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+  },
+  "paired": {
+    "lp_cre_a": {
+      "pairs": 9,
+      "lx": {
+        "median": 0.1506429969999985,
+        "min": 0.1407320729999988,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.1502947660000018,
+        "min": 0.14848096099999708,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 7,
+      "ratio_median": 1.0023169868736261,
+      "ratio_min": 0.9478122450999058,
+      "verdict": "highs_faster"
+    },
+    "lp_degen3": {
+      "pairs": 9,
+      "lx": {
+        "median": 0.2685011700000004,
+        "min": 0.2549100980000034,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.2702287369999965,
+        "min": 0.26866478099999824,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 6,
+      "ratio_median": 0.9936070196709089,
+      "ratio_min": 0.9488035501013625,
+      "verdict": "lx_faster"
+    },
+    "lp_stocfor3": {
+      "pairs": 9,
+      "lx": {
+        "median": 0.8545530190000008,
+        "min": 0.839735062999992,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 0.8613920370000017,
+        "min": 0.8352962679999933,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 3,
+      "ratio_median": 0.9920605047339196,
+      "ratio_min": 1.0053140366718347,
+      "verdict": "lx_faster"
+    },
+    "lp_pilot87": {
+      "pairs": 9,
+      "lx": {
+        "median": 4.000016639000009,
+        "min": 3.828053220000001,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 4.680407631999998,
+        "min": 4.643268178,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 9,
+      "ratio_median": 0.8546299710418066,
+      "ratio_min": 0.8244307830716043,
+      "verdict": "lx_faster"
+    },
+    "lp_cre_b": {
+      "pairs": 9,
+      "lx": {
+        "median": 2.119429945999997,
+        "min": 2.070619210000018,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 2.5659634630000028,
+        "min": 2.5368775859999744,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 9,
+      "ratio_median": 0.8259782247725616,
+      "ratio_min": 0.8162077750329569,
+      "verdict": "lx_faster"
+    },
+    "lp_osa_14": {
+      "pairs": 9,
+      "lx": {
+        "median": 1.0629281060000153,
+        "min": 1.0434748149999962,
+        "n": 9,
+        "status": "optimal",
+        "backend": "ipm"
+      },
+      "hx": {
+        "median": 1.343652641999995,
+        "min": 1.3372648400000173,
+        "n": 9,
+        "status": "optimal"
+      },
+      "lx_wins": 9,
+      "ratio_median": 0.7910735801612179,
+      "ratio_min": 0.7803052796931255,
+      "verdict": "lx_faster"
+    }
+  }
+}

@@ -1,0 +1,736 @@
+{
+  "ref": "1f4351dcfa962c3fb41ce564bff5ba27e59c23f3",
+  "mode": "suite",
+  "use_snapshot": true,
+  "machine_info": {
+    "cpu_model": "unknown",
+    "cpu_count": 20,
+    "mem_total_kb": 395296412,
+    "loadavg": "0.00 0.00 0.00 0/0 0",
+    "modal_region": "us-west-2",
+    "modal_cloud": "CLOUD_PROVIDER_AWS",
+    "modal_task_id": "ta-01KXFK1K8CV19S0TG9N0H197ER"
+  },
+  "load_checks": {
+    "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+    "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+  },
+  "rows": [
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 987224.1924090905,
+      "seconds": 0.2760244830000005,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_80bau3b"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 987224.1192292592,
+      "seconds": 0.4949145159999979,
+      "residual": 4.985927513579877e-08,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_80bau3b"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 987224.2051230397,
+      "seconds": 0.3450767639999981,
+      "residual": 1.2783232652560547e-10,
+      "backend": "ipm",
+      "iterations": 62,
+      "instance": "lp_80bau3b"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 23595407.060971618,
+      "seconds": 0.15510742600000071,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_cre_a"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 23595407.911347955,
+      "seconds": 0.22444719099999944,
+      "residual": 3.3941262816155814e-08,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_cre_a"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 23595464.519969083,
+      "seconds": 0.162665472999997,
+      "residual": 3.86220165182749e-06,
+      "backend": "ipm",
+      "iterations": 36,
+      "instance": "lp_cre_a"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 23129639.88683238,
+      "seconds": 2.5773486599999984,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_cre_b"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 23129640.335307445,
+      "seconds": 21.477353307999998,
+      "residual": 3.4229688814378705e-09,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_cre_b"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 23129652.848933715,
+      "seconds": 2.217432015,
+      "residual": 8.005997914518618e-07,
+      "backend": "ipm",
+      "iterations": 67,
+      "instance": "lp_cre_b"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 24454969.764549237,
+      "seconds": 1.4098697209999997,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_cre_d"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 24454969.79117602,
+      "seconds": 18.48579610200001,
+      "residual": 2.093410720360211e-08,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_cre_d"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 24454970.18393172,
+      "seconds": 1.927180086000007,
+      "residual": 1.4097167877480388e-11,
+      "backend": "ipm",
+      "iterations": 71,
+      "instance": "lp_cre_d"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 122784.21081418938,
+      "seconds": 1.1238112599999965,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_d2q06c"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 122784.31353135985,
+      "seconds": 4.884924050000009,
+      "residual": 1.5197778313602583e-09,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_d2q06c"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 122784.21112126659,
+      "seconds": 0.45598150600000054,
+      "residual": 3.6032466093694534e-10,
+      "backend": "ipm",
+      "iterations": 48,
+      "instance": "lp_d2q06c"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": -987.2940000000006,
+      "seconds": 0.26569513999999117,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_degen3"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": -987.2939998180177,
+      "seconds": 0.9539406650000046,
+      "residual": 7.105427357601002e-14,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_degen3"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": -987.293643377887,
+      "seconds": 0.23078618499999948,
+      "residual": 1.981270280282388e-06,
+      "backend": "ipm",
+      "iterations": 17,
+      "instance": "lp_degen3"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 68464.29329383216,
+      "seconds": 1.2963878059999985,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_fit2p"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 68464.29326208474,
+      "seconds": 0.3901120019999951,
+      "residual": 1.0166077300062937e-09,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_fit2p"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 68464.64373165695,
+      "seconds": 0.11495363099999167,
+      "residual": 2.904589361927298e-07,
+      "backend": "ipm",
+      "iterations": 19,
+      "instance": "lp_fit2p"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": -72555248.12984593,
+      "seconds": 0.3562486429999865,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_greenbea"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": -72462501.09250104,
+      "seconds": 4.1344276109999925,
+      "residual": 1.3666649265747923e-06,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_greenbea"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": -72555248.12984592,
+      "seconds": 0.6942098020000032,
+      "residual": 1.7688915798785843e-07,
+      "backend": "simplex",
+      "iterations": 4399,
+      "instance": "lp_greenbea"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": -679520443.3816886,
+      "seconds": 0.07707742300000575,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_ken_07"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": -679520443.427247,
+      "seconds": 0.09192649199999892,
+      "residual": 7.107736621492222e-11,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_ken_07"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": -679516773.5328401,
+      "seconds": 0.02737247199999615,
+      "residual": 4.794703727384331e-07,
+      "backend": "ipm",
+      "iterations": 15,
+      "instance": "lp_ken_07"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": -6972382262.519994,
+      "seconds": 0.43612326300001314,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_ken_11"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": -6972382262.884266,
+      "seconds": 0.9354540650000018,
+      "residual": 1.507303150277269e-10,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_ken_11"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": -6972337379.424228,
+      "seconds": 0.2580080129999942,
+      "residual": 1.9693812646437436e-05,
+      "backend": "ipm",
+      "iterations": 22,
+      "instance": "lp_ken_11"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": -10257394789.48247,
+      "seconds": 1.230967664000005,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_ken_13"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": -10257394791.359547,
+      "seconds": 2.3652853600000014,
+      "residual": 1.1647998121588898e-09,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_ken_13"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": -10257349765.293476,
+      "seconds": 0.698170704000006,
+      "residual": 2.58827640209347e-07,
+      "backend": "ipm",
+      "iterations": 26,
+      "instance": "lp_ken_13"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": -52217025287.396805,
+      "seconds": 12.699466744999995,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_ken_18"
+    },
+    {
+      "solver": "clarabel",
+      "status": "DualInfeasible",
+      "objective": null,
+      "seconds": 5.333796465000006,
+      "residual": null,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_ken_18"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": -52216513731.184135,
+      "seconds": 6.366109442999999,
+      "residual": 1.4835892216069624e-05,
+      "backend": "ipm",
+      "iterations": 34,
+      "instance": "lp_ken_18"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 1497185.1664796423,
+      "seconds": 0.9572693869999966,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_maros_r7"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 1497185.1505517806,
+      "seconds": 3.200605337000013,
+      "residual": 3.2741809263825417e-11,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_maros_r7"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 1497185.1673729126,
+      "seconds": 1.0670784289999915,
+      "residual": 2.785895958368201e-10,
+      "backend": "ipm",
+      "iterations": 20,
+      "instance": "lp_maros_r7"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 1106462.8447362536,
+      "seconds": 1.2730881139999894,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_osa_14"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 1106462.9763350524,
+      "seconds": 2.691081111000017,
+      "residual": 5.056790541857481e-10,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_osa_14"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 1106463.0130451946,
+      "seconds": 1.182560895000023,
+      "residual": 6.492371085187187e-10,
+      "backend": "ipm",
+      "iterations": 55,
+      "instance": "lp_osa_14"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 2142139.8732097656,
+      "seconds": 4.629286428,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_osa_30"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 2142129.087202329,
+      "seconds": 6.798475680999985,
+      "residual": 2.9596982642488e-09,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_osa_30"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 2142164.062525542,
+      "seconds": 2.0226035379999985,
+      "residual": 1.8408172763884068e-09,
+      "backend": "ipm",
+      "iterations": 45,
+      "instance": "lp_osa_30"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 4044072.503157441,
+      "seconds": 21.179296749999992,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_osa_60"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 4044018.4499107935,
+      "seconds": 29.826807876000004,
+      "residual": 6.490154191851616e-09,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_osa_60"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 4044093.806063003,
+      "seconds": 6.56375164100001,
+      "residual": 6.897607818245888e-09,
+      "backend": "ipm",
+      "iterations": 56,
+      "instance": "lp_osa_60"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 26727094976.0,
+      "seconds": 1.7605521070000236,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_pds_10"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 26727094980.040283,
+      "seconds": 35.76058307400001,
+      "residual": 3.3276269245268087e-10,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_pds_10"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 26727095083.27369,
+      "seconds": 2.922149783000009,
+      "residual": 1.3227028375695227e-05,
+      "backend": "pdhg",
+      "iterations": 8576,
+      "instance": "lp_pds_10"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 23821658640.0,
+      "seconds": 13.669034269000008,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_pds_20"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 23821658640.613903,
+      "seconds": 133.82732012999998,
+      "residual": 1.1486743698823883e-09,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_pds_20"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 23821658161.130054,
+      "seconds": 14.03400434599996,
+      "residual": 1.806465775189281e-05,
+      "backend": "pdhg",
+      "iterations": 21696,
+      "instance": "lp_pds_20"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 301.71034733316753,
+      "seconds": 4.666409286000032,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_pilot87"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 301.72472388939445,
+      "seconds": 22.60264530699999,
+      "residual": 4.720686417935452e-09,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_pilot87"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 301.71046610478913,
+      "seconds": 3.740952725999989,
+      "residual": 5.289280124998186e-11,
+      "backend": "ipm",
+      "iterations": 128,
+      "instance": "lp_pilot87"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 522.8943505590611,
+      "seconds": 118.388671493,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_qap12"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 522.8943498310758,
+      "seconds": 4.037621306999995,
+      "residual": 1.9137945790733737e-13,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_qap12"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 522.8974498035591,
+      "seconds": 2.2168734850000646,
+      "residual": 1.8567850028277516e-05,
+      "backend": "pdhg",
+      "iterations": 3392,
+      "instance": "lp_qap12"
+    },
+    {
+      "solver": "highs",
+      "status": "timeout",
+      "seconds": 200.0,
+      "instance": "lp_qap15"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 1040.9940300104643,
+      "seconds": 17.756832148000058,
+      "residual": 1.1357383870496256e-12,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_qap15"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 1041.0001778455592,
+      "seconds": 0.6664238820000037,
+      "residual": 6.960290616721959e-06,
+      "backend": "pdhg",
+      "iterations": 3456,
+      "instance": "lp_qap15"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": -39976.78394364944,
+      "seconds": 0.7955644729998994,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_stocfor3"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": -39976.573791885334,
+      "seconds": 1.40726380600006,
+      "residual": 5.4569682106375694e-12,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_stocfor3"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": -39976.78207887314,
+      "seconds": 0.8136106360000213,
+      "residual": 7.958078640513122e-11,
+      "backend": "ipm",
+      "iterations": 45,
+      "instance": "lp_stocfor3"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 458815.84718561656,
+      "seconds": 3.4900769660000606,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_truss"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 458815.84699389717,
+      "seconds": 0.24826707800002623,
+      "residual": 3.552178924035642e-11,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_truss"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 458822.3288455236,
+      "seconds": 0.15176733300006617,
+      "residual": 2.4024373601605475e-09,
+      "backend": "ipm",
+      "iterations": 20,
+      "instance": "lp_truss"
+    },
+    {
+      "solver": "highs",
+      "status": "optimal",
+      "objective": 1.3044763330842293,
+      "seconds": 0.1340585259999898,
+      "residual": null,
+      "backend": "highs",
+      "iterations": null,
+      "instance": "lp_woodw"
+    },
+    {
+      "solver": "clarabel",
+      "status": "optimal",
+      "objective": 1.3044763344099919,
+      "seconds": 0.3455672540000023,
+      "residual": 2.8421709430404007e-13,
+      "backend": "clarabel",
+      "iterations": null,
+      "instance": "lp_woodw"
+    },
+    {
+      "solver": "linprogx",
+      "status": "optimal",
+      "objective": 1.3045073685951358,
+      "seconds": 0.22445720899997923,
+      "residual": 1.8388846001471393e-10,
+      "backend": "ipm",
+      "iterations": 32,
+      "instance": "lp_woodw"
+    }
+  ]
+}

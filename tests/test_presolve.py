@@ -76,6 +76,61 @@ def test_presolve_doubleton_maps_bounds_and_objective() -> None:
     assert x == pytest.approx([2.0, 1.0])
 
 
+def test_presolve_aggregation_eliminates_free_column_kgt2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # General equality-row aggregation (LINPROGX_PRESOLVE_AGG=1): three 3-term
+    # equality rows where every column has degree 3, so no singleton row,
+    # doubleton, or column-singleton can fire. x0 is free, so only substituting
+    # it out of an equality row (the k>2 generalization of doubleton
+    # elimination) removes it. Rows 1 and 2 then cascade to singletons.
+    #   x0 +  x1 +  x2 = 3
+    #   x0 + 2x1 +  x2 = 4
+    #   x0 +  x1 + 2x2 = 4      (unique feasible point x = [1, 1, 1])
+    monkeypatch.setenv("LINPROGX_PRESOLVE_AGG", "1")
+    reduction = presolve_eq_box(
+        3,
+        3,
+        [0, 3, 6, 9],
+        [0, 1, 2, 0, 1, 2, 0, 1, 2],
+        [1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0],
+        [3.0, 4.0, 4.0],
+        [0.0, 1.0, 1.0],
+        [-INF, 0.0, 0.0],
+        [INF, INF, INF],
+    )
+
+    assert reduction is not None
+    assert reduction._reduction_counts["aggregations"] >= 1
+    # Aggregation + the singleton cascade fully reduce the problem.
+    assert reduction.rows == 0
+    assert reduction.cols == 0
+    # The whole objective (c . x = 2) is carried in the offset.
+    assert reduction.objective_offset == pytest.approx(2.0)
+
+    # Postsolve must reconstruct the free column exactly from its pivot row.
+    x = postsolve_x([], reduction)
+    assert x == pytest.approx([1.0, 1.0, 1.0])
+
+
+def test_presolve_aggregation_off_by_default() -> None:
+    # The same 3x3 system reduces to nothing without the knob: the classic
+    # cascade cannot touch a free column buried in >2-term equality rows.
+    reduction = presolve_eq_box(
+        3,
+        3,
+        [0, 3, 6, 9],
+        [0, 1, 2, 0, 1, 2, 0, 1, 2],
+        [1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0],
+        [3.0, 4.0, 4.0],
+        [0.0, 1.0, 1.0],
+        [-INF, 0.0, 0.0],
+        [INF, INF, INF],
+    )
+
+    assert reduction is None
+
+
 def test_sparse_pdhg_presolve_matches_unpresolved_solution() -> None:
     # Chain with a doubleton head: x0 + x1 = 4, x1 + x2 + x3 = 6.
     problem = SparseLPProblem(

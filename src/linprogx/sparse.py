@@ -10,10 +10,45 @@ try:
 except ImportError:  # pragma: no cover - source tree before extension build
     CSRMatrix = None  # type: ignore[assignment]
 
-from linprogx.presolve import postsolve_x, presolve_eq_box
+from linprogx.presolve import postsolve_x, presolve_matrix
 from linprogx.types import ObjectiveSense, Solution, Status
 
 SparseSense = Literal["<=", ">=", "="]
+
+
+def _max_equality_residual(matrix: Any, x: list[float], b: list[float]) -> float:
+    ax = matrix.matvec(x)
+    return max((abs(float(lhs) - rhs) for lhs, rhs in zip(ax, b, strict=True)), default=0.0)
+
+
+def _ipm_stall_risk(c: list[float], lo: list[float], hi: list[float], nnz: int, cols: int) -> bool:
+    """Predict whether the IPM will stall on a structurally adversarial problem.
+
+    Returns True when >= 50% of columns are one-sided with a cost that does
+    not resist movement toward the infinite side (c_j <= 0 for lo-only, or
+    c_j >= 0 for hi-only) AND the average column nnz is in [5, 8) --
+    network-ish sparsity with enough per-column coupling that dual
+    adjustments cascade and the min-norm repair diverges.
+
+    The broader c_j = 0 inclusion matters because zero-cost one-sided
+    columns have their reduced cost entirely determined by the dual iterate,
+    giving the IPM no cost gradient to close the certificate.
+    """
+    if cols == 0:
+        return False
+    avg_col_nnz = nnz / cols
+    if avg_col_nnz < 5.0 or avg_col_nnz >= 8.0:
+        return False
+    inf = float("inf")
+    at_risk = 0
+    for j in range(cols):
+        lo_finite = lo[j] > -inf
+        hi_finite = hi[j] < inf
+        if lo_finite and not hi_finite and c[j] <= 0.0:
+            at_risk += 1
+        elif hi_finite and not lo_finite and c[j] >= 0.0:
+            at_risk += 1
+    return at_risk >= cols * 0.50
 
 
 @dataclass(frozen=True)
@@ -58,6 +93,7 @@ class SparseSolveResult:
     solution: Solution
     backend: str
     seconds: float
+    ipm_slice_us: dict[str, float] | None = None
 
 
 @dataclass
@@ -87,32 +123,45 @@ class SparseSolver:
     #: back to PDHG if the ordering or the factor turns out too expensive
     #: (minimum-degree work budget and a factor-flops cap).
     AUTO_IPM_MAX_ROWS = 50_000
+    #: 0 = auto: the C side sizes the worker pool to the physical-core
+    #: estimate (logical cores / 2, capped at the pool maximum). The PDHG
+    #: kernels are bit-identical at any thread count, so the choice only
+    #: affects wall clock, never the trajectory.
+    DEFAULT_PDHG_THREADS = 0
 
     def __init__(
         self,
         *,
         eps: float = 1e-9,
         max_iterations: int = 50_000,
-        algorithm: Literal["simplex", "pdhg", "ipm", "auto"] = "simplex",
+        algorithm: Literal["simplex", "pdhg", "ipm", "dual_simplex", "auto"] = "simplex",
         objective_scale: float | None = None,
         check_interval: int | None = None,
         presolve: bool = True,
+        threads: int | None = None,
     ) -> None:
+        if threads is not None and threads < 0:
+            msg = "threads must be nonnegative"
+            raise ValueError(msg)
         self.eps = eps
         self.max_iterations = max_iterations
         self.algorithm = algorithm
         self.objective_scale = objective_scale
         self.check_interval = check_interval
         self.presolve = presolve
+        self.threads = threads
+        self._last_ipm_slice_us: dict[str, float] | None = None
 
     def solve(self, problem: SparseLPProblem) -> SparseSolveResult:
         start = time.perf_counter()
-        if self.algorithm in ("pdhg", "ipm", "auto"):
+        self._last_ipm_slice_us = None
+        if self.algorithm in ("pdhg", "ipm", "dual_simplex", "auto"):
             solution, backend = self._solve_eq_box(problem, self.algorithm)
         else:
             solution = self._solve(problem)
             backend = "native-sparse-simplex"
-        return SparseSolveResult(solution, backend, time.perf_counter() - start)
+        ipm_slice_us = self._last_ipm_slice_us if backend == "native-c-sparse-ipm" else None
+        return SparseSolveResult(solution, backend, time.perf_counter() - start, ipm_slice_us)
 
     def _solve_eq_box(self, problem: SparseLPProblem, algorithm: str) -> tuple[Solution, str]:
         backend = f"native-c-sparse-{algorithm}"
@@ -137,17 +186,18 @@ class SparseSolver:
         matrix = problem.A_eq
         reduction = None
         if self.presolve:
-            rows, cols = matrix.shape
-            indptr, indices, data = matrix.to_components()
-            reduction = presolve_eq_box(rows, cols, indptr, indices, data, b, c, lo, hi)
+            reduction = presolve_matrix(matrix, b, c, lo, hi, algorithm=algorithm)
         if reduction is not None:
-            matrix = csr_matrix(
-                reduction.rows,
-                reduction.cols,
-                reduction.indptr,
-                reduction.indices,
-                reduction.data,
-            )
+            if reduction._matrix is not None:
+                matrix = reduction._matrix
+            else:
+                matrix = csr_matrix(
+                    reduction.rows,
+                    reduction.cols,
+                    reduction.indptr,
+                    reduction.indices,
+                    reduction.data,
+                )
             solve_c, solve_b = reduction.c, reduction.b
             solve_lo, solve_hi = reduction.lo, reduction.hi
         else:
@@ -156,9 +206,71 @@ class SparseSolver:
         chosen = algorithm
         if algorithm == "auto":
             rows, _ = matrix.shape
-            chosen = "ipm" if rows <= self.AUTO_IPM_MAX_ROWS else "pdhg"
+            # Net aggregation is certified only for models already on the
+            # PDHG route.  Its large row reduction must not reclassify that
+            # same solve as IPM merely because the reduced row count crossed
+            # the auto threshold.
+            net_aggregated = (
+                reduction is not None and reduction._reduction_counts.get("net_aggregations", 0) > 0
+            )
+            chosen = (
+                "pdhg" if net_aggregated else ("ipm" if rows <= self.AUTO_IPM_MAX_ROWS else "pdhg")
+            )
+
+        # Stall-prediction shortcut: when the presolved problem has
+        # structurally adversarial one-sided columns with costs pointing
+        # at the infinite side, the IPM's Lagrangian certificate is at
+        # risk.  Try the dual simplex FIRST (cheap basis method) and
+        # accept its result only when it certifies optimally in original
+        # units.  If it fails or doesn't certify, fall through to the
+        # normal IPM path unchanged.
+        if algorithm == "auto" and chosen == "ipm":
+            ps_rows, ps_cols = matrix.shape
+            if (
+                ps_rows <= 4000
+                and ps_cols <= 30_000
+                and _ipm_stall_risk(solve_c, solve_lo, solve_hi, matrix.nnz, ps_cols)
+            ):
+                ds_early = matrix.solve_eq_box_dual_simplex(
+                    solve_c,
+                    solve_b,
+                    solve_lo,
+                    solve_hi,
+                    max_iter=min(self.max_iterations, 50_000),
+                    leaving_rule=1,
+                    expand=1,
+                )
+                if ds_early["status"] == "optimal":
+                    dx = [float(value) for value in ds_early["x"]]
+                    if reduction is not None:
+                        dx = postsolve_x(dx, reduction)
+                    objective = sum(v * coef for v, coef in zip(dx, problem.c, strict=True))
+                    residual = _max_equality_residual(problem.A_eq, dx, b)
+                    if residual <= self.eps:
+                        return Solution(
+                            Status.OPTIMAL,
+                            x=dx,
+                            objective_value=objective,
+                            iterations=int(ds_early["iterations"]),
+                            message=(
+                                "stall predictor routed to dual simplex; "
+                                f"max equality residual {residual:.3e}"
+                            ),
+                        ), "native-c-sparse-dual-simplex"
 
         result = None
+        feasible_ipm_candidate: tuple[list[float], float, int, float] | None = None
+        if chosen == "dual_simplex":
+            # Preserve the library default for explicit user-selected dual simplex;
+            # the Dantzig leaving rule is only a route-level auto rescue policy.
+            result = matrix.solve_eq_box_dual_simplex(
+                solve_c,
+                solve_b,
+                solve_lo,
+                solve_hi,
+                max_iter=min(self.max_iterations, 200_000),
+                expand=1,
+            )
         if chosen == "ipm":
             result = matrix.solve_eq_box_ipm(
                 solve_c,
@@ -167,7 +279,32 @@ class SparseSolver:
                 solve_hi,
                 max_iter=min(self.max_iterations, 200),
                 tol=min(self.eps, 1e-9),
+                threads=0 if self.threads is None else self.threads,
+                feas_tol=self.eps,
             )
+            raw_slice = result.get("ipm_slice_us")
+            if isinstance(raw_slice, dict):
+                self._last_ipm_slice_us = {
+                    str(key): float(value) for key, value in raw_slice.items()
+                }
+            if result["status"] == "optimal":
+                candidate_x = [float(value) for value in result["x"]]
+                if reduction is not None:
+                    candidate_x = postsolve_x(candidate_x, reduction)
+                if _max_equality_residual(problem.A_eq, candidate_x, b) > self.eps:
+                    result["status"] = "raw_feasibility_failure"
+            elif result["status"] != "factor_too_dense":
+                candidate_x = [float(value) for value in result["x"]]
+                if reduction is not None:
+                    candidate_x = postsolve_x(candidate_x, reduction)
+                candidate_residual = _max_equality_residual(problem.A_eq, candidate_x, b)
+                if candidate_residual <= self.eps:
+                    feasible_ipm_candidate = (
+                        candidate_x,
+                        sum(v * coef for v, coef in zip(candidate_x, problem.c, strict=True)),
+                        int(result["iterations"]),
+                        candidate_residual,
+                    )
             if result["status"] != "optimal" and result["status"] != "factor_too_dense":
                 # The fast BLAS dpotrf tail factor lacks the hand
                 # kernel's per-pivot floor, so on degenerate endgames it
@@ -190,9 +327,16 @@ class SparseSolver:
                         rhi,
                         max_iter=min(self.max_iterations, 200),
                         tol=min(self.eps, 1e-9),
+                        threads=0 if self.threads is None else self.threads,
                         blas=False,
+                        feas_tol=self.eps,
                     )
                     if retry_result["status"] == "optimal":
+                        retry_slice = retry_result.get("ipm_slice_us")
+                        if isinstance(retry_slice, dict):
+                            self._last_ipm_slice_us = {
+                                str(key): float(value) for key, value in retry_slice.items()
+                            }
                         is_raw = rmatrix is problem.A_eq and reduction is not None
                         rx = [float(value) for value in retry_result["x"]]
                         if is_raw:
@@ -200,7 +344,9 @@ class SparseSolver:
                         else:
                             rx = postsolve_x(rx, reduction) if reduction is not None else rx
                             objective = sum(v * coef for v, coef in zip(rx, problem.c, strict=True))
-                        residual = float(retry_result["max_primal_residual"])
+                        residual = _max_equality_residual(problem.A_eq, rx, b)
+                        if residual > self.eps:
+                            continue
                         return Solution(
                             Status.OPTIMAL,
                             x=rx,
@@ -211,6 +357,54 @@ class SparseSolver:
                                 f"max equality residual {residual:.3e}"
                             ),
                         ), "native-c-sparse-ipm"
+                if algorithm == "auto":
+                    rows, cols = matrix.shape
+                    if rows <= 4000 and cols <= 30_000:
+                        # Dual simplex rescue: greenbea-class instances reach
+                        # an uncertifiable IPM stall, but the basis method
+                        # certifies exactly (primal + dual feasible at a
+                        # basis implies complementarity). Only worth trying
+                        # at sizes where the product-form solver is
+                        # practical; the residual re-check below keeps the
+                        # eps contract on the original problem.
+                        ds_result = matrix.solve_eq_box_dual_simplex(
+                            solve_c,
+                            solve_b,
+                            solve_lo,
+                            solve_hi,
+                            max_iter=min(self.max_iterations, 50_000),
+                            leaving_rule=1,
+                            expand=1,
+                        )
+                        if ds_result["status"] == "optimal":
+                            dx = [float(value) for value in ds_result["x"]]
+                            if reduction is not None:
+                                dx = postsolve_x(dx, reduction)
+                            objective = sum(v * coef for v, coef in zip(dx, problem.c, strict=True))
+                            residual = _max_equality_residual(problem.A_eq, dx, b)
+                            if residual <= self.eps:
+                                return Solution(
+                                    Status.OPTIMAL,
+                                    x=dx,
+                                    objective_value=objective,
+                                    iterations=int(ds_result["iterations"]),
+                                    message=(
+                                        "native sparse dual simplex certified after the "
+                                        f"IPM stalled; max equality residual {residual:.3e}"
+                                    ),
+                                ), "native-c-sparse-dual-simplex"
+                if algorithm == "auto" and feasible_ipm_candidate is not None:
+                    fx, fobj, fiters, fresidual = feasible_ipm_candidate
+                    return Solution(
+                        Status.ITERATION_LIMIT,
+                        fobj,
+                        fx,
+                        message=(
+                            "native sparse auto kept the best feasible IPM candidate; "
+                            f"max equality residual {fresidual:.3e}"
+                        ),
+                        iterations=fiters,
+                    ), "native-c-sparse-ipm"
             if result["status"] != "optimal" and (
                 algorithm == "auto" or result["status"] == "factor_too_dense"
             ):
@@ -227,6 +421,7 @@ class SparseSolver:
                 tol=self.eps,
                 check_interval=self.check_interval or 250,
                 objective_scale=0.0 if self.objective_scale is None else self.objective_scale,
+                threads=self.DEFAULT_PDHG_THREADS if self.threads is None else self.threads,
             )
         backend = f"native-c-sparse-{chosen}"
 
@@ -236,17 +431,43 @@ class SparseSolver:
             x = postsolve_x(x, reduction)
             objective = sum(value * coef for value, coef in zip(x, problem.c, strict=True))
 
-        status = Status.OPTIMAL if result["status"] == "optimal" else Status.ITERATION_LIMIT
-        residual = float(result["max_primal_residual"])
+        residual = _max_equality_residual(problem.A_eq, x, b)
+        status = (
+            Status.OPTIMAL
+            if result["status"] == "optimal" and residual <= self.eps
+            else Status.ITERATION_LIMIT
+        )
         presolve_note = (
             f"; presolve removed {reduction.removed_rows} rows and {reduction.removed_cols} cols"
             if reduction is not None
             else ""
         )
+        if (
+            status != Status.OPTIMAL
+            and feasible_ipm_candidate is not None
+            and residual > feasible_ipm_candidate[3]
+        ):
+            x, objective, iterations, residual = feasible_ipm_candidate
+            return Solution(
+                Status.ITERATION_LIMIT,
+                objective,
+                x,
+                message=(
+                    "native sparse auto kept the best feasible IPM candidate after "
+                    f"fallback failed; max equality residual {residual:.3e}{presolve_note}"
+                ),
+                iterations=iterations,
+            ), "native-c-sparse-ipm"
         if chosen == "ipm":
             verb = "converged" if status == Status.OPTIMAL else "hit the iteration limit"
             message = (
                 f"native sparse IPM {verb}; max equality residual {residual:.3e}{presolve_note}"
+            )
+        elif chosen == "dual_simplex":
+            verb = "converged" if status == Status.OPTIMAL else "hit the iteration limit"
+            message = (
+                f"native sparse dual simplex {verb}; "
+                f"max equality residual {residual:.3e}{presolve_note}"
             )
         else:
             objective_scale = float(result["objective_scale"])

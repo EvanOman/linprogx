@@ -1,0 +1,4645 @@
+{
+  "ref": "c34417761bb643789620b1130c0d9adf7508373e",
+  "mode": "paired",
+  "protocol": "v3",
+  "hosts": 3,
+  "pairs": 7,
+  "use_snapshot": true,
+  "instances": [
+    "lp_osa_14",
+    "lp_osa_60",
+    "lp_pds_10",
+    "lp_pds_20",
+    "lp_pilot87",
+    "lp_woodw",
+    "lp_greenbea"
+  ],
+  "host_results": [
+    {
+      "ref": "c34417761bb643789620b1130c0d9adf7508373e",
+      "mode": "paired",
+      "use_snapshot": true,
+      "machine_info": {
+        "cpu_model": "unknown",
+        "cpu_count": 20,
+        "mem_total_kb": 395296428,
+        "loadavg": "0.00 0.00 0.00 0/0 0",
+        "modal_region": "us-west-2",
+        "modal_cloud": "CLOUD_PROVIDER_AWS",
+        "modal_task_id": "ta-01KXPYTF9J0GJGB659AX0NW8PR"
+      },
+      "load_checks": {
+        "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+        "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+      },
+      "paired": {
+        "lp_osa_14": {
+          "pairs": 7,
+          "lx": {
+            "median": 1.8878106700000004,
+            "min": 1.794091739999999,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 1.3424581320000044,
+            "min": 1.3280223010000043,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.4062342988585614,
+          "ratio_min": 1.350950009385417,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 1.8963291210000008,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3465386630000005,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 1.868283581,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3723530400000001,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 1.8878106700000004,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3401518439999975,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 1.9191917390000022,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3424581320000044,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 1.9090410789999979,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3519828619999998,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 1.8646378210000023,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3289833100000052,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 1.794091739999999,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3280223010000043,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_osa_60": {
+          "pairs": 7,
+          "lx": {
+            "median": 29.51385721999999,
+            "min": 28.666384198999992,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 21.538579206999998,
+            "min": 21.229159445999997,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.3702787419890743,
+          "ratio_min": 1.3503306276406208,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 30.104503010000002,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 21.229159445999997,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.51385721999999,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 21.974237334999998,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.564301071000017,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 21.538579206999998,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.860744728000014,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 21.460199106000005,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.157689876000006,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 21.602257502000043,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 28.666384198999992,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 21.771675724000033,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.296577001999992,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 21.49047139099997,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_pds_10": {
+          "pairs": 7,
+          "lx": {
+            "median": 2.3124617910000325,
+            "min": 2.2393169250000255,
+            "n": 7,
+            "status": "optimal",
+            "backend": "pdhg"
+          },
+          "hx": {
+            "median": 1.8085400040000081,
+            "min": 1.7613503979999905,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.2786345814222986,
+          "ratio_min": 1.2713636806979265,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.4420628899999883,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.8085400040000081,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.90915464699998,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.8148072419999721,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.514721576999989,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.829887121000013,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.3124617910000325,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.837535607999996,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.2418903750000254,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.7726102920000244,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.250872759999993,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.7613503979999905,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.2393169250000255,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.761943056000007,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_pds_20": {
+          "pairs": 7,
+          "lx": {
+            "median": 10.535605597999961,
+            "min": 10.374322643000028,
+            "n": 7,
+            "status": "optimal",
+            "backend": "pdhg"
+          },
+          "hx": {
+            "median": 13.372945291999997,
+            "min": 13.25751231800001,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 7,
+          "ratio_median": 0.7878298585654577,
+          "ratio_min": 0.7825240810008214,
+          "verdict": "lx_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.396049672000004,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.25751231800001,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.474388156000032,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.372945291999997,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 11.003313348999995,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.31786393699997,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.83994901699998,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.62524585999995,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.702866062999988,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.32533264999995,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.535605597999961,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.531771260000028,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.374322643000028,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.46711696300008,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            }
+          ]
+        },
+        "lp_pilot87": {
+          "pairs": 7,
+          "lx": {
+            "median": 3.856243107999944,
+            "min": 3.80486269000005,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 4.669974474000014,
+            "min": 4.588710988999992,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 7,
+          "ratio_median": 0.8257525023893594,
+          "ratio_min": 0.8291789783930662,
+          "verdict": "lx_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.1889285180000115,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.695188196999993,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.80486269000005,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.81290943800002,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.856243107999944,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.6107625409999855,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.119681633000027,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.669974474000014,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.829117561999965,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.632388065999976,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.9051690730000246,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.588710988999992,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.8087875969999914,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.692651205000061,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            }
+          ]
+        },
+        "lp_woodw": {
+          "pairs": 7,
+          "lx": {
+            "median": 0.14290158900007555,
+            "min": 0.13680489399996532,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 0.14098127499994462,
+            "min": 0.13671368200004963,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 2,
+          "ratio_median": 1.0136210571235909,
+          "ratio_min": 1.0006671753593444,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15463705199999822,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.1390986569999768,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.13848513800007822,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.1447114260000717,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.15812553899991144,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14098127499994462,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.14290158900007555,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.13671368200004963,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.13680489399996532,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14336965699999382,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.13978589900000316,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.13920371900007922,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1446882509999341,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14211311200006094,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_greenbea": {
+          "pairs": 7,
+          "lx": {
+            "median": 0.6293801230000327,
+            "min": 0.6277368500000193,
+            "n": 7,
+            "status": "optimal",
+            "backend": "simplex"
+          },
+          "hx": {
+            "median": 0.3713410409999369,
+            "min": 0.3637117869999429,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.6948843610317221,
+          "ratio_min": 1.725918357438655,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6293801230000327,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.3984246539999958,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6315796170000567,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.3694182340000225,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6312888909999401,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.3679606829999784,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6278306899999961,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.3716808450000144,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6282895949999556,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.3713410409999369,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6277368500000193,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.37154226300003756,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6420958100000007,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.3637117869999429,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        }
+      },
+      "host_index": 0
+    },
+    {
+      "ref": "c34417761bb643789620b1130c0d9adf7508373e",
+      "mode": "paired",
+      "use_snapshot": true,
+      "machine_info": {
+        "cpu_model": "unknown",
+        "cpu_count": 20,
+        "mem_total_kb": 395296404,
+        "loadavg": "0.00 0.00 0.00 0/0 0",
+        "modal_region": "us-west-2",
+        "modal_cloud": "CLOUD_PROVIDER_AWS",
+        "modal_task_id": "ta-01KXPYTG9C7244B3HJBJ4CK4TR"
+      },
+      "load_checks": {
+        "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+        "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+      },
+      "paired": {
+        "lp_osa_14": {
+          "pairs": 7,
+          "lx": {
+            "median": 2.0088148899999965,
+            "min": 1.8519781019999968,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 1.410593844999994,
+            "min": 1.3551542529999985,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.4240916314220873,
+          "ratio_min": 1.3666179314274705,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 1.921585107000002,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3658219570000014,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.9751614129999986,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3732013080000023,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.0080243620000005,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3551542529999985,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 1.8519781019999968,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.5040126709999981,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.0088148899999965,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.4662495080000042,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.119486299000002,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.410593844999994,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.371932326999996,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.5236057480000014,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_osa_60": {
+          "pairs": 7,
+          "lx": {
+            "median": 29.623713993000003,
+            "min": 28.710579147999994,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 22.963697018999966,
+            "min": 21.474359996000032,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.2900237260790193,
+          "ratio_min": 1.3369701892558303,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.623713993000003,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 23.17616570700001,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.77194375000002,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 23.549849388000013,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.160729387000003,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 21.684773952,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 28.710579147999994,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 22.963697018999966,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.65030213,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 22.905119326000033,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.347794894000003,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 21.474359996000032,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.984569850999947,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 23.06702324500003,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_pds_10": {
+          "pairs": 7,
+          "lx": {
+            "median": 2.467586949000008,
+            "min": 2.3368597219999856,
+            "n": 7,
+            "status": "optimal",
+            "backend": "pdhg"
+          },
+          "hx": {
+            "median": 1.9721927119999805,
+            "min": 1.9061181199999737,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.251189568841705,
+          "ratio_min": 1.2259784414619688,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.5049563430000035,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.9061181199999737,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.467586949000008,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.9463279760000205,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.664022541999998,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 2.000215787000002,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.838874926000017,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.9246424390000243,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.364359500999967,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.9832090630000039,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.349346701999991,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.9721927119999805,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.3368597219999856,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 2.019426368999973,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_pds_20": {
+          "pairs": 7,
+          "lx": {
+            "median": 11.379371484999979,
+            "min": 10.571057493000012,
+            "n": 7,
+            "status": "optimal",
+            "backend": "pdhg"
+          },
+          "hx": {
+            "median": 13.71503670300001,
+            "min": 13.472635210000021,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 7,
+          "ratio_median": 0.8297004033908907,
+          "ratio_min": 0.7846317612128084,
+          "verdict": "lx_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 12.267362099000025,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.703281668000045,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.835129410000036,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 14.099581510000007,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.588128293999944,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 14.33491924000009,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 11.733082314000058,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.721640213,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.571057493000012,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.71503670300001,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 11.939879869999913,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.472635210000021,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 11.379371484999979,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.517243946000008,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            }
+          ]
+        },
+        "lp_pilot87": {
+          "pairs": 7,
+          "lx": {
+            "median": 3.7614153540000643,
+            "min": 3.7084573440000668,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 4.628353361999984,
+            "min": 4.585828381000056,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 7,
+          "ratio_median": 0.8126897537431536,
+          "ratio_min": 0.8086777427966775,
+          "verdict": "lx_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.797284350000041,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.628353361999984,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.9849235069999622,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.638412467999956,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.7614153540000643,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.637086938000039,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.7567314560000113,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.624288036000053,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.766320984999993,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.603398302000073,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.7263651880000452,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.664066736999985,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.7084573440000668,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.585828381000056,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            }
+          ]
+        },
+        "lp_woodw": {
+          "pairs": 7,
+          "lx": {
+            "median": 0.1361008190000348,
+            "min": 0.1347489620000033,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 0.13733662000004188,
+            "min": 0.13588804200003324,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 6,
+          "ratio_median": 0.991001664377595,
+          "ratio_min": 0.991617511127067,
+          "verdict": "lx_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1353608480000048,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.13588804200003324,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1361008190000348,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.13733662000004188,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1347489620000033,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14019137000002502,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.13691812900003697,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14339255100003356,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.13696953100009068,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.13629197499994916,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.13626246100000117,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.13789945500002432,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.13503470499995274,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.13636276500005806,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            }
+          ]
+        },
+        "lp_greenbea": {
+          "pairs": 7,
+          "lx": {
+            "median": 0.6238850529999809,
+            "min": 0.6110111059999781,
+            "n": 7,
+            "status": "optimal",
+            "backend": "simplex"
+          },
+          "hx": {
+            "median": 0.36416956099992603,
+            "min": 0.35715057799995975,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.7131718842369354,
+          "ratio_min": 1.710794112168697,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6110111059999781,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.35715057799995975,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6179354240000521,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.36416956099992603,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6321619110000256,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.365645910000012,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6231229210000038,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.36295854299999064,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.7512626760000103,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.364401732000033,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6281615750000356,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.36383635400000003,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6238850529999809,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.36442500300006486,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        }
+      },
+      "host_index": 1
+    },
+    {
+      "ref": "c34417761bb643789620b1130c0d9adf7508373e",
+      "mode": "paired",
+      "use_snapshot": true,
+      "machine_info": {
+        "cpu_model": "unknown",
+        "cpu_count": 20,
+        "mem_total_kb": 395296456,
+        "loadavg": "0.00 0.00 0.00 0/0 0",
+        "modal_region": "us-west-2",
+        "modal_cloud": "CLOUD_PROVIDER_AWS",
+        "modal_task_id": "ta-01KXPYTJW1G2BFWSBKHQXMKA5R"
+      },
+      "load_checks": {
+        "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+        "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+      },
+      "paired": {
+        "lp_osa_14": {
+          "pairs": 7,
+          "lx": {
+            "median": 2.327055870999999,
+            "min": 2.2067084259999987,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 1.399893188,
+            "min": 1.3569198759999992,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.662309589722783,
+          "ratio_min": 1.6262628803883774,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.469480411000003,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.4356179900000008,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.256445808999999,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3738798160000023,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.2630085609999995,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3569198759999992,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.327055870999999,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.3687227839999991,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.339433815999996,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.424962556000004,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.362466894999997,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.4058300370000012,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1106463.0130451946,
+                "seconds": 2.2067084259999987,
+                "residual": 6.492371085187187e-10,
+                "backend": "ipm",
+                "iterations": 55
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1106462.8447362536,
+                "seconds": 1.399893188,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_osa_60": {
+          "pairs": 7,
+          "lx": {
+            "median": 30.59849153700003,
+            "min": 29.675454427999966,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 23.782045021999977,
+            "min": 22.46256938099998,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.2866215461578003,
+          "ratio_min": 1.321106856684927,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 31.113141774999995,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 23.255116811999997,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.931795477999998,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 23.86326554300001,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 32.364043753000004,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 24.638158119999986,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 30.008246877999994,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 23.88823226400001,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 30.62956662800002,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 23.782045021999977,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 30.59849153700003,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 23.434462009000015,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 4044093.806063003,
+                "seconds": 29.675454427999966,
+                "residual": 6.897607818245888e-09,
+                "backend": "ipm",
+                "iterations": 56
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 4044072.503157441,
+                "seconds": 22.46256938099998,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_pds_10": {
+          "pairs": 7,
+          "lx": {
+            "median": 2.3627880959999743,
+            "min": 2.270082775999981,
+            "n": 7,
+            "status": "optimal",
+            "backend": "pdhg"
+          },
+          "hx": {
+            "median": 1.8776270940000472,
+            "min": 1.8330135829999676,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.2583904991306623,
+          "ratio_min": 1.2384429646640656,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.7220250849999843,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.9139994299999898,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.278627459000006,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.8330135829999676,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.3623131639999997,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.8776270940000472,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.4446840420000058,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.8704420020000043,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.3627880959999743,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.8520604249999906,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.270082775999981,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.8820069349999926,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 26727095083.27369,
+                "seconds": 2.379017594000004,
+                "residual": 1.3227028375695227e-05,
+                "backend": "pdhg",
+                "iterations": 8576
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 26727094976.0,
+                "seconds": 1.9630659830000354,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_pds_20": {
+          "pairs": 7,
+          "lx": {
+            "median": 11.234472944999993,
+            "min": 10.340994434000038,
+            "n": 7,
+            "status": "optimal",
+            "backend": "pdhg"
+          },
+          "hx": {
+            "median": 13.639389517999973,
+            "min": 13.535025848000032,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 6,
+          "ratio_median": 0.8236785766821749,
+          "ratio_min": 0.7640173391710255,
+          "verdict": "lx_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.340994434000038,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.639389517999973,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 10.728240845999949,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.585466958999973,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 11.234472944999993,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.620589405000032,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 13.439516604999994,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.798193573000049,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 14.762704615000075,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.765311591999989,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 11.027478029999997,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 14.018247674999998,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 23821658161.130054,
+                "seconds": 12.05006813700004,
+                "residual": 1.806465775189281e-05,
+                "backend": "pdhg",
+                "iterations": 21696
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 23821658640.0,
+                "seconds": 13.535025848000032,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            }
+          ]
+        },
+        "lp_pilot87": {
+          "pairs": 7,
+          "lx": {
+            "median": 4.3763934099999915,
+            "min": 3.927611804000094,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 4.661009328999967,
+            "min": 4.652224649999994,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 7,
+          "ratio_median": 0.9389368484570185,
+          "ratio_min": 0.8442437972121787,
+          "verdict": "lx_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 3.927611804000094,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.652224649999994,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.091404385000033,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.682904097000005,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.535459934000073,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.687807679000002,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.248312609999971,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.665834468000071,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.434084471999995,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.656602906999979,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.3763934099999915,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.661009328999967,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 301.71046610478913,
+                "seconds": 4.42475974599995,
+                "residual": 5.289280124998186e-11,
+                "backend": "ipm",
+                "iterations": 128
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 301.71034733316753,
+                "seconds": 4.659982996999929,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": true
+            }
+          ]
+        },
+        "lp_woodw": {
+          "pairs": 7,
+          "lx": {
+            "median": 0.16129307899996093,
+            "min": 0.14996394299998883,
+            "n": 7,
+            "status": "optimal",
+            "backend": "ipm"
+          },
+          "hx": {
+            "median": 0.14581897400000798,
+            "min": 0.14037140599998565,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.1061185974326777,
+          "ratio_min": 1.0683368306505683,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1674211470000273,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14597503800007416,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.159484826000039,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14196318799997698,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.17040971599999466,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14037140599998565,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.16129307899996093,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14254184099991107,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1589198070000748,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14586990399993738,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.1659903890000578,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14669948700009172,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": 1.3045073685951358,
+                "seconds": 0.14996394299998883,
+                "residual": 1.8388846001471393e-10,
+                "backend": "ipm",
+                "iterations": 32
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": 1.3044763330842293,
+                "seconds": 0.14581897400000798,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        },
+        "lp_greenbea": {
+          "pairs": 7,
+          "lx": {
+            "median": 0.634817349000059,
+            "min": 0.6326167000000851,
+            "n": 7,
+            "status": "optimal",
+            "backend": "simplex"
+          },
+          "hx": {
+            "median": 0.3787075600000662,
+            "min": 0.3728745410001011,
+            "n": 7,
+            "status": "optimal"
+          },
+          "lx_wins": 0,
+          "ratio_median": 1.676273241019926,
+          "ratio_min": 1.6965939758271498,
+          "verdict": "highs_faster",
+          "pair_results": [
+            {
+              "pair": 1,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6326167000000851,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.37949199799993494,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 2,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6345713960000694,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.3794454090000272,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 3,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6361742029999959,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.37589410099997167,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 4,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.634817349000059,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.37795234600002914,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 5,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6340378710000323,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.3728745410001011,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 6,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6390001640000946,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.3787075600000662,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            },
+            {
+              "pair": 7,
+              "lx": {
+                "solver": "linprogx",
+                "status": "optimal",
+                "objective": -72555248.12984592,
+                "seconds": 0.6366398239999853,
+                "residual": 1.7688915798785843e-07,
+                "backend": "simplex",
+                "iterations": 4399
+              },
+              "hx": {
+                "solver": "highs",
+                "status": "optimal",
+                "objective": -72555248.12984593,
+                "seconds": 0.37991754899996977,
+                "residual": null,
+                "backend": "highs",
+                "iterations": null
+              },
+              "lx_won": false
+            }
+          ]
+        }
+      },
+      "host_index": 2
+    }
+  ],
+  "v3": {
+    "protocol": "v3",
+    "hosts": 3,
+    "paired": {
+      "lp_greenbea": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 1.6948843610317221,
+        "ratio_min_host": 1.676273241019926,
+        "ratio_max_host": 1.7131718842369354,
+        "lx_wins_by_host": [
+          0,
+          0,
+          0
+        ],
+        "lx_wins_total": 0,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "highs_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296428,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTF9J0GJGB659AX0NW8PR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 0.6293801230000327,
+              "min": 0.6277368500000193,
+              "n": 7,
+              "status": "optimal",
+              "backend": "simplex"
+            },
+            "hx": {
+              "median": 0.3713410409999369,
+              "min": 0.3637117869999429,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.6948843610317221,
+            "ratio_min": 1.725918357438655,
+            "verdict": "highs_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296404,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTG9C7244B3HJBJ4CK4TR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 0.6238850529999809,
+              "min": 0.6110111059999781,
+              "n": 7,
+              "status": "optimal",
+              "backend": "simplex"
+            },
+            "hx": {
+              "median": 0.36416956099992603,
+              "min": 0.35715057799995975,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.7131718842369354,
+            "ratio_min": 1.710794112168697,
+            "verdict": "highs_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296456,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTJW1G2BFWSBKHQXMKA5R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 0.634817349000059,
+              "min": 0.6326167000000851,
+              "n": 7,
+              "status": "optimal",
+              "backend": "simplex"
+            },
+            "hx": {
+              "median": 0.3787075600000662,
+              "min": 0.3728745410001011,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.676273241019926,
+            "ratio_min": 1.6965939758271498,
+            "verdict": "highs_faster"
+          }
+        ]
+      },
+      "lp_osa_14": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 1.4240916314220873,
+        "ratio_min_host": 1.4062342988585614,
+        "ratio_max_host": 1.662309589722783,
+        "lx_wins_by_host": [
+          0,
+          0,
+          0
+        ],
+        "lx_wins_total": 0,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "highs_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296428,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTF9J0GJGB659AX0NW8PR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 1.8878106700000004,
+              "min": 1.794091739999999,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 1.3424581320000044,
+              "min": 1.3280223010000043,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.4062342988585614,
+            "ratio_min": 1.350950009385417,
+            "verdict": "highs_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296404,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTG9C7244B3HJBJ4CK4TR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 2.0088148899999965,
+              "min": 1.8519781019999968,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 1.410593844999994,
+              "min": 1.3551542529999985,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.4240916314220873,
+            "ratio_min": 1.3666179314274705,
+            "verdict": "highs_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296456,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTJW1G2BFWSBKHQXMKA5R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 2.327055870999999,
+              "min": 2.2067084259999987,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 1.399893188,
+              "min": 1.3569198759999992,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.662309589722783,
+            "ratio_min": 1.6262628803883774,
+            "verdict": "highs_faster"
+          }
+        ]
+      },
+      "lp_osa_60": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 1.2900237260790193,
+        "ratio_min_host": 1.2866215461578003,
+        "ratio_max_host": 1.3702787419890743,
+        "lx_wins_by_host": [
+          0,
+          0,
+          0
+        ],
+        "lx_wins_total": 0,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "highs_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296428,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTF9J0GJGB659AX0NW8PR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 29.51385721999999,
+              "min": 28.666384198999992,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 21.538579206999998,
+              "min": 21.229159445999997,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.3702787419890743,
+            "ratio_min": 1.3503306276406208,
+            "verdict": "highs_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296404,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTG9C7244B3HJBJ4CK4TR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 29.623713993000003,
+              "min": 28.710579147999994,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 22.963697018999966,
+              "min": 21.474359996000032,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.2900237260790193,
+            "ratio_min": 1.3369701892558303,
+            "verdict": "highs_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296456,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTJW1G2BFWSBKHQXMKA5R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 30.59849153700003,
+              "min": 29.675454427999966,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 23.782045021999977,
+              "min": 22.46256938099998,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.2866215461578003,
+            "ratio_min": 1.321106856684927,
+            "verdict": "highs_faster"
+          }
+        ]
+      },
+      "lp_pds_10": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 1.2583904991306623,
+        "ratio_min_host": 1.251189568841705,
+        "ratio_max_host": 1.2786345814222986,
+        "lx_wins_by_host": [
+          0,
+          0,
+          0
+        ],
+        "lx_wins_total": 0,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "highs_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296428,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTF9J0GJGB659AX0NW8PR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 2.3124617910000325,
+              "min": 2.2393169250000255,
+              "n": 7,
+              "status": "optimal",
+              "backend": "pdhg"
+            },
+            "hx": {
+              "median": 1.8085400040000081,
+              "min": 1.7613503979999905,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.2786345814222986,
+            "ratio_min": 1.2713636806979265,
+            "verdict": "highs_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296404,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTG9C7244B3HJBJ4CK4TR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 2.467586949000008,
+              "min": 2.3368597219999856,
+              "n": 7,
+              "status": "optimal",
+              "backend": "pdhg"
+            },
+            "hx": {
+              "median": 1.9721927119999805,
+              "min": 1.9061181199999737,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.251189568841705,
+            "ratio_min": 1.2259784414619688,
+            "verdict": "highs_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296456,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTJW1G2BFWSBKHQXMKA5R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 2.3627880959999743,
+              "min": 2.270082775999981,
+              "n": 7,
+              "status": "optimal",
+              "backend": "pdhg"
+            },
+            "hx": {
+              "median": 1.8776270940000472,
+              "min": 1.8330135829999676,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.2583904991306623,
+            "ratio_min": 1.2384429646640656,
+            "verdict": "highs_faster"
+          }
+        ]
+      },
+      "lp_pds_20": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 0.8236785766821749,
+        "ratio_min_host": 0.7878298585654577,
+        "ratio_max_host": 0.8297004033908907,
+        "lx_wins_by_host": [
+          7,
+          7,
+          6
+        ],
+        "lx_wins_total": 20,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "lx_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296428,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTF9J0GJGB659AX0NW8PR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 10.535605597999961,
+              "min": 10.374322643000028,
+              "n": 7,
+              "status": "optimal",
+              "backend": "pdhg"
+            },
+            "hx": {
+              "median": 13.372945291999997,
+              "min": 13.25751231800001,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 7,
+            "ratio_median": 0.7878298585654577,
+            "ratio_min": 0.7825240810008214,
+            "verdict": "lx_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296404,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTG9C7244B3HJBJ4CK4TR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 11.379371484999979,
+              "min": 10.571057493000012,
+              "n": 7,
+              "status": "optimal",
+              "backend": "pdhg"
+            },
+            "hx": {
+              "median": 13.71503670300001,
+              "min": 13.472635210000021,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 7,
+            "ratio_median": 0.8297004033908907,
+            "ratio_min": 0.7846317612128084,
+            "verdict": "lx_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296456,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTJW1G2BFWSBKHQXMKA5R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 11.234472944999993,
+              "min": 10.340994434000038,
+              "n": 7,
+              "status": "optimal",
+              "backend": "pdhg"
+            },
+            "hx": {
+              "median": 13.639389517999973,
+              "min": 13.535025848000032,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 6,
+            "ratio_median": 0.8236785766821749,
+            "ratio_min": 0.7640173391710255,
+            "verdict": "lx_faster"
+          }
+        ]
+      },
+      "lp_pilot87": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 0.8257525023893594,
+        "ratio_min_host": 0.8126897537431536,
+        "ratio_max_host": 0.9389368484570185,
+        "lx_wins_by_host": [
+          7,
+          7,
+          7
+        ],
+        "lx_wins_total": 21,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "lx_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296428,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTF9J0GJGB659AX0NW8PR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 3.856243107999944,
+              "min": 3.80486269000005,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 4.669974474000014,
+              "min": 4.588710988999992,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 7,
+            "ratio_median": 0.8257525023893594,
+            "ratio_min": 0.8291789783930662,
+            "verdict": "lx_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296404,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTG9C7244B3HJBJ4CK4TR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 3.7614153540000643,
+              "min": 3.7084573440000668,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 4.628353361999984,
+              "min": 4.585828381000056,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 7,
+            "ratio_median": 0.8126897537431536,
+            "ratio_min": 0.8086777427966775,
+            "verdict": "lx_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296456,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTJW1G2BFWSBKHQXMKA5R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 4.3763934099999915,
+              "min": 3.927611804000094,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 4.661009328999967,
+              "min": 4.652224649999994,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 7,
+            "ratio_median": 0.9389368484570185,
+            "ratio_min": 0.8442437972121787,
+            "verdict": "lx_faster"
+          }
+        ]
+      },
+      "lp_woodw": {
+        "hosts_observed": 3,
+        "hosts_with_ratio": 3,
+        "ratio_median_of_hosts": 1.0136210571235909,
+        "ratio_min_host": 0.991001664377595,
+        "ratio_max_host": 1.1061185974326777,
+        "lx_wins_by_host": [
+          2,
+          6,
+          0
+        ],
+        "lx_wins_total": 8,
+        "pairs_by_host": [
+          7,
+          7,
+          7
+        ],
+        "verdict": "highs_faster",
+        "per_host": [
+          {
+            "host_index": 0,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296428,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTF9J0GJGB659AX0NW8PR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 0.14290158900007555,
+              "min": 0.13680489399996532,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 0.14098127499994462,
+              "min": 0.13671368200004963,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 2,
+            "ratio_median": 1.0136210571235909,
+            "ratio_min": 1.0006671753593444,
+            "verdict": "highs_faster"
+          },
+          {
+            "host_index": 1,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296404,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTG9C7244B3HJBJ4CK4TR"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 0.1361008190000348,
+              "min": 0.1347489620000033,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 0.13733662000004188,
+              "min": 0.13588804200003324,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 6,
+            "ratio_median": 0.991001664377595,
+            "ratio_min": 0.991617511127067,
+            "verdict": "lx_faster"
+          },
+          {
+            "host_index": 2,
+            "machine_info": {
+              "cpu_model": "unknown",
+              "cpu_count": 20,
+              "mem_total_kb": 395296456,
+              "loadavg": "0.00 0.00 0.00 0/0 0",
+              "modal_region": "us-west-2",
+              "modal_cloud": "CLOUD_PROVIDER_AWS",
+              "modal_task_id": "ta-01KXPYTJW1G2BFWSBKHQXMKA5R"
+            },
+            "load_checks": {
+              "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+              "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+            },
+            "pairs": 7,
+            "lx": {
+              "median": 0.16129307899996093,
+              "min": 0.14996394299998883,
+              "n": 7,
+              "status": "optimal",
+              "backend": "ipm"
+            },
+            "hx": {
+              "median": 0.14581897400000798,
+              "min": 0.14037140599998565,
+              "n": 7,
+              "status": "optimal"
+            },
+            "lx_wins": 0,
+            "ratio_median": 1.1061185974326777,
+            "ratio_min": 1.0683368306505683,
+            "verdict": "highs_faster"
+          }
+        ]
+      }
+    }
+  }
+}

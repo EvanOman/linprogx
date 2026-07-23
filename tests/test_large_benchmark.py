@@ -95,6 +95,11 @@ def test_cycle_sparse_pdhg_reaches_scaled_feasibility_guardrail() -> None:
 
 
 def test_cycle_sparse_pdhg_untuned_reaches_benchmark_quality() -> None:
+    # Untuned-PDHG solve quality on the cycle problem. The aggregation
+    # re-stage is fill-negative here (its fill-gate would accept it) but the
+    # aggregated problem is worse-conditioned for PDHG, so presolve_matrix's
+    # route gate skips aggregation for non-IPM algorithm requests. This test
+    # runs with the shipped default and exercises that gate.
     problem_data = bench_cycle.load_cycle(bench_cycle.DATA_PATH)
     result = SparseSolver(
         algorithm="pdhg",
