@@ -9,19 +9,20 @@ It solves continuous linear programs with maximization or minimization objective
 
 ## TL;DR
 
-This repo is a compact LP solver built as a benchmarkable artifact: a from-scratch two-phase simplex implementation, a dependency-free sparse solver portfolio (presolve + native interior point method + restarted PDHG with automatic routing), a small C accelerator, Python and CLI interfaces, 16 hand-authored LP examples, 8 standardized Klee-Minty stress cases, and test-time correctness checks against SciPy/HiGHS and Clarabel.
+This repo is a compact LP solver built as a benchmarkable artifact: a from-scratch two-phase simplex implementation, a sparse solver portfolio (multi-pass presolve + native interior point method + restarted PDHG + dual simplex with automatic routing), C accelerators with AVX2 kernels and OpenBLAS-backed supernodal Cholesky, Python and CLI interfaces, 16 hand-authored LP examples, 8 standardized Klee-Minty stress cases, and test-time correctness checks against SciPy/HiGHS and Clarabel.
 
-On the two Netlib benchmarks tracked in this repo (DFL001 and CYCLE), the auto-routed sparse solver currently runs faster than both SciPy/HiGHS and Clarabel on this machine while holding equality residuals at `2e-5` (PDHG) down to `1e-11` (IPM). The mechanics stay visible, the runtime stays dependency-free, and every comparison is reproducible.
+On the 24-instance SuiteSparse LPnetlib suite — measured head-to-head against HiGHS under a paired, interleaved, multi-host cloud protocol (`tools/modal_bench.py`, 3 hosts x 7 pairs, median-of-hosts) — linprogx solves all 24 instances with certificate-backed optima and **wins 23 of the 24 cells outright**. The sole remaining loss is greenbea at 1.215x HiGHS. Every optimum is held to `eps=2e-5` with full KKT or explicit Lagrangian dual-bound certificates, with no per-problem tuning. The mechanics stay visible and every comparison is reproducible.
 
 ## What It Does
 
 - Solves dense small-to-medium LPs without NumPy or SciPy.
 - Solves sparse equality-plus-bounds LPs at Netlib scale with a presolve +
-  IPM/PDHG portfolio (`SparseSolver(algorithm="auto")`), all dependency-free.
+  IPM/PDHG/dual-simplex portfolio (`SparseSolver(algorithm="auto")`), with
+  OpenBLAS as the only native dependency.
 - Returns primal values, objective value, slacks, basis names, reduced costs, and shadow-price estimates (dense path), plus dual vectors from the sparse solvers.
 - Provides both a direct matrix API and a small modeling interface.
 - Ships a JSON CLI for quick experiments.
-- Compiles `linprogx._cfast` for in-place tableau pivots and dot products, with a pure-Python fallback, and `linprogx._csparse` for the sparse matrix type, PDHG, sparse Cholesky, and IPM.
+- Compiles `linprogx._cfast` for in-place tableau pivots and dot products, with a pure-Python fallback, and `linprogx._csparse` for the sparse matrix type, PDHG, sparse (supernodal) Cholesky, IPM, and a bounded-variable dual simplex with LU factorization and AVX2 pricing/ratio-test kernels.
 
 This is an inspectable, hand-built solver. On the included benchmarks it is competitive with mature open-source solvers; on broad production model sets, mature solvers (HiGHS, CLP, Gurobi, CPLEX, Mosek) remain the safe choice.
 
@@ -413,15 +414,21 @@ just fc
 src/linprogx/
   __init__.py      Public exports
   solver.py        Problem normalization and two-phase simplex
-  sparse.py        Sparse LP front end: presolve + algorithm routing + simplex
-  presolve.py      Dependency-free presolve (empty/singleton/doubleton rows)
+  sparse.py        Sparse LP front end: presolve + algorithm routing + rescue chain
+  presolve.py      Multi-pass presolve (rows, column singletons, aggregations,
+                   net aggregation, duplicate/parallel/dominated columns)
   builder.py       Small modeling interface
   cli.py           JSON command-line interface
   samples.py       Deterministic sample LP library
   compare.py       SciPy/HiGHS and Clarabel correctness/timing comparison
   _fast.py         C-extension dispatch and Python fallback
   _cfast.c         In-place pivot and dot-product C helpers
-  _csparse.c       C CSR matrix, restarted PDHG, sparse Cholesky, and IPM
+  _csparse.c       C CSR matrix, restarted PDHG, supernodal sparse Cholesky,
+                   IPM, and bounded-variable dual simplex (LU + AVX2 kernels)
+tools/
+  modal_bench.py            Paired multi-host cloud benchmark harness (protocol v3)
+  replay_bench.py           Benchmark artifact ingestion for the campaign chronicle
+  build_report_data.py      Campaign report regeneration
 tests/
   test_solver.py            Solver, bounds, CLI, and validation coverage
   test_samples_compare.py   Sample problem checks against SciPy/HiGHS
@@ -440,28 +447,39 @@ benchmark_data/
 equality-plus-bounds LPs. It runs a three-stage pipeline, all dependency-free:
 
 1. **Presolve** (`presolve.py`): iterates empty-row removal, singleton-row
-   variable fixing, and doubleton-row substitution
-   (`a*x_p + d*x_q = b  =>  x_p = (b - d*x_q)/a`, with bound mapping and a
-   fill limit) to a fixpoint, then replays the recorded substitutions in
-   reverse to reconstruct the full solution. On degenerate problems such as
-   Netlib CYCLE this removes the dependent-row mass that stalls first-order
-   methods.
-2. **Routing**: reduced problems with at most 4,000 rows go to the interior
-   point method; larger ones go to PDHG. If the IPM fails to certify
-   optimality, the solver falls back to PDHG automatically.
+   variable fixing, doubleton-row substitution, column singletons, small
+   aggregations, multi-row net aggregation (implied-bound intersection),
+   and duplicate/parallel/dominated-column elimination to a fixpoint, then
+   replays the recorded reductions in reverse to reconstruct the full primal
+   and dual solution. On degenerate problems such as Netlib CYCLE this
+   removes the dependent-row mass that stalls first-order methods; on the
+   pds family the net-aggregation pass is the decisive reduction.
+2. **Routing**: reduced problems with at most 50,000 rows go to the interior
+   point method; larger ones (and net-aggregated ones) go to PDHG. A
+   structural stall predictor sends IPM-certificate-risk instances to the
+   dual simplex first; if the IPM fails to certify, the solver retries with
+   a floored factorization and can fall back to the dual simplex or PDHG
+   automatically. Every accepted answer must re-certify in original units.
 3. **Solve**:
    - **Interior point method** (`solve_eq_box_ipm`): a Mehrotra
      predictor-corrector on the regularized normal equations `A D A' + delta I`,
      factored by a native sparse Cholesky with exact minimum-degree ordering,
-     elimination-tree symbolic analysis, and up-looking numeric
-     refactorization per iteration. Ruiz + cost scaling, native box-bound
-     handling, and zero-width-box pinning make it robust without tuning.
-     Typical accuracy: equality residuals near 1e-11.
+     elimination-tree symbolic analysis, supernodal panel factorization with
+     an OpenBLAS dense-tail (`dpotrf`) split, and numeric refactorization per
+     iteration. Ruiz + cost scaling, native box-bound handling, and
+     zero-width-box pinning make it robust without tuning. Typical accuracy:
+     equality residuals near 1e-11.
    - **Restarted PDHG** (`solve_eq_box_pdhg`): a primal-dual hybrid gradient
      method with Ruiz equilibration, restarted iterate averaging, an adaptive
      primal weight with a residual-balance safeguard, an adaptive step size,
      KKT-based termination, and a plateau-detection early exit. Scales to
      problems where factorization fill-in makes direct methods slow.
+   - **Dual simplex** (`solve_eq_box_dual_simplex`): a bounded-variable dual
+     simplex with sparse LU factorization, Forrest-Tomlin-style updates,
+     bounded-variable (BFRT) and branchless Harris ratio tests with AVX2
+     pricing kernels, and exact certificate checks at termination. It is the
+     route that closes degenerate basis-method instances (greenbea-class)
+     where the IPM's dual certificate stalls.
 
 ### Generalization check
 
@@ -472,27 +490,31 @@ STOCFOR2, and PDS-06 all solve to optimal with residuals between 1.9e-5 and
 
 ### LPnetlib suite (24 instances)
 
-A larger sweep over the SuiteSparse LPnetlib collection — the same Netlib
+A full sweep over the SuiteSparse LPnetlib collection — the same Netlib
 family used in the Clarabel and HiGHS benchmark papers, including the
-Kennington set — is recorded in [assets/lpnetlib_suite.md](assets/lpnetlib_suite.md)
-with the harness in `experiments/suite_bench.py`. Headline: **linprogx,
-HiGHS, and Clarabel each solve 23/24 — equal coverage — and linprogx now
-beats Clarabel on 19 of the 23 solved instances** (faster, or Clarabel
-fails), while every linprogx optimum is certificate-backed (full KKT or
-an explicit Lagrangian dual bound) at relative objective errors of
-9.2e-12 to 2.2e-5. Each solver misses exactly one instance: HiGHS times
-out on qap15, Clarabel reports DualInfeasible on ken_18, and linprogx
-declines to certify greenbea (where Clarabel certifies a point that is
-wrong by 1.3e-3 — the honesty guarantee is the difference). An OpenBLAS
-`dpotrf` dense-tail factorization roughly halved the factor-bound IPM
-instances (cre_b 41→10s, cre_d 38→9s, pilot87 24→7s), moving them from
-losing to Clarabel to beating it decisively; a tiny diagonal ridge
-emulates the hand kernel's pivot floor so those degenerate endgames
-still certify. linprogx is fastest of all three on fit2p, d2q06c,
-osa_60 (19s vs HiGHS 24s), qap12 (0.55s vs HiGHS 104s), qap15 (HiGHS
-times out), and truss (16x HiGHS). HiGHS still leads on the small
-dense-factor instances (maros_r7, pds_20) — that gap is the one
-remaining frontier.
+Kennington set — is recorded in [assets/lpnetlib_suite.md](assets/lpnetlib_suite.md),
+with the local harness in `experiments/suite_bench.py` and the scoreboard
+protocol in `tools/modal_bench.py`.
+
+Headline (board of record, 2026-07-22): **linprogx solves all 24 instances
+with certificate-backed optima and beats HiGHS head-to-head on 23 of 24**
+under a paired, interleaved, multi-host cloud protocol (3 AWS hosts x 7
+interleaved pairs per instance, median-of-hosts, no per-problem tuning).
+The sole remaining loss is **greenbea at 1.215x HiGHS** [1.208, 1.235] —
+down from 14x at campaign origin — where an extensive falsification
+campaign (documented in `docs/HANDOFF.md` and `experiments/`) measured the
+residual gap as a pivot-path/hardware floor rather than an unexploited
+algorithmic opening. HiGHS itself times out on qap15 and Clarabel reports
+DualInfeasible on ken_18, while every linprogx optimum is held to
+`eps=2e-5` with full KKT or explicit Lagrangian dual-bound certificates.
+
+Notable cells: qap12 (HiGHS 100s, linprogx under 2s), qap15 (HiGHS times
+out), osa_60 (~3x faster), fit2p and truss (~13-20x faster), pds_20
+(~2x faster via net-aggregation presolve + PDHG), woodw 0.789, cre_a
+0.912, and greenbea itself now solved and certified through the dual
+simplex route after previously being declined. The campaign chronicle —
+every shipped mechanism and every falsified idea — lives in
+`docs/CAMPAIGN.md` and the dated ledger in `docs/HANDOFF.md`.
 
 ## License
 

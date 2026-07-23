@@ -59,6 +59,6 @@ For C extension work, verify the extension builds through `uv sync --extra dev` 
 
 ## Forward Roadmap
 
-The active performance frontier is the sparse IPM factorization path: replacing the monolithic dense tail with a real supernodal numeric factor that gets BLAS panel speed without paying dense fill costs. Preserve the existing certificate gates and residual checks while doing this work.
+The HiGHS head-to-head campaign on the 24 LPnetlib instances is effectively closed: the board of record is 23 wins, 0 parity, 1 loss (greenbea at 1.215x), measured under the paired multi-host protocol in `tools/modal_bench.py`. The supernodal Cholesky factor, presolve v2, and the bounded-variable dual simplex are all shipped. The greenbea residual was falsified down to a pivot-path/hardware floor across dozens of documented attack waves (`docs/HANDOFF.md`, `experiments/`); reopen it only with a mechanism that clears the funding invariants recorded there. Preserve the certificate gates, `eps=2e-5`, and the no-per-problem-tuning rule in any future performance work.
 
 Sparse solver performance changes should be measured on the included benchmark fixtures, but benchmark timing alone is never enough. The solver must also preserve objective agreement, feasibility residuals, deterministic behavior where promised, and documented status semantics.
