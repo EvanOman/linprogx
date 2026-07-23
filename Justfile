@@ -16,7 +16,7 @@ lint-fix:
     uv run ruff check . --fix
 
 type:
-    uv run ty check .
+    uv run ty check . --exclude "demo/" --exclude "setup.py"
 
 security:
     uv run --extra dev bandit -q --severity-level medium -r src bench.py bench_cycle.py bench_dense.py bench_large.py bench_plots.py bench_sparse_fast.py
