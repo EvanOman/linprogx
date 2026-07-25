@@ -10582,6 +10582,24 @@ static unsigned long long g_perm_calls[LU_PERM_NSTREAM] = {0};
 static unsigned long long g_perm_solve_cyc = 0;
 static int g_perm_census = -1;
 
+/* U' VIRTUALIZATION CENSUS (env LINPROGX_DS_UPRIME_CENSUS=1).
+ * The FT state represents U' virtually: the static U filtered at SOLVE TIME by
+ * liveness predicates, plus packed spike columns reached through a linked list.
+ * Every filtered-out element was still loaded and branched on -- dead work that
+ * an explicitly maintained sparse U'/U'^T would never visit.  These counters
+ * are exact and load-invariant (pure counts, no timing). */
+static unsigned long long g_up_static_seen = 0, g_up_static_applied = 0;
+static unsigned long long g_up_spike_seen = 0, g_up_spike_applied = 0;
+static unsigned long long g_up_rows_seen = 0, g_up_rows_dead = 0;
+static int g_up_census = -1;
+static int lu_uprime_census_on(void) {
+    if (g_up_census < 0) {
+        const char *e = getenv("LINPROGX_DS_UPRIME_CENSUS");
+        g_up_census = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    }
+    return g_up_census;
+}
+
 static int g_branchless_scan = 0;  /* KILLED 2026-07-25: measurably slower */
 static void lu_refresh_branchless_scan(void) {
     const char *e = getenv("LINPROGX_DS_BRANCHLESS_SCAN");
@@ -10626,6 +10644,7 @@ static void lu_ft_ftran_ex(LUContext *ctx, const double *b, double *x,
     double *z = ctx->ws_z;
 
     const int perm_on = lu_perm_census_on();
+    const int up_census = lu_uprime_census_on();
     {
         LU_PERM_T0(perm_on);
         if (sp_idx != NULL) {
@@ -10664,14 +10683,18 @@ static void lu_ft_ftran_ex(LUContext *ctx, const double *b, double *x,
             int32_t created = ctx->ft_spk_created[sid];
             for (int32_t p = ctx->ft_spk_start[sid]; p < ctx->ft_spk_start[sid + 1]; p++) {
                 int32_t i = ctx->ft_spk_idx[p];
+                if (up_census) g_up_spike_seen++;
                 if (!lu_ft_row_live(ctx, i, created)) continue;
+                if (up_census) g_up_spike_applied++;
                 z[i] -= ctx->ft_spk_val[p] * zj;
             }
         } else {
             for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
                 int32_t i = ctx->u_indices[p];
+                if (up_census) g_up_static_seen++;
                 if (i == j) continue;
                 if (ctx->ft_del_stamp[i] >= 0) continue; /* static: dead */
+                if (up_census) g_up_static_applied++;
                 z[i] -= ctx->u_values[p] * zj;
             }
         }
@@ -10693,6 +10716,7 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
     const int perm_on = lu_perm_census_on();
+    const int up_census = lu_uprime_census_on();
 
     {
         LU_PERM_T0(perm_on);
@@ -10715,16 +10739,23 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
         if (ctx->ft_del_stamp[j] < 0) {
             for (int32_t p = ctx->ut_indptr[j]; p < ctx->ut_indptr[j + 1]; p++) {
                 int32_t l = ctx->ut_indices[p];
+                if (up_census) g_up_static_seen++;
                 if (l == j) continue;
                 if (ctx->ft_col_spike[l] >= 0) continue; /* static col dead */
+                if (up_census) g_up_static_applied++;
                 z[l] -= ctx->ut_values[p] * zj;
             }
+        } else if (up_census) {
+            g_up_rows_dead++;
         }
+        if (up_census) g_up_rows_seen++;
         for (int32_t e = ctx->ft_rowhead[j]; e >= 0; e = ctx->ft_spk_nextrow[e]) {
             int32_t sid = ctx->ft_spk_col[e];
             int32_t slot = ctx->ft_spk_slot[sid];
+            if (up_census) g_up_spike_seen++;
             if (ctx->ft_col_spike[slot] != sid) continue;
             if (!lu_ft_row_live(ctx, j, ctx->ft_spk_created[sid])) continue;
+            if (up_census) g_up_spike_applied++;
             z[slot] -= ctx->ft_spk_val[e] * zj;
         }
     }
@@ -15693,6 +15724,26 @@ build_result:
                 Py_DECREF(ds_ph);
             } else {
                 PyErr_Clear();
+            }
+            if (lu_uprime_census_on()) {
+                unsigned long long st = g_up_static_seen, sa = g_up_static_applied;
+                unsigned long long sp = g_up_spike_seen, spa = g_up_spike_applied;
+                fprintf(stderr,
+                    "[uprime-census] static_seen=%llu static_applied=%llu "
+                    "static_wasted=%.5f\n", st, sa,
+                    st ? 1.0 - (double)sa / (double)st : 0.0);
+                fprintf(stderr,
+                    "[uprime-census] spike_seen=%llu spike_applied=%llu "
+                    "spike_wasted=%.5f\n", sp, spa,
+                    sp ? 1.0 - (double)spa / (double)sp : 0.0);
+                fprintf(stderr,
+                    "[uprime-census] rows_seen=%llu rows_dead=%llu dead_frac=%.5f  "
+                    "ALL_ELEMS seen=%llu applied=%llu WASTED=%.5f\n",
+                    g_up_rows_seen, g_up_rows_dead,
+                    g_up_rows_seen ? (double)g_up_rows_dead / (double)g_up_rows_seen : 0.0,
+                    st + sp, sa + spa,
+                    (st + sp) ? 1.0 - (double)(sa + spa) / (double)(st + sp) : 0.0);
+                fflush(stderr);
             }
             if (lu_perm_census_on()) {
                 unsigned long long total = __rdtsc() - g_perm_solve_cyc;
