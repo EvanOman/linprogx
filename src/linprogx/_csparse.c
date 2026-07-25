@@ -10250,6 +10250,14 @@ static void lu_refresh_force_gp(void) {
 }
 static int lu_force_gp_on(void) { return g_force_gp; }
 
+/* K5 rcost/clear fusion gate. */
+static int g_rcost_fuse = 0;
+static void lu_refresh_rcost_fuse(void) {
+    const char *e = getenv("LINPROGX_DS_RCOST_FUSE");
+    g_rcost_fuse = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_rcost_fuse_on(void) { return g_rcost_fuse; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -13122,6 +13130,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     lu_refresh_sparse_permin();
     lu_refresh_uprime_compact();
     lu_refresh_force_gp();
+    lu_refresh_rcost_fuse();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -15231,6 +15240,28 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
              * to the historical full 0..n_total scan. */
             {
                 double sigma_d = (double)leaving_sigma;
+                if (lu_rcost_fuse_on()) {
+                    /* K5 FUSION (the angle abandoned unmeasured in 2026-07-20).
+                     * The update pass and the workspace-clear pass walked the
+                     * SAME alpha_pattern support back to back -- two gathered
+                     * traversals of alpha_scratch/alpha_touched where one
+                     * suffices.  Clearing unconditionally at the top of the
+                     * body (before the filters' `continue`s) preserves exactly
+                     * the old clear set, and the per-column r_ext += is
+                     * order-independent, so this is BIT-IDENTICAL. */
+                    for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
+                        int32_t j = alpha_pattern[ki_];
+                        double alpha_j = alpha_scratch[j];
+                        alpha_scratch[j] = 0.0;
+                        alpha_touched[j] = 0;
+                        if (basis_pos[j] >= 0) continue;
+                        if (bound_status[j] == DS_BOUND_FIXED) continue;
+                        if (j == entering_col) continue;
+                        if (alpha_j != 0.0) {
+                            r_ext[j] += theta_d * sigma_d * alpha_j;
+                        }
+                    }
+                } else {
                 for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
                     int32_t j = alpha_pattern[ki_];
                     if (basis_pos[j] >= 0) continue;
@@ -15247,6 +15278,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
                     alpha_scratch[alpha_pattern[ki_]] = 0.0;
                     alpha_touched[alpha_pattern[ki_]] = 0;
+                }
                 }
             }
 
