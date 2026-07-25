@@ -10589,6 +10589,22 @@ static void lu_refresh_branchless_scan(void) {
 }
 static int lu_branchless_scan_on(void) { return g_branchless_scan; }
 
+/* SPARSE PERMUTE-IN (A/B gate LINPROGX_DS_SPARSE_PERMIN, default on).
+ * The dense-staged FT solve bodies place their right-hand side with an O(m)
+ * PERMUTED GATHER regardless of rhs sparsity: FTRAN's rhs is an entering column
+ * with ~5-8 nonzeros and BTRAN's is a UNIT VECTOR, yet both touch all m slots.
+ * The hyper-sparse GP path in this same file already uses the correct idiom
+ * ("Permute sparse rhs: z[inv_perm_row[idx]] = val"), and both inverse
+ * permutations are built (inv_perm_row[perm_row[k]]=k, inv_perm_col[...]).
+ * Replacing the gather with a sequential clear plus n_rhs_nz scatters is
+ * BIT-IDENTICAL: z holds the same values in the same slots. */
+static int g_sparse_permin = 1;
+static void lu_refresh_sparse_permin(void) {
+    const char *e = getenv("LINPROGX_DS_SPARSE_PERMIN");
+    g_sparse_permin = (e != NULL && atoi(e) == 0) ? 0 : 1;
+}
+static int lu_sparse_permin_on(void) { return g_sparse_permin; }
+
 static int lu_perm_census_on(void) {
     if (g_perm_census < 0) {
         const char *e = getenv("LINPROGX_DS_PERM_CENSUS");
@@ -10603,14 +10619,23 @@ static int lu_perm_census_on(void) {
 } while (0)
 
 /* Dense FTRAN with FT state: x = B'^{-1} b. */
-static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
+static void lu_ft_ftran_ex(LUContext *ctx, const double *b, double *x,
+                           const int32_t *sp_idx, const double *sp_val,
+                           int32_t sp_n) {
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
 
     const int perm_on = lu_perm_census_on();
     {
         LU_PERM_T0(perm_on);
-        for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_row[k]];
+        if (sp_idx != NULL) {
+            memset(z, 0, (size_t)m * sizeof(double));
+            for (int32_t t = 0; t < sp_n; t++) {
+                z[ctx->inv_perm_row[sp_idx[t]]] = sp_val[t];
+            }
+        } else {
+            for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_row[k]];
+        }
         LU_PERM_ACC(perm_on, LU_PERM_FTRAN_IN);
     }
     for (int32_t j = 0; j < m; j++) {
@@ -10658,15 +10683,25 @@ static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
     }
 }
 
+static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
+    lu_ft_ftran_ex(ctx, b, x, NULL, NULL, 0);
+}
+
 /* Dense BTRAN with FT state: x = B'^{-T} b. */
-static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
+static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
+                           int32_t sp_pos) {
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
     const int perm_on = lu_perm_census_on();
 
     {
         LU_PERM_T0(perm_on);
-        for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_col[k]];
+        if (sp_pos >= 0) {
+            memset(z, 0, (size_t)m * sizeof(double));
+            z[ctx->inv_perm_col[sp_pos]] = 1.0;
+        } else {
+            for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_col[k]];
+        }
         LU_PERM_ACC(perm_on, LU_PERM_BTRAN_IN);
     }
     /* U'^T forward solve in logical order (row-scatter form) */
@@ -10714,6 +10749,10 @@ static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
         for (int32_t i = 0; i < m; i++) x[i] = z[ctx->inv_perm_row[i]];
         LU_PERM_ACC(perm_on, LU_PERM_BTRAN_OUT);
     }
+}
+
+static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
+    lu_ft_btran_ex(ctx, b, x, -1);
 }
 
 /*
@@ -10983,10 +11022,16 @@ static int32_t lu_ftran_sparse(LUContext *ctx,
         int64_t s_cnt = ctx->ftran_sparse_count + ctx->btran_sparse_count;
         int64_t s_nnz = ctx->ftran_sparse_nnz_total + ctx->btran_sparse_nnz_total;
         if (s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
-            double *rhs = ctx->ft_rhs;
-            for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = rhs_values[k];
-            lu_ft_ftran(ctx, rhs, x);
-            for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = 0.0;
+            if (lu_sparse_permin_on()) {
+                /* Sparse rhs goes straight into the solve: the dense ft_rhs
+                 * staging and its re-zeroing are both unnecessary. */
+                lu_ft_ftran_ex(ctx, NULL, x, rhs_indices, rhs_values, n_rhs_nz);
+            } else {
+                double *rhs = ctx->ft_rhs;
+                for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = rhs_values[k];
+                lu_ft_ftran(ctx, rhs, x);
+                for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = 0.0;
+            }
             int32_t nnz = 0;
             {
                 const int perm_on = lu_perm_census_on();
@@ -11282,10 +11327,16 @@ static int32_t lu_btran_sparse(LUContext *ctx,
         int64_t s_cnt = ctx->ftran_sparse_count + ctx->btran_sparse_count;
         int64_t s_nnz = ctx->ftran_sparse_nnz_total + ctx->btran_sparse_nnz_total;
         if (s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
-            double *rhs = ctx->ft_rhs;
-            rhs[rhs_pos] = 1.0;
-            lu_ft_btran(ctx, rhs, x);
-            rhs[rhs_pos] = 0.0;
+            if (lu_sparse_permin_on()) {
+                /* BTRAN's rhs is the unit vector e_{rhs_pos}: one scatter,
+                 * not an m-entry permuted gather. */
+                lu_ft_btran_ex(ctx, NULL, x, rhs_pos);
+            } else {
+                double *rhs = ctx->ft_rhs;
+                rhs[rhs_pos] = 1.0;
+                lu_ft_btran(ctx, rhs, x);
+                rhs[rhs_pos] = 0.0;
+            }
             int32_t nnz = 0;
             {
                 const int perm_on = lu_perm_census_on();
@@ -12866,6 +12917,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * makes the census frequency-independent, so core boosting under load
      * cannot bias the shares. */
     lu_refresh_branchless_scan();
+    lu_refresh_sparse_permin();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
