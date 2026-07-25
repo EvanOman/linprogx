@@ -10237,6 +10237,19 @@ static void lu_refresh_uprime_compact(void) {
 }
 static int lu_uprime_compact_on(void) { return g_uc_compact; }
 
+/* ROUTE OVERRIDE (LINPROGX_DS_FORCE_GP=1).  The adaptive route picks the
+ * dense-staged FT bodies from OUTPUT solution density, but greenbea's
+ * intermediate phases are hypersparse (26.9 active U'^T rows of m=1,525;
+ * 17.78% nonzero L^T rows).  The hyper-sparse Gilbert-Peierls path already
+ * exists in this file -- this forces it so the threshold can be tested rather
+ * than assumed. */
+static int g_force_gp = 0;
+static void lu_refresh_force_gp(void) {
+    const char *e = getenv("LINPROGX_DS_FORCE_GP");
+    g_force_gp = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_force_gp_on(void) { return g_force_gp; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -10687,6 +10700,10 @@ static unsigned long long g_up_rows_seen = 0, g_up_rows_dead = 0;
  * costs four SERIALLY DEPENDENT loads before one axpy.  Cycles-per-element on
  * each is the latency question that now decides C-2 phase 2. */
 static unsigned long long g_up_static_cyc = 0, g_up_spike_cyc = 0;
+/* Whole-phase brackets inside lu_ft_btran: which phase actually owns btran_rho's
+ * 17.05% of wall, given that the U' traversal is only 2.64% of the run? */
+static unsigned long long g_bt_uphase_cyc = 0, g_bt_eta_cyc = 0, g_bt_lt_cyc = 0;
+static unsigned long long g_bt_lt_rows = 0, g_bt_lt_rows_nz = 0;
 static int g_up_census = -1;
 /* TRACE HASH ORACLE (env LINPROGX_DS_TRACE_HASH=1).
  * Characterization gate for high-risk FT/solve changes, per AGENTS.md.
@@ -10863,6 +10880,7 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
         }
         LU_PERM_ACC(perm_on, LU_PERM_BTRAN_IN);
     }
+    unsigned long long bt_t0 = up_census ? __rdtsc() : 0ULL;
     /* U'^T forward solve in logical order (row-scatter form) */
     for (int32_t k = 0; k < m; k++) {
         int32_t j = ctx->ft_order[k];
@@ -10907,6 +10925,7 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
         }
         if (up_census) g_up_spike_cyc += __rdtsc() - up_t0;
     }
+    if (up_census) { g_bt_uphase_cyc += __rdtsc() - bt_t0; bt_t0 = __rdtsc(); }
     /* transposed row etas, reverse order */
     for (int32_t k = ctx->ft_n_upd - 1; k >= 0; k--) {
         double zs = z[ctx->ft_eta_slot[k]];
@@ -10915,14 +10934,17 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
             z[ctx->ft_eta_idx[p]] -= ctx->ft_eta_val[p] * zs;
         }
     }
+    if (up_census) { g_bt_eta_cyc += __rdtsc() - bt_t0; bt_t0 = __rdtsc(); }
     /* L^T back solve */
     for (int32_t j = m - 1; j >= 0; j--) {
         double s = z[j];
+        if (up_census) { g_bt_lt_rows++; if (s != 0.0) g_bt_lt_rows_nz++; }
         for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
             s -= ctx->l_values[p] * z[ctx->l_indices[p]];
         }
         z[j] = s;
     }
+    if (up_census) g_bt_lt_cyc += __rdtsc() - bt_t0;
     {
         LU_PERM_T0(perm_on);
         for (int32_t i = 0; i < m; i++) x[i] = z[ctx->inv_perm_row[i]];
@@ -11201,7 +11223,7 @@ static int32_t lu_ftran_sparse(LUContext *ctx,
          * instances (stocfor3, 80bau3b, cre_d) take the GP path. */
         int64_t s_cnt = ctx->ftran_sparse_count + ctx->btran_sparse_count;
         int64_t s_nnz = ctx->ftran_sparse_nnz_total + ctx->btran_sparse_nnz_total;
-        if (s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
+        if (!lu_force_gp_on() && s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
             if (lu_sparse_permin_on()) {
                 /* Sparse rhs goes straight into the solve: the dense ft_rhs
                  * staging and its re-zeroing are both unnecessary. */
@@ -11506,7 +11528,7 @@ static int32_t lu_btran_sparse(LUContext *ctx,
         /* Adaptive route: see lu_ftran_sparse. */
         int64_t s_cnt = ctx->ftran_sparse_count + ctx->btran_sparse_count;
         int64_t s_nnz = ctx->ftran_sparse_nnz_total + ctx->btran_sparse_nnz_total;
-        if (s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
+        if (!lu_force_gp_on() && s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
             if (lu_sparse_permin_on()) {
                 /* BTRAN's rhs is the unit vector e_{rhs_pos}: one scatter,
                  * not an m-entry permuted gather. */
@@ -13099,6 +13121,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     lu_refresh_branchless_scan();
     lu_refresh_sparse_permin();
     lu_refresh_uprime_compact();
+    lu_refresh_force_gp();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -15891,6 +15914,12 @@ build_result:
                     "[uprime-census] spike_seen=%llu spike_applied=%llu "
                     "spike_wasted=%.5f\n", sp, spa,
                     sp ? 1.0 - (double)spa / (double)sp : 0.0);
+                fprintf(stderr,
+                    "[uprime-census] BTRAN PHASES uprime=%llu eta=%llu lt=%llu  "
+                    "lt_rows=%llu lt_rows_nz=%llu lt_nz_frac=%.5f\n",
+                    g_bt_uphase_cyc, g_bt_eta_cyc, g_bt_lt_cyc,
+                    g_bt_lt_rows, g_bt_lt_rows_nz,
+                    g_bt_lt_rows ? (double)g_bt_lt_rows_nz / (double)g_bt_lt_rows : 0.0);
                 fprintf(stderr,
                     "[uprime-census] BTRAN static_cyc=%llu (%.2f cyc/elem)  "
                     "spike_cyc=%llu (%.2f cyc/elem)  spike/static per-elem = %.2fx\n",
