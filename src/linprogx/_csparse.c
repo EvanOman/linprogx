@@ -10681,6 +10681,12 @@ static int g_perm_census = -1;
 static unsigned long long g_up_static_seen = 0, g_up_static_applied = 0;
 static unsigned long long g_up_spike_seen = 0, g_up_spike_applied = 0;
 static unsigned long long g_up_rows_seen = 0, g_up_rows_dead = 0;
+/* Cycle brackets at ROW granularity (not per element), so rdtsc overhead is
+ * ~0.2% of the run.  Separates the two U' access patterns: the STATIC stream is
+ * a contiguous indexed walk; the SPIKE stream is a linked list whose every step
+ * costs four SERIALLY DEPENDENT loads before one axpy.  Cycles-per-element on
+ * each is the latency question that now decides C-2 phase 2. */
+static unsigned long long g_up_static_cyc = 0, g_up_spike_cyc = 0;
 static int g_up_census = -1;
 /* TRACE HASH ORACLE (env LINPROGX_DS_TRACE_HASH=1).
  * Characterization gate for high-risk FT/solve changes, per AGENTS.md.
@@ -10865,6 +10871,7 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
         zj /= ctx->u_diag[j];
         z[j] = zj;
         /* scatter live ROW j of U' */
+        unsigned long long up_t0 = up_census ? __rdtsc() : 0ULL;
         if (ctx->ft_del_stamp[j] < 0) {
             if (ctx->uc_active) {
                 /* compacted: every entry is live, no per-element predicate */
@@ -10888,7 +10895,7 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
         } else if (up_census) {
             g_up_rows_dead++;
         }
-        if (up_census) g_up_rows_seen++;
+        if (up_census) { g_up_static_cyc += __rdtsc() - up_t0; g_up_rows_seen++; up_t0 = __rdtsc(); }
         for (int32_t e = ctx->ft_rowhead[j]; e >= 0; e = ctx->ft_spk_nextrow[e]) {
             int32_t sid = ctx->ft_spk_col[e];
             int32_t slot = ctx->ft_spk_slot[sid];
@@ -10898,6 +10905,7 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
             if (up_census) g_up_spike_applied++;
             z[slot] -= ctx->ft_spk_val[e] * zj;
         }
+        if (up_census) g_up_spike_cyc += __rdtsc() - up_t0;
     }
     /* transposed row etas, reverse order */
     for (int32_t k = ctx->ft_n_upd - 1; k >= 0; k--) {
@@ -15883,6 +15891,16 @@ build_result:
                     "[uprime-census] spike_seen=%llu spike_applied=%llu "
                     "spike_wasted=%.5f\n", sp, spa,
                     sp ? 1.0 - (double)spa / (double)sp : 0.0);
+                fprintf(stderr,
+                    "[uprime-census] BTRAN static_cyc=%llu (%.2f cyc/elem)  "
+                    "spike_cyc=%llu (%.2f cyc/elem)  spike/static per-elem = %.2fx\n",
+                    g_up_static_cyc,
+                    st ? (double)g_up_static_cyc / (double)st : 0.0,
+                    g_up_spike_cyc,
+                    sp ? (double)g_up_spike_cyc / (double)sp : 0.0,
+                    (st && sp && g_up_static_cyc)
+                        ? ((double)g_up_spike_cyc / (double)sp) /
+                          ((double)g_up_static_cyc / (double)st) : 0.0);
                 fprintf(stderr,
                     "[uprime-census] rows_seen=%llu rows_dead=%llu dead_frac=%.5f  "
                     "ALL_ELEMS seen=%llu applied=%llu WASTED=%.5f\n",
