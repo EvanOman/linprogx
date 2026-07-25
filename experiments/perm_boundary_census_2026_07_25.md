@@ -114,3 +114,63 @@ PYTHONPATH=. LINPROGX_DS_PERM_CENSUS=1 LINPROGX_DS_HARRIS_FASTPATH=0 \
 No network, no solver source read, no per-problem tuning, eps=2e-5 untouched.
 No production behaviour changed by this census: all instrumentation is
 env-gated and the branchless arm defaults off.
+
+---
+
+## Addendum (2026-07-25, later): ordering audit + permute-in status
+
+### The 5.00% pattern rescan is NOT bit-identically removable — audit result
+
+The report above listed the two O(m) pattern rescans (5.00% of solve cycles) as
+"bit-identically removable, gated behind an ascending-order audit of every
+`x_pattern` consumer". **That audit has now been done and the answer is no.**
+
+`lu_btran_sparse`'s pattern output is `rho_nz_rows`, and its consumers include
+the pivot-row scatter (`_csparse.c` ~14278 / ~14305):
+
+```c
+for (int32_t ri = 0; ri < rho_nnz; ri++) {
+    int32_t row = rho_nz_rows[ri];
+    double rho_val = rho[row];
+    for (p in CSR row) alpha_scratch[col] += rho_val * scaled_csr_data[p];
+}
+```
+
+`alpha_scratch[col]` is a floating-point **accumulator**, and FP addition is not
+associative. Collecting the pattern during the U′ sweep would deliver it in
+`ft_order` (factor) order rather than ascending index order, changing the
+accumulation order and therefore the **bits** of `alpha_scratch` — which feeds
+the Harris ratio test and so the trajectory.
+
+So this is a **certifiable trajectory change, not a free bit-identical win**.
+That is a materially higher bar: it needs objective-agreement and iteration-count
+evidence, exactly like the block-row uplook ship (which was accepted at
+`obj reldiff <= 2.8e-12, iterations identical`). Sorting the pattern to restore
+ascending order is not an escape: the code already records that a per-pivot
+qsort was measured at **+200us/pivot on greenbea** — a net loss.
+
+Corrected accounting of the 7.33% boundary: **0.44% now removed** (permute-ins,
+below), **~2.29% remains bit-identically available** (permute-outs, harder),
+and **5.00% is trajectory-changing**, not free.
+
+### Sparse permute-in: implemented, bit-identical, effect below local resolution
+
+Implemented for both dense-staged bodies (`lu_ft_ftran_ex` / `lu_ft_btran_ex`,
+gate `LINPROGX_DS_SPARSE_PERMIN`, default on), using the idiom the hyper-sparse
+GP path already uses and the inverse permutations already built.
+
+Directly measured by the cycle census (frequency-independent, same run):
+
+| stream | before | after |
+|---|---:|---:|
+| ftran_permute_in | 2,151 cyc/call | **1,211** (−44%) |
+| btran_permute_in | 2,083 cyc/call | **591** (−72%) |
+| combined share of solve | 1.007% | **0.441%** |
+
+Bit-identical: 4,399 pivots, objective `-72555248.12984592`, residual 1.769e-07.
+
+**But the whole-wall A/B is INCONCLUSIVE on this box**: 15 alternating pairs gave
+`btran_rho` −2.54% against a worst control drift of **6.23%**. A ~0.5% whole-wall
+effect is below the local resolution at load ~11-12/12 cores. The unit is sound
+and free, but it is **not certified**, and it should be folded into the next
+envab run rather than claimed from local numbers.
