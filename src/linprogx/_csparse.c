@@ -12949,6 +12949,25 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * workspace clears and the 4g reduced-cost update (which reuses the
      * 4d scatter instead of redoing it). */
     int32_t *alpha_pattern = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
+    /* NARROW CSR INDEX CACHE (A/B gate LINPROGX_DS_IDX32, default on).
+     * CSRMatrixObject stores column indices as Py_ssize_t (8 bytes), but the
+     * pivot-row scatter -- the single largest phase (21.97% of wall) -- already
+     * casts every one of them down to int32_t.  Caching them once per solve as
+     * int32_t halves the index stream (greenbea: 186 KB -> 93 KB for 23,274
+     * nnz) with BIT-IDENTICAL values, since the cast already happened.  Build
+     * cost is one O(nnz) pass against 4,399 pivots x ~7,502 scatter visits. */
+    int32_t *csr_idx32 = NULL;
+    {
+        const char *e_idx32 = getenv("LINPROGX_DS_IDX32");
+        if (e_idx32 == NULL || atoi(e_idx32) != 0) {
+            csr_idx32 = malloc((size_t)(self->nnz > 0 ? self->nnz : 1) * sizeof(int32_t));
+            if (csr_idx32 != NULL) {
+                for (Py_ssize_t p_ = 0; p_ < self->nnz; p_++) {
+                    csr_idx32[p_] = (int32_t)self->indices[p_];
+                }
+            }
+        }
+    }
     /* Ratio-test candidate cache: pass 1's ascending scan records every
      * admissible (j, alpha_j) pair; the order-sensitive flip-collect and
      * sweep-2 then walk this compact list (measured ~10% of n_total on
@@ -14207,13 +14226,25 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     int32_t row = rho_nz_rows[ri];
                     double rho_val = rho[row];
                     /* Walk CSR row of A using pre-scaled CSR data */
-                    for (Py_ssize_t p = self->indptr[row]; p < self->indptr[row + 1]; p++) {
-                        int32_t col = (int32_t)self->indices[p];
-                        if (alpha_scratch[col] == 0.0 && alpha_touched[col] == 0) {
-                            alpha_touched[col] = 1;
-                            alpha_pattern[alpha_nnz++] = col;
+                    const Py_ssize_t p_end = self->indptr[row + 1];
+                    if (csr_idx32 != NULL) {
+                        for (Py_ssize_t p = self->indptr[row]; p < p_end; p++) {
+                            int32_t col = csr_idx32[p];
+                            if (alpha_scratch[col] == 0.0 && alpha_touched[col] == 0) {
+                                alpha_touched[col] = 1;
+                                alpha_pattern[alpha_nnz++] = col;
+                            }
+                            alpha_scratch[col] += rho_val * scaled_csr_data[p];
                         }
-                        alpha_scratch[col] += rho_val * scaled_csr_data[p];
+                    } else {
+                        for (Py_ssize_t p = self->indptr[row]; p < p_end; p++) {
+                            int32_t col = (int32_t)self->indices[p];
+                            if (alpha_scratch[col] == 0.0 && alpha_touched[col] == 0) {
+                                alpha_touched[col] = 1;
+                                alpha_pattern[alpha_nnz++] = col;
+                            }
+                            alpha_scratch[col] += rho_val * scaled_csr_data[p];
+                        }
                     }
                 }
                 /* Also handle artificial columns: artificial n+i has a single +1 in row i.
@@ -15796,6 +15827,7 @@ done:
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched); free(alpha_pattern);
+    free(csr_idx32);
     free(cand_j); free(cand_alpha);
     free(flip_delta_xB); free(flip_cand); free(infeas_stamp); free(bfrt_cands);
     free(ft_ent_idx); free(ft_ent_val);

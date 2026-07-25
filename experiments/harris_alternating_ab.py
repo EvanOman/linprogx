@@ -33,7 +33,9 @@ from pathlib import Path
 from typing import Any
 
 SUITE = Path("/tmp/lpsuite")
-CONTROL_PHASES = ("btran_rho", "ftran_col", "pivot_row", "refactor", "lu_update")
+ARM_ENV = "LINPROGX_DS_HARRIS_FASTPATH"
+CONTROL_PHASES_ALL = ("btran_rho", "ftran_col", "pivot_row", "refactor",
+                      "lu_update", "ratio_test", "rcost_update")
 
 
 def load_instance(path: Path) -> dict[str, Any]:
@@ -55,7 +57,8 @@ def solve_once(data: dict[str, Any], arm: str) -> dict[str, Any]:
     from linprogx.presolve import presolve_matrix
     from linprogx.sparse import csr_matrix, from_scipy_sparse
 
-    os.environ["LINPROGX_DS_HARRIS_FASTPATH"] = "1" if arm == "B" else "0"
+    for _var in ARM_ENV.split(","):
+        os.environ[_var.strip()] = "1" if arm == "B" else "0"
 
     original = from_scipy_sparse(data["A_scipy"])
     reduction = presolve_matrix(
@@ -80,7 +83,14 @@ def main() -> None:
     parser.add_argument("--pairs", type=int, default=11)
     parser.add_argument("--instance", default="lp_greenbea")
     parser.add_argument("--out", default="/tmp/harris_alternating_ab.json")
+    parser.add_argument("--env", default="LINPROGX_DS_HARRIS_FASTPATH",
+                        help="env var(s), comma-separated, toggled between arms")
+    parser.add_argument("--treatment", default="ratio_test",
+                        help="phase expected to change")
     args = parser.parse_args()
+
+    global ARM_ENV
+    ARM_ENV = args.env
 
     data = load_instance(SUITE / f"{args.instance}.mat")
 
@@ -120,28 +130,29 @@ def main() -> None:
     print(f"\n{'phase':18s} {'B/A median':>11s} {'B/A min':>9s} {'B/A max':>9s}  note")
     result: dict[str, Any] = {"pairs": args.pairs, "iterations": iters,
                               "objective_repr": obj_repr, "ratios": {}}
-    ordered = ["ratio_test", *CONTROL_PHASES, "rcost_update", "TOTAL"]
+    CONTROL_PHASES = tuple(p for p in CONTROL_PHASES_ALL if p != args.treatment)
+    ordered = [args.treatment, *CONTROL_PHASES, "TOTAL"]
     for key in ordered:
         ratios = paired_ratios(key)
         if not ratios:
             continue
         med = statistics.median(ratios)
-        note = "<-- TREATMENT" if key == "ratio_test" else (
+        note = "<-- TREATMENT" if key == args.treatment else (
             "control" if key in CONTROL_PHASES else "")
         print(f"{key:18s} {med:11.4f} {min(ratios):9.4f} {max(ratios):9.4f}  {note}")
         result["ratios"][key] = {"median": med, "min": min(ratios),
                                  "max": max(ratios), "all": ratios}
 
-    treat = statistics.median(paired_ratios("ratio_test"))
+    treat = statistics.median(paired_ratios(args.treatment))
     controls = [statistics.median(paired_ratios(p)) for p in CONTROL_PHASES]
     worst_control_drift = max(abs(1.0 - c) for c in controls)
-    print(f"\ntreatment effect on ratio_test : {100.0 * (treat - 1.0):+.2f}%")
+    print(f"\ntreatment effect on {args.treatment} : {100.0 * (treat - 1.0):+.2f}%")
     print(f"worst control-phase drift      : {100.0 * worst_control_drift:.2f}%")
 
     a_share = statistics.median(
-        [ra["phases"]["ratio_test"] / ra["total"] for ra in a_rows])
+        [ra["phases"][args.treatment] / ra["total"] for ra in a_rows])
     saved_share = a_share * (1.0 - treat)
-    print(f"ratio_test share of wall (arm A): {100.0 * a_share:.2f}%")
+    print(f"{args.treatment} share of wall (arm A): {100.0 * a_share:.2f}%")
     print(f"=> whole-wall saving           : {100.0 * saved_share:.2f}%")
     result["treatment_ratio"] = treat
     result["worst_control_drift"] = worst_control_drift
