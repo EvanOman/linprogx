@@ -10258,6 +10258,14 @@ static void lu_refresh_rcost_fuse(void) {
 }
 static int lu_rcost_fuse_on(void) { return g_rcost_fuse; }
 
+/* L^T empty-column skip gate. */
+static int g_lt_skip = 0;
+static void lu_refresh_lt_skip(void) {
+    const char *e = getenv("LINPROGX_DS_LT_SKIP");
+    g_lt_skip = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_lt_skip_on(void) { return g_lt_skip; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -10367,6 +10375,12 @@ static inline int lu_ft_row_live(const LUContext *ctx, int32_t i, int32_t create
  *
  * Returns 0 on success, -1 on rejection (caller must refactorize).
  */
+/* FT update sweep: how much of lu_update's 7.06% is the positional scan finding
+ * nothing, versus real elimination work?  Same question the solves answered. */
+static unsigned long long g_ftu_scan = 0, g_ftu_nz = 0, g_ftu_calls = 0;
+static unsigned long long g_ftu_cyc = 0;
+static int lu_uprime_census_on(void);
+
 static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
                         int32_t ent_nnz, const int32_t *ent_idx,
                         const double *ent_val) {
@@ -10472,10 +10486,14 @@ static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
             w_val_heap = 1;
         }
         int32_t pt = ctx->ft_pos[t];
+        const int ftu_census = lu_uprime_census_on();
+        unsigned long long ftu_t0 = ftu_census ? __rdtsc() : 0ULL;
+        if (ftu_census) { g_ftu_calls++; g_ftu_scan += (unsigned long long)(m - pt - 1); }
         for (int32_t k = pt + 1; k < m; k++) {
             int32_t j = ctx->ft_order[k];
             double aj = acc[j];
             if (aj == 0.0) continue;
+            if (ftu_census) g_ftu_nz++;
             acc[j] = 0.0;
             double wj = aj / ctx->u_diag[j];
             w_idx[n_w] = j;
@@ -10499,6 +10517,7 @@ static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
                 acc[slot] -= wj * ctx->ft_spk_val[e];
             }
         }
+        if (ftu_census) g_ftu_cyc += __rdtsc() - ftu_t0;
         /* acc positions consumed as visited; any residue (numerically
          * cancelled fill never visited) is zero by construction of the
          * sweep, but clear defensively at w support tail positions is
@@ -10712,6 +10731,7 @@ static unsigned long long g_up_static_cyc = 0, g_up_spike_cyc = 0;
  * 17.05% of wall, given that the U' traversal is only 2.64% of the run? */
 static unsigned long long g_bt_uphase_cyc = 0, g_bt_eta_cyc = 0, g_bt_lt_cyc = 0;
 static unsigned long long g_bt_lt_rows = 0, g_bt_lt_rows_nz = 0;
+static unsigned long long g_bt_lt_empty = 0;
 static int g_up_census = -1;
 /* TRACE HASH ORACLE (env LINPROGX_DS_TRACE_HASH=1).
  * Characterization gate for high-risk FT/solve changes, per AGENTS.md.
@@ -10949,9 +10969,19 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
     if (up_census) { g_bt_eta_cyc += __rdtsc() - bt_t0; bt_t0 = __rdtsc(); }
     /* L^T back solve */
     for (int32_t j = m - 1; j >= 0; j--) {
+        const int32_t p0 = ctx->l_indptr[j], p1 = ctx->l_indptr[j + 1];
+        if (up_census) {
+            g_bt_lt_rows++;
+            if (z[j] != 0.0) g_bt_lt_rows_nz++;
+            if (p0 == p1) g_bt_lt_empty++;
+        }
+        /* EMPTY-L-COLUMN SKIP.  With no entries the accumulation loop is a
+         * no-op and the store is z[j] = z[j], so skipping is BIT-IDENTICAL.
+         * L holds ~1.1 nonzeros per column at m=1,525, so most columns are
+         * empty and this is the common case. */
+        if (lu_lt_skip_on() && p0 == p1) continue;
         double s = z[j];
-        if (up_census) { g_bt_lt_rows++; if (s != 0.0) g_bt_lt_rows_nz++; }
-        for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
+        for (int32_t p = p0; p < p1; p++) {
             s -= ctx->l_values[p] * z[ctx->l_indices[p]];
         }
         z[j] = s;
@@ -13135,6 +13165,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     lu_refresh_uprime_compact();
     lu_refresh_force_gp();
     lu_refresh_rcost_fuse();
+    lu_refresh_lt_skip();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -15951,11 +15982,20 @@ build_result:
                     "spike_wasted=%.5f\n", sp, spa,
                     sp ? 1.0 - (double)spa / (double)sp : 0.0);
                 fprintf(stderr,
+                    "[uprime-census] FT-UPDATE calls=%llu scan=%llu nz=%llu "
+                    "nz_frac=%.5f cyc=%llu (%.2f cyc/scan-slot)\n",
+                    g_ftu_calls, g_ftu_scan, g_ftu_nz,
+                    g_ftu_scan ? (double)g_ftu_nz / (double)g_ftu_scan : 0.0,
+                    g_ftu_cyc,
+                    g_ftu_scan ? (double)g_ftu_cyc / (double)g_ftu_scan : 0.0);
+                fprintf(stderr,
                     "[uprime-census] BTRAN PHASES uprime=%llu eta=%llu lt=%llu  "
                     "lt_rows=%llu lt_rows_nz=%llu lt_nz_frac=%.5f\n",
                     g_bt_uphase_cyc, g_bt_eta_cyc, g_bt_lt_cyc,
                     g_bt_lt_rows, g_bt_lt_rows_nz,
-                    g_bt_lt_rows ? (double)g_bt_lt_rows_nz / (double)g_bt_lt_rows : 0.0);
+                    g_bt_lt_rows ? (double)g_bt_lt_rows_nz / (double)g_bt_lt_rows : 0.0,
+                    g_bt_lt_empty,
+                    g_bt_lt_rows ? (double)g_bt_lt_empty / (double)g_bt_lt_rows : 0.0);
                 fprintf(stderr,
                     "[uprime-census] BTRAN static_cyc=%llu (%.2f cyc/elem)  "
                     "spike_cyc=%llu (%.2f cyc/elem)  spike/static per-elem = %.2fx\n",
