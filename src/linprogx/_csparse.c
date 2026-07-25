@@ -10766,10 +10766,14 @@ static int lu_branchless_scan_on(void) { return g_branchless_scan; }
  * permutations are built (inv_perm_row[perm_row[k]]=k, inv_perm_col[...]).
  * Replacing the gather with a sequential clear plus n_rhs_nz scatters is
  * BIT-IDENTICAL: z holds the same values in the same slots. */
-static int g_sparse_permin = 1;
+/* Default OFF: bit-identical and cycle-census-positive, but NOT part of the
+ * certified sha d50b01a and its whole-wall A/B was inconclusive (-2.54% on
+ * btran_rho against 6.23% control drift).  The shipped default must match what
+ * was certified; this rides the next envab run. */
+static int g_sparse_permin = 0;
 static void lu_refresh_sparse_permin(void) {
     const char *e = getenv("LINPROGX_DS_SPARSE_PERMIN");
-    g_sparse_permin = (e != NULL && atoi(e) == 0) ? 0 : 1;
+    g_sparse_permin = (e != NULL && atoi(e) == 1) ? 1 : 0;
 }
 static int lu_sparse_permin_on(void) { return g_sparse_permin; }
 
