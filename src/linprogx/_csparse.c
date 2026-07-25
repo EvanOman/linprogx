@@ -10561,12 +10561,58 @@ static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
 #undef LU_FT_CLEAR_V
 }
 
+/* PERMUTATION-BOUNDARY CENSUS (diagnostic only; env LINPROGX_DS_PERM_CENSUS=1).
+ *
+ * The dense-staged FT solve bodies pay O(m) permuted gathers/scatters at the
+ * LU<->DS boundary regardless of right-hand-side sparsity: FTRAN's rhs is an
+ * entering column with ~5-8 nonzeros and BTRAN's rhs is a UNIT VECTOR, yet both
+ * gather all m entries.  The hyper-sparse GP path in this same file already
+ * uses the correct sparse idiom (see the comment at "Permute sparse rhs:
+ * z[inv_perm_row[idx]] = val"), so this measures what the dense-staged path
+ * gives up.  rdtsc brackets whole loops only -- never per element. */
+#define LU_PERM_FTRAN_IN   0
+#define LU_PERM_FTRAN_OUT  1
+#define LU_PERM_BTRAN_IN   2
+#define LU_PERM_BTRAN_OUT  3
+#define LU_PERM_FTRAN_SCAN 4
+#define LU_PERM_BTRAN_SCAN 5
+#define LU_PERM_NSTREAM    6
+static unsigned long long g_perm_cyc[LU_PERM_NSTREAM] = {0};
+static unsigned long long g_perm_calls[LU_PERM_NSTREAM] = {0};
+static unsigned long long g_perm_solve_cyc = 0;
+static int g_perm_census = -1;
+
+static int g_branchless_scan = 0;  /* KILLED 2026-07-25: measurably slower */
+static void lu_refresh_branchless_scan(void) {
+    const char *e = getenv("LINPROGX_DS_BRANCHLESS_SCAN");
+    g_branchless_scan = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_branchless_scan_on(void) { return g_branchless_scan; }
+
+static int lu_perm_census_on(void) {
+    if (g_perm_census < 0) {
+        const char *e = getenv("LINPROGX_DS_PERM_CENSUS");
+        g_perm_census = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    }
+    return g_perm_census;
+}
+
+#define LU_PERM_T0(on) unsigned long long lu_perm_t0_ = (on) ? __rdtsc() : 0ULL
+#define LU_PERM_ACC(on, idx) do { \
+    if (on) { g_perm_cyc[(idx)] += __rdtsc() - lu_perm_t0_; g_perm_calls[(idx)]++; } \
+} while (0)
+
 /* Dense FTRAN with FT state: x = B'^{-1} b. */
 static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
 
-    for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_row[k]];
+    const int perm_on = lu_perm_census_on();
+    {
+        LU_PERM_T0(perm_on);
+        for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_row[k]];
+        LU_PERM_ACC(perm_on, LU_PERM_FTRAN_IN);
+    }
     for (int32_t j = 0; j < m; j++) {
         double zj = z[j];
         if (zj == 0.0) continue;
@@ -10605,15 +10651,24 @@ static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
             }
         }
     }
-    for (int32_t k = 0; k < m; k++) x[ctx->perm_col[k]] = z[k];
+    {
+        LU_PERM_T0(perm_on);
+        for (int32_t k = 0; k < m; k++) x[ctx->perm_col[k]] = z[k];
+        LU_PERM_ACC(perm_on, LU_PERM_FTRAN_OUT);
+    }
 }
 
 /* Dense BTRAN with FT state: x = B'^{-T} b. */
 static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
+    const int perm_on = lu_perm_census_on();
 
-    for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_col[k]];
+    {
+        LU_PERM_T0(perm_on);
+        for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_col[k]];
+        LU_PERM_ACC(perm_on, LU_PERM_BTRAN_IN);
+    }
     /* U'^T forward solve in logical order (row-scatter form) */
     for (int32_t k = 0; k < m; k++) {
         int32_t j = ctx->ft_order[k];
@@ -10654,7 +10709,11 @@ static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
         }
         z[j] = s;
     }
-    for (int32_t i = 0; i < m; i++) x[i] = z[ctx->inv_perm_row[i]];
+    {
+        LU_PERM_T0(perm_on);
+        for (int32_t i = 0; i < m; i++) x[i] = z[ctx->inv_perm_row[i]];
+        LU_PERM_ACC(perm_on, LU_PERM_BTRAN_OUT);
+    }
 }
 
 /*
@@ -10929,8 +10988,31 @@ static int32_t lu_ftran_sparse(LUContext *ctx,
             lu_ft_ftran(ctx, rhs, x);
             for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = 0.0;
             int32_t nnz = 0;
-            for (int32_t i = 0; i < m; i++) {
-                if (x[i] != 0.0) x_pattern[nnz++] = i;
+            {
+                const int perm_on = lu_perm_census_on();
+                LU_PERM_T0(perm_on);
+                if (lu_branchless_scan_on()) {
+                    /* BRANCHLESS PATTERN COLLECTION.  The predicated form
+                     * writes unconditionally and advances the cursor by the
+                     * predicate, so it emits the SAME indices in the SAME
+                     * order as the branching form -- bit-identical output.
+                     * It removes one unpredictable data-dependent branch per
+                     * element; the solve result is 59-94% dense, so that
+                     * branch is close to a coin flip and mispredicts heavily
+                     * (measured 9.95 cyc/element on a cache-resident 12 KB
+                     * array).  Safe on bounds: x_pattern[nnz] is written
+                     * before the increment and nnz <= i, so the largest index
+                     * written is m-1. */
+                    for (int32_t i = 0; i < m; i++) {
+                        x_pattern[nnz] = i;
+                        nnz += (x[i] != 0.0);
+                    }
+                } else {
+                    for (int32_t i = 0; i < m; i++) {
+                        if (x[i] != 0.0) x_pattern[nnz++] = i;
+                    }
+                }
+                LU_PERM_ACC(perm_on, LU_PERM_FTRAN_SCAN);
             }
             ctx->ftran_sparse_count++;
             ctx->ftran_sparse_nnz_total += nnz;
@@ -11205,8 +11287,31 @@ static int32_t lu_btran_sparse(LUContext *ctx,
             lu_ft_btran(ctx, rhs, x);
             rhs[rhs_pos] = 0.0;
             int32_t nnz = 0;
-            for (int32_t i = 0; i < m; i++) {
-                if (x[i] != 0.0) x_pattern[nnz++] = i;
+            {
+                const int perm_on = lu_perm_census_on();
+                LU_PERM_T0(perm_on);
+                if (lu_branchless_scan_on()) {
+                    /* BRANCHLESS PATTERN COLLECTION.  The predicated form
+                     * writes unconditionally and advances the cursor by the
+                     * predicate, so it emits the SAME indices in the SAME
+                     * order as the branching form -- bit-identical output.
+                     * It removes one unpredictable data-dependent branch per
+                     * element; the solve result is 59-94% dense, so that
+                     * branch is close to a coin flip and mispredicts heavily
+                     * (measured 9.95 cyc/element on a cache-resident 12 KB
+                     * array).  Safe on bounds: x_pattern[nnz] is written
+                     * before the increment and nnz <= i, so the largest index
+                     * written is m-1. */
+                    for (int32_t i = 0; i < m; i++) {
+                        x_pattern[nnz] = i;
+                        nnz += (x[i] != 0.0);
+                    }
+                } else {
+                    for (int32_t i = 0; i < m; i++) {
+                        if (x[i] != 0.0) x_pattern[nnz++] = i;
+                    }
+                }
+                LU_PERM_ACC(perm_on, LU_PERM_BTRAN_SCAN);
             }
             ctx->btran_sparse_count++;
             ctx->btran_sparse_nnz_total += nnz;
@@ -12275,6 +12380,44 @@ static DSPriceChoice ds_price_avx2(
     return choice;
 }
 
+/* HARRIS CENSUS (diagnostic only; env LINPROGX_DS_HARRIS_CENSUS=1).
+ * Counts how many 4-column AVX2 blocks in Harris pass 1 have an empty
+ * eligibility mask.  Every such block still pays an unconditional
+ * _mm256_div_pd whose result is immediately blended to INFINITY, so an
+ * empty-mask block's division is provably dead work: skipping it is
+ * bit-identical because min(x, INFINITY) == x.  Counters are plain adds
+ * outside the vector body and are only touched when the flag is on. */
+static long long g_harris_blocks_total = 0;
+static long long g_harris_blocks_empty = 0;
+static long long g_harris_admissible_total = 0;
+static long long g_harris_calls = 0;
+static long long g_harris_support_total = 0;   /* nonzero alpha entries seen */
+static long long g_harris_ntotal_total = 0;    /* columns scanned densely */
+static long long g_harris_blocks_alpha_empty = 0; /* blocks with all-zero alpha */
+static int g_harris_census = -1;
+
+/* A/B ARM SELECTOR (diagnostic only; env LINPROGX_DS_HARRIS_FASTPATH).
+ * Refreshed once per solve, never inside the block loop, so an alternating
+ * within-process A/B sees identical contention on both arms -- the campaign's
+ * LOADED-BOX doctrine requires this because cross-process minima on this box
+ * drift 4-19% between runs.  Arm A (0) reproduces the shipped kernel; arm B (1)
+ * enables the two bit-identical early-outs.  Both arms carry the same branch so
+ * the comparison is not biased in favour of arm B. */
+static int g_harris_fastpath = 1;
+
+static void ds_harris_refresh_fastpath(void) {
+    const char *e = getenv("LINPROGX_DS_HARRIS_FASTPATH");
+    g_harris_fastpath = (e != NULL && atoi(e) == 0) ? 0 : 1;
+}
+
+static int ds_harris_census_on(void) {
+    if (g_harris_census < 0) {
+        const char *e = getenv("LINPROGX_DS_HARRIS_CENSUS");
+        g_harris_census = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    }
+    return g_harris_census;
+}
+
 __attribute__((target("avx2")))
 static int ds_harris_pass1_avx2(
     int32_t n_total, const int32_t *basis_pos, const int8_t *bound_status,
@@ -12282,6 +12425,9 @@ static int ds_harris_pass1_avx2(
     int expand, double expand_tau, int32_t *cand_j, double *cand_alpha,
     double *theta_min_out)
 {
+    const int census_on = ds_harris_census_on();
+    const int fastpath = g_harris_fastpath;
+    if (census_on) g_harris_calls++;
     const __m256d sign_mask = _mm256_set1_pd(-0.0);
     const __m256d pivot_floor = _mm256_set1_pd(1e-9);
     const __m256d tau = _mm256_set1_pd(expand == 1 ? expand_tau : 0.0);
@@ -12294,6 +12440,23 @@ static int ds_harris_pass1_avx2(
         __m256d abs_alpha = _mm256_andnot_pd(sign_mask, alpha);
         int alpha_mask = _mm256_movemask_pd(
             _mm256_cmp_pd(abs_alpha, pivot_floor, _CMP_GE_OQ));
+
+        /* CHEAPEST-FILTER-FIRST.  eligible_mask is (nonbasic & alpha & dir),
+         * so alpha_mask == 0 forces eligible_mask == 0 and the block cannot
+         * contribute a candidate or lower theta_min.  Testing it here -- before
+         * the basis_pos load, the bound_status load/widen, and the three status
+         * compares -- is BIT-IDENTICAL and strictly cheaper than testing the
+         * full eligible_mask afterwards.  greenbea's pivot row has only 22.74%
+         * numerically nonzero columns, so most blocks die on this test. */
+        if (fastpath && alpha_mask == 0) {
+            if (census_on) {
+                g_harris_blocks_total++;
+                g_harris_blocks_empty++;
+                g_harris_blocks_alpha_empty++;
+                g_harris_ntotal_total += 4;
+            }
+            continue;
+        }
 
         __m128i positions = _mm_loadu_si128((const __m128i *)(basis_pos + j));
         int nonbasic_mask = _mm_movemask_ps(_mm_castsi128_ps(
@@ -12317,6 +12480,28 @@ static int ds_harris_pass1_avx2(
         int hi_direction = leaving_sigma > 0 ? positive_mask : negative_mask;
         int eligible_mask = nonbasic_mask & alpha_mask &
             ((lo_mask & lo_direction) | (hi_mask & hi_direction) | free_mask);
+
+        if (census_on) {
+            g_harris_blocks_total++;
+            if (eligible_mask == 0) g_harris_blocks_empty++;
+            else g_harris_admissible_total += __builtin_popcount((unsigned)eligible_mask);
+            /* alpha_mask counts lanes with |alpha| >= the 1e-9 pivot floor,
+             * i.e. the true numerical support of the pivot row.  Columns
+             * outside it are exactly the ones a support-driven scan could
+             * skip without changing eligibility. */
+            g_harris_support_total += __builtin_popcount((unsigned)alpha_mask);
+            g_harris_ntotal_total += 4;
+        }
+
+        /* DEAD-DIVISION SKIP.  When no lane in this block is eligible, the
+         * blend below would replace every ratio with INFINITY and
+         * min(theta_min_v, INFINITY) == theta_min_v, so the whole tail --
+         * including an unpipelined _mm256_div_pd -- is provably dead work.
+         * Measured on greenbea: 88.08% of blocks have an empty mask
+         * (1,187 of 1,348 divisions per pivot).  Skipping is BIT-IDENTICAL,
+         * not an approximation: theta_min, cand_j, cand_alpha and
+         * n_admissible are all unchanged. */
+        if (fastpath && eligible_mask == 0) continue;
 
         __m256d abs_r = _mm256_andnot_pd(
             sign_mask, _mm256_loadu_pd(r_ext + j));
@@ -12675,6 +12860,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         PyErr_SetString(PyExc_ValueError, "matrix too large for 32-bit factorization");
         return NULL;
     }
+    /* Refresh the Harris A/B arm once per solve (never inside the hot loop). */
+    ds_harris_refresh_fastpath();
+    /* Whole-solve TSC bracket.  Reporting each stream as a FRACTION of this
+     * makes the census frequency-independent, so core boosting under load
+     * cannot bias the shares. */
+    lu_refresh_branchless_scan();
+    if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
     int32_t m = (int32_t)m_s;
@@ -15418,6 +15610,72 @@ build_result:
                 Py_DECREF(ds_ph);
             } else {
                 PyErr_Clear();
+            }
+            if (lu_perm_census_on()) {
+                unsigned long long total = __rdtsc() - g_perm_solve_cyc;
+                static const char *names[LU_PERM_NSTREAM] = {
+                    "ftran_permute_in", "ftran_permute_out",
+                    "btran_permute_in", "btran_permute_out",
+                    "ftran_pattern_scan", "btran_pattern_scan"};
+                unsigned long long dead = 0, all = 0;
+                for (int s = 0; s < LU_PERM_NSTREAM; s++) all += g_perm_cyc[s];
+                /* "Dead" = streams removable bit-identically: both permute-ins
+                 * (sparse rhs) and both pattern scans (collect in-sweep). The
+                 * permute-outs move a dense-ish result and are NOT counted. */
+                dead = g_perm_cyc[LU_PERM_FTRAN_IN] + g_perm_cyc[LU_PERM_BTRAN_IN]
+                     + g_perm_cyc[LU_PERM_FTRAN_SCAN] + g_perm_cyc[LU_PERM_BTRAN_SCAN];
+                fprintf(stderr, "[perm-census] total_solve_cyc=%llu\n", total);
+                for (int s = 0; s < LU_PERM_NSTREAM; s++) {
+                    fprintf(stderr,
+                        "[perm-census] %-19s cyc=%12llu calls=%8llu "
+                        "cyc/call=%8.1f share=%.5f\n",
+                        names[s], g_perm_cyc[s], g_perm_calls[s],
+                        g_perm_calls[s] ? (double)g_perm_cyc[s] / (double)g_perm_calls[s] : 0.0,
+                        total ? (double)g_perm_cyc[s] / (double)total : 0.0);
+                }
+                fprintf(stderr,
+                    "[perm-census] ALL_BOUNDARY share=%.5f   "
+                    "BIT-IDENTICALLY_REMOVABLE share=%.5f\n",
+                    total ? (double)all / (double)total : 0.0,
+                    total ? (double)dead / (double)total : 0.0);
+                fflush(stderr);
+            }
+            if (ds_harris_census_on()) {
+                fprintf(stderr,
+                    "[harris-census] calls=%lld blocks=%lld empty=%lld "
+                    "empty_frac=%.6f admissible=%lld adm_per_call=%.2f "
+                    "blocks_per_call=%.2f\n",
+                    g_harris_calls, g_harris_blocks_total, g_harris_blocks_empty,
+                    g_harris_blocks_total > 0
+                        ? (double)g_harris_blocks_empty / (double)g_harris_blocks_total
+                        : 0.0,
+                    g_harris_admissible_total,
+                    g_harris_calls > 0
+                        ? (double)g_harris_admissible_total / (double)g_harris_calls
+                        : 0.0,
+                    g_harris_calls > 0
+                        ? (double)g_harris_blocks_total / (double)g_harris_calls
+                        : 0.0);
+                fprintf(stderr,
+                    "[harris-census] alpha_empty_blocks=%lld alpha_empty_frac=%.6f\n",
+                    g_harris_blocks_alpha_empty,
+                    g_harris_blocks_total > 0
+                        ? (double)g_harris_blocks_alpha_empty / (double)g_harris_blocks_total
+                        : 0.0);
+                fprintf(stderr,
+                    "[harris-census] support=%lld scanned=%lld support_frac=%.6f "
+                    "support_per_call=%.2f scanned_per_call=%.2f\n",
+                    g_harris_support_total, g_harris_ntotal_total,
+                    g_harris_ntotal_total > 0
+                        ? (double)g_harris_support_total / (double)g_harris_ntotal_total
+                        : 0.0,
+                    g_harris_calls > 0
+                        ? (double)g_harris_support_total / (double)g_harris_calls
+                        : 0.0,
+                    g_harris_calls > 0
+                        ? (double)g_harris_ntotal_total / (double)g_harris_calls
+                        : 0.0);
+                fflush(stderr);
             }
             if (getenv("LINPROGX_DS_SOLVE_SLICE") != NULL) {
                 PyObject *solve_slice = Py_BuildValue(
