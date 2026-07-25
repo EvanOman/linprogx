@@ -131,8 +131,22 @@ residual 1.769e-07** — a single signature across all 22 solves.
 - It is a **local** measurement. The board is protocol v3 (Modal AWS us-west-2,
   3 hosts × 7 interleaved pairs, median-of-hosts). No v3 recertification has
   been run, so **the board remains 23W-0P-1L**.
-- Regression screening across other DS-routed cells is required before any
-  ship; the `woodw` sentinel is the binding one.
+- **CORRECTION (route census, 2026-07-25).** The woodw and degen3 A/B numbers
+  above were produced by calling `solve_eq_box_dual_simplex` DIRECTLY on the
+  presolved model, which bypasses public route selection. A census of all 24
+  cells (`experiments/route_census.py`, artifact `/tmp/route_census.json`)
+  shows that **only greenbea routes to the dual simplex publicly**; every other
+  cell resolves to `native-c-sparse-ipm` or `native-c-sparse-pdhg`, including
+  **woodw, which is IPM**. So:
+  - The woodw −5.01% and degen3 −0.52% are valid evidence that the kernel
+    change is safe and beneficial *wherever the DS runs*, but they are **NOT**
+    board-cell improvements. Those cells never execute the changed code.
+  - This independently confirms worker D's diagnosis of the previously
+    undiagnosed four-column-owner woodw regression: woodw's exposure is the
+    IPM/`LINPROGX_CHOL_SCHED` thread pool, not DS arithmetic.
+  - Consequently the units touch **exactly one board cell (greenbea)** and
+    carry structurally zero regression risk to the other 23 — they cannot
+    change a result in code that never runs.
 
 ## Considered and rejected (with arithmetic)
 
