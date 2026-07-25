@@ -10592,6 +10592,35 @@ static unsigned long long g_up_static_seen = 0, g_up_static_applied = 0;
 static unsigned long long g_up_spike_seen = 0, g_up_spike_applied = 0;
 static unsigned long long g_up_rows_seen = 0, g_up_rows_dead = 0;
 static int g_up_census = -1;
+/* TRACE HASH ORACLE (env LINPROGX_DS_TRACE_HASH=1).
+ * Characterization gate for high-risk FT/solve changes, per AGENTS.md.
+ * Objective + iteration count are too weak: a reordering can preserve both and
+ * still perturb intermediate vectors.  This folds the RAW BITS of every BTRAN
+ * and FTRAN output vector into an FNV-1a running hash, so any change to any
+ * solve result anywhere in the run alters the digest.  Off-path when disabled. */
+static unsigned long long g_trace_hash = 1469598103934665603ULL;
+static unsigned long long g_trace_vectors = 0;
+static int g_trace_on = -1;
+static int lu_trace_hash_on(void) {
+    if (g_trace_on < 0) {
+        const char *e = getenv("LINPROGX_DS_TRACE_HASH");
+        g_trace_on = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    }
+    return g_trace_on;
+}
+static void lu_trace_fold(const double *v, int32_t n) {
+    if (!lu_trace_hash_on()) return;
+    const unsigned char *p = (const unsigned char *)v;
+    size_t nbytes = (size_t)n * sizeof(double);
+    unsigned long long h = g_trace_hash;
+    for (size_t i = 0; i < nbytes; i++) {
+        h ^= (unsigned long long)p[i];
+        h *= 1099511628211ULL;
+    }
+    g_trace_hash = h;
+    g_trace_vectors++;
+}
+
 static int lu_uprime_census_on(void) {
     if (g_up_census < 0) {
         const char *e = getenv("LINPROGX_DS_UPRIME_CENSUS");
@@ -10704,6 +10733,7 @@ static void lu_ft_ftran_ex(LUContext *ctx, const double *b, double *x,
         for (int32_t k = 0; k < m; k++) x[ctx->perm_col[k]] = z[k];
         LU_PERM_ACC(perm_on, LU_PERM_FTRAN_OUT);
     }
+    lu_trace_fold(x, m);
 }
 
 static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
@@ -10780,6 +10810,7 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
         for (int32_t i = 0; i < m; i++) x[i] = z[ctx->inv_perm_row[i]];
         LU_PERM_ACC(perm_on, LU_PERM_BTRAN_OUT);
     }
+    lu_trace_fold(x, m);
 }
 
 static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
@@ -15724,6 +15755,11 @@ build_result:
                 Py_DECREF(ds_ph);
             } else {
                 PyErr_Clear();
+            }
+            if (lu_trace_hash_on()) {
+                fprintf(stderr, "[trace-hash] vectors=%llu digest=%016llx\n",
+                        g_trace_vectors, g_trace_hash);
+                fflush(stderr);
             }
             if (lu_uprime_census_on()) {
                 unsigned long long st = g_up_static_seen, sa = g_up_static_applied;
