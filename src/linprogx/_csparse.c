@@ -8929,6 +8929,15 @@ typedef struct {
     int32_t *ft_spk_col;       /* packed entry -> owning spike id */
     int32_t *ft_spk_nextrow;   /* packed entry -> next entry in same row */
     int32_t *ft_rowhead;       /* z-row -> first packed spike entry or -1 */
+    /* C-2 PHASE 1: compacted STATIC U'/U'^T.  The virtual representation
+     * filters the static factor at SOLVE time (30.07% of static element visits
+     * on greenbea are loaded then discarded).  These hold the same entries in
+     * the SAME ORDER with the dead ones physically removed, so the solve loops
+     * run unconditionally.  Rebuilt eagerly at each FT commit for only the
+     * O(nnz of one row + one column) entries whose liveness actually changed. */
+    int32_t *uc_idx;  double *uc_val;  int32_t *uc_end;   /* U columns  (FTRAN) */
+    int32_t *utc_idx; double *utc_val; int32_t *utc_end;  /* U^T rows   (BTRAN) */
+    int uc_active;
     /* row-eta file */
     int32_t *ft_eta_slot;      /* eta k -> target z-slot t_k */
     int32_t *ft_eta_start;     /* eta k -> packed start (size n+1) */
@@ -9183,6 +9192,8 @@ static void lu_context_free(LUContext *ctx) {
     free(ctx->ft_spk_slot); free(ctx->ft_spk_created); free(ctx->ft_spk_start);
     free(ctx->ft_spk_idx); free(ctx->ft_spk_val);
     free(ctx->ft_spk_col); free(ctx->ft_spk_nextrow); free(ctx->ft_rowhead);
+    free(ctx->uc_idx); free(ctx->uc_val); free(ctx->uc_end);
+    free(ctx->utc_idx); free(ctx->utc_val); free(ctx->utc_end);
     free(ctx->ft_eta_slot); free(ctx->ft_eta_start);
     free(ctx->ft_eta_idx); free(ctx->ft_eta_val);
     free(ctx->ft_v); free(ctx->ft_acc); free(ctx->ft_pat); free(ctx->ft_pat2);
@@ -9879,6 +9890,9 @@ assemble:
     ctx->ft_spk_slot = NULL; ctx->ft_spk_created = NULL; ctx->ft_spk_start = NULL;
     ctx->ft_spk_idx = NULL; ctx->ft_spk_val = NULL;
     ctx->ft_spk_col = NULL; ctx->ft_spk_nextrow = NULL; ctx->ft_rowhead = NULL;
+    ctx->uc_idx = NULL; ctx->uc_val = NULL; ctx->uc_end = NULL;
+    ctx->utc_idx = NULL; ctx->utc_val = NULL; ctx->utc_end = NULL;
+    ctx->uc_active = 0;
     ctx->ft_eta_slot = NULL; ctx->ft_eta_start = NULL;
     ctx->ft_eta_idx = NULL; ctx->ft_eta_val = NULL;
     ctx->ft_upd_cap = 0;
@@ -10212,6 +10226,69 @@ static void gp_usolve(const LUContext *ctx, double *x,
 /* ==================================================================== */
 
 /* Lazy allocation of all FT state on the first update. Returns 0/-1. */
+/* C-2 PHASE 1 gate.  Default OFF until A/B-verified; the compacted structures
+ * are exact (same entries, same order) so the gate is a measurement tool, not a
+ * correctness switch. */
+/* KILLED 2026-07-25 on measurement -- default OFF, diagnostic only. */
+static int g_uc_compact = 0;
+static void lu_refresh_uprime_compact(void) {
+    const char *e = getenv("LINPROGX_DS_UPRIME_COMPACT");
+    g_uc_compact = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_uprime_compact_on(void) { return g_uc_compact; }
+
+/* Rebuild the compacted live entries of U column j (FTRAN static path).
+ * Scans the ORIGINAL list in index order and copies only live entries, so the
+ * traversal order -- and therefore every floating-point accumulation order --
+ * is bit-identical to the filtered virtual form. */
+static void lu_uc_rebuild_col(LUContext *ctx, int32_t j) {
+    int32_t w = ctx->u_indptr[j];
+    for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+        int32_t i = ctx->u_indices[p];
+        if (i == j) continue;
+        if (ctx->ft_del_stamp[i] >= 0) continue;
+        ctx->uc_idx[w] = i;
+        ctx->uc_val[w] = ctx->u_values[p];
+        w++;
+    }
+    ctx->uc_end[j] = w;
+}
+
+/* Rebuild the compacted live entries of U^T row j (BTRAN static path). */
+static void lu_uc_rebuild_row(LUContext *ctx, int32_t j) {
+    int32_t w = ctx->ut_indptr[j];
+    for (int32_t p = ctx->ut_indptr[j]; p < ctx->ut_indptr[j + 1]; p++) {
+        int32_t l = ctx->ut_indices[p];
+        if (l == j) continue;
+        if (ctx->ft_col_spike[l] >= 0) continue;
+        ctx->utc_idx[w] = l;
+        ctx->utc_val[w] = ctx->ut_values[p];
+        w++;
+    }
+    ctx->utc_end[j] = w;
+}
+
+static void lu_uc_rebuild_all(LUContext *ctx) {
+    if (!ctx->uc_active) return;
+    for (int32_t j = 0; j < ctx->m; j++) {
+        lu_uc_rebuild_col(ctx, j);
+        lu_uc_rebuild_row(ctx, j);
+    }
+}
+
+/* One FT commit marks slot t: column t spiked AND row t deleted.  Only the
+ * columns that contain row t, and the rows that contain column t, change
+ * liveness -- and both sets are read straight off the transpose. */
+static void lu_uc_commit(LUContext *ctx, int32_t t) {
+    if (!ctx->uc_active) return;
+    for (int32_t p = ctx->ut_indptr[t]; p < ctx->ut_indptr[t + 1]; p++) {
+        lu_uc_rebuild_col(ctx, ctx->ut_indices[p]);
+    }
+    for (int32_t p = ctx->u_indptr[t]; p < ctx->u_indptr[t + 1]; p++) {
+        lu_uc_rebuild_row(ctx, ctx->u_indices[p]);
+    }
+}
+
 static int lu_ft_lazy_init(LUContext *ctx) {
     if (ctx->ft_order != NULL) return 0;
     int32_t m = ctx->m;
@@ -10220,6 +10297,17 @@ static int lu_ft_lazy_init(LUContext *ctx) {
     ctx->ft_col_spike = malloc((size_t)m * sizeof(int32_t));
     ctx->ft_del_stamp = malloc((size_t)m * sizeof(int32_t));
     ctx->ft_rowhead = malloc((size_t)m * sizeof(int32_t));
+    if (lu_uprime_compact_on()) {
+        int32_t unnz = ctx->u_indptr[m];
+        ctx->uc_idx  = malloc((size_t)(unnz > 0 ? unnz : 1) * sizeof(int32_t));
+        ctx->uc_val  = malloc((size_t)(unnz > 0 ? unnz : 1) * sizeof(double));
+        ctx->uc_end  = malloc((size_t)m * sizeof(int32_t));
+        ctx->utc_idx = malloc((size_t)(unnz > 0 ? unnz : 1) * sizeof(int32_t));
+        ctx->utc_val = malloc((size_t)(unnz > 0 ? unnz : 1) * sizeof(double));
+        ctx->utc_end = malloc((size_t)m * sizeof(int32_t));
+        ctx->uc_active = (ctx->uc_idx && ctx->uc_val && ctx->uc_end &&
+                          ctx->utc_idx && ctx->utc_val && ctx->utc_end);
+    }
     ctx->ft_v = calloc((size_t)m, sizeof(double));
     ctx->ft_acc = calloc((size_t)m, sizeof(double));
     ctx->ft_pat = malloc((size_t)m * sizeof(int32_t));
@@ -10239,6 +10327,7 @@ static int lu_ft_lazy_init(LUContext *ctx) {
         ctx->ft_del_stamp[i] = -1;
         ctx->ft_rowhead[i] = -1;
     }
+    lu_uc_rebuild_all(ctx);
     return 0;
 }
 
@@ -10537,6 +10626,7 @@ static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
     /* bookkeeping: replace column t, delete row t, cycle t to the end */
     ctx->ft_col_spike[t] = sid;
     ctx->ft_del_stamp[t] = upd;
+    lu_uc_commit(ctx, t);
     ctx->u_diag[t] = d;
     {
         int32_t pt = ctx->ft_pos[t];
@@ -10717,6 +10807,15 @@ static void lu_ft_ftran_ex(LUContext *ctx, const double *b, double *x,
                 if (up_census) g_up_spike_applied++;
                 z[i] -= ctx->ft_spk_val[p] * zj;
             }
+        } else if (ctx->uc_active) {
+            const int32_t e = ctx->uc_end[j];
+            for (int32_t p = ctx->u_indptr[j]; p < e; p++) {
+                z[ctx->uc_idx[p]] -= ctx->uc_val[p] * zj;
+            }
+            if (up_census) {
+                g_up_static_seen += (unsigned long long)(e - ctx->u_indptr[j]);
+                g_up_static_applied += (unsigned long long)(e - ctx->u_indptr[j]);
+            }
         } else {
             for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
                 int32_t i = ctx->u_indices[p];
@@ -10767,6 +10866,17 @@ static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
         z[j] = zj;
         /* scatter live ROW j of U' */
         if (ctx->ft_del_stamp[j] < 0) {
+            if (ctx->uc_active) {
+                /* compacted: every entry is live, no per-element predicate */
+                const int32_t e = ctx->utc_end[j];
+                for (int32_t p = ctx->ut_indptr[j]; p < e; p++) {
+                    z[ctx->utc_idx[p]] -= ctx->utc_val[p] * zj;
+                }
+                if (up_census) {
+                    g_up_static_seen += (unsigned long long)(e - ctx->ut_indptr[j]);
+                    g_up_static_applied += (unsigned long long)(e - ctx->ut_indptr[j]);
+                }
+            } else
             for (int32_t p = ctx->ut_indptr[j]; p < ctx->ut_indptr[j + 1]; p++) {
                 int32_t l = ctx->ut_indices[p];
                 if (up_census) g_up_static_seen++;
@@ -12980,6 +13090,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * cannot bias the shares. */
     lu_refresh_branchless_scan();
     lu_refresh_sparse_permin();
+    lu_refresh_uprime_compact();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
