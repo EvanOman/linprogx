@@ -10336,6 +10336,18 @@ static void ds_refresh_logical_basis(void) {
 }
 static int ds_logical_basis_on(void) { return g_logical_basis; }
 
+/* Churn-penalty shape (leaving_rule=4). Defaults reproduce the original. */
+static double g_churn_alpha = 1.0;
+static int32_t g_churn_cap = 2147483647;
+static void ds_refresh_churn(void) {
+    const char *a = getenv("LINPROGX_DS_CHURN_ALPHA");
+    g_churn_alpha = (a != NULL && atof(a) >= 0.0) ? atof(a) : 1.0;
+    const char *c = getenv("LINPROGX_DS_CHURN_CAP");
+    g_churn_cap = (c != NULL && atoi(c) > 0) ? (int32_t)atoi(c) : 2147483647;
+}
+static double ds_churn_alpha(void) { return g_churn_alpha; }
+static int32_t ds_churn_cap(void) { return g_churn_cap; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -13243,6 +13255,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_rot_start();
     ds_refresh_perturb_rows();
     ds_refresh_logical_basis();
+    ds_refresh_churn();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -14595,8 +14608,21 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             { double wf = ds_edge_floor(); if (w < wf) w = wf; }
                             score = (viol * viol) / w;
                             if (leaving_rule == 4) {
+                                /* CHURN PENALTY.  The original form divides by
+                                 * (1 + enter_count): unbounded and permanent,
+                                 * which measurably destabilises greenbea
+                                 * (dual_infeasible, +206%, churn actually
+                                 * RISING 14->26) while winning big on 25fv47
+                                 * (-43%).  Make the strength and the cap
+                                 * tunable so a gentler, bounded penalty can be
+                                 * searched for:
+                                 *     score /= (1 + alpha * min(ec, cap))
+                                 * alpha=1, cap=INT32_MAX reproduces the
+                                 * original exactly. */
                                 int32_t ec = (enter_count != NULL) ? enter_count[j] : 0;
-                                score /= (1.0 + (double)ec);
+                                int32_t cap = ds_churn_cap();
+                                if (ec > cap) ec = cap;
+                                score /= (1.0 + ds_churn_alpha() * (double)ec);
                             }
                         }
                         if (score > max_score) {
