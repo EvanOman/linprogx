@@ -10348,6 +10348,14 @@ static void ds_refresh_churn(void) {
 static double ds_churn_alpha(void) { return g_churn_alpha; }
 static int32_t ds_churn_cap(void) { return g_churn_cap; }
 
+/* Anti-cycling window length in pivots; 0 disables. */
+static int32_t g_tabu_window = 0;
+static void ds_refresh_tabu(void) {
+    const char *e = getenv("LINPROGX_DS_TABU");
+    g_tabu_window = (e != NULL && atoi(e) > 0) ? (int32_t)atoi(e) : 0;
+}
+static int32_t ds_tabu_window(void) { return g_tabu_window; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -13256,6 +13264,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_perturb_rows();
     ds_refresh_logical_basis();
     ds_refresh_churn();
+    ds_refresh_tabu();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -13334,6 +13343,17 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *alpha_scratch = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(double));
     /* per-column basis entries (churn probe) */
     int32_t *enter_count = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
+    /* ANTI-CYCLING WINDOW (env LINPROGX_DS_TABU=<pivots>, 0 = off).
+     * The churn diagnostic (cols_reentering_gt10) separates the simplex class
+     * perfectly, but a scalar penalty on enter_count is the wrong mechanism: no
+     * (alpha, cap) wins the class without regressing greenbea or losing a
+     * certificate.  This is the bounded-memory alternative -- a row whose basic
+     * variable entered within the last T pivots is skipped, with a fail-open
+     * fallback so the pivot is never lost. */
+    int32_t *enter_iter = malloc((size_t)(n_total > 0 ? n_total : 1) * sizeof(int32_t));
+    if (enter_iter != NULL) {
+        for (int32_t j = 0; j < n_total; j++) enter_iter[j] = -1000000000;
+    }
     /* accumulated anti-degeneracy cost shifts (removed before optimal exit) */
     double *c_shift = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(double));
     int32_t *alpha_touched = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
@@ -14474,6 +14494,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
              * dse_reject[] bans rows already found to have badly stale weights
              * within this pivot. */
             int32_t dse_n_reject = 0;
+            const int32_t tabu_win = ds_tabu_window();
+            int tabu_relax = 0;   /* fail-open: retry ignoring the window */
+          ds_tabu_retry:;
             if (ds_reselect_on()) memset(dse_reject, 0, (size_t)m * sizeof(int8_t));
         ds_reselect_retry:
             leaving_basis_pos = -1;
@@ -14597,7 +14620,14 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                     if (viol > 0.0) {
                         double score;
-                        if (ds_reselect_on() && dse_reject[k]) {
+                        int tabu_skip = 0;
+                        if (tabu_win > 0 && enter_iter != NULL &&
+                            (int32_t)iter - enter_iter[j] < tabu_win) {
+                            tabu_skip = 1;
+                        }
+                        if (tabu_skip && !tabu_relax) {
+                            score = -1.0;
+                        } else if (ds_reselect_on() && dse_reject[k]) {
                             score = -1.0;
                         } else if (leaving_rule == 1) {
                             /* plain max violation (Dantzig analogue) */
@@ -14634,6 +14664,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
             }
 
+            if (leaving_basis_pos < 0 && tabu_win > 0 && !tabu_relax) {
+                /* Every violated row was inside the window: relax and retry so a
+                 * pivot is never lost to the anti-cycling filter. */
+                tabu_relax = 1;
+                goto ds_tabu_retry;
+            }
             if (leaving_basis_pos < 0 && cost_shift_on && c_shift != NULL) {
                 /* Would-be-optimal for the SHIFTED costs: remove all
                  * accumulated shifts, recompute duals/reduced costs from
@@ -15663,6 +15699,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             }
             if (enter_count != NULL) {
                 enter_count[entering_col]++;
+                if (enter_iter != NULL) enter_iter[entering_col] = (int32_t)iter;
             }
             basis[leaving_basis_pos] = entering_col;
             basis_pos[entering_col] = leaving_basis_pos;
@@ -16518,7 +16555,7 @@ done:
     free(x_ext); free(r_ext); free(basis_pos); free(bound_status);
     free(b); free(y); free(x_B); free(rhs);
     free(rho); free(alpha_col); free(e_i); free(c_B);
-    free(devex_w); free(dse_tau); free(dse_reject); free(enter_count); free(c_shift); free(basis);
+    free(devex_w); free(dse_tau); free(dse_reject); free(enter_count); free(enter_iter); free(c_shift); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched); free(alpha_pattern);
