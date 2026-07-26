@@ -12,9 +12,13 @@ LPnetlib sample together with each instance's structural signature.
 """
 
 from __future__ import annotations
-import argparse, json, sys, time
+
+import argparse
+import json
+import time
 from pathlib import Path
 from typing import Any
+
 import numpy as np
 from scipy.io import loadmat
 
