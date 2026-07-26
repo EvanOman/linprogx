@@ -10364,6 +10364,14 @@ static void ds_refresh_churn_dead(void) {
 }
 static int32_t ds_churn_deadband(void) { return g_churn_dead; }
 
+/* Apply the churn penalty to the Dantzig score (forces the scalar scan). */
+static int g_churn_dantzig = 0;
+static void ds_refresh_churn_dantzig(void) {
+    const char *e = getenv("LINPROGX_DS_CHURN_DANTZIG");
+    g_churn_dantzig = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_churn_dantzig(void) { return g_churn_dantzig; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -12675,7 +12683,7 @@ __attribute__((target("avx2")))
 static DSPriceChoice ds_price_avx2(
     const int32_t *basis, const double *x_B, const double *lo_ext,
     const double *hi_ext, const double *weights, int32_t m, double tol,
-    int dantzig)
+    int dantzig, const double *churn_pen)
 {
     const __m256d zero = _mm256_setzero_pd();
     const __m256d one = _mm256_set1_pd(1.0);
@@ -12709,6 +12717,14 @@ static DSPriceChoice ds_price_avx2(
         __m256d score;
         if (dantzig) {
             score = viol;
+            /* CHURN PENALTY, VECTORISED.  The penalty depends only on the
+             * entering column's total entry count, so it changes for exactly
+             * one basis position per pivot and is maintained incrementally.
+             * Folding it in here keeps the AVX2 scan -- the scalar fallback
+             * costs ~11% of wall, which previously ate the entire pivot win. */
+            if (churn_pen != NULL) {
+                score = _mm256_div_pd(score, _mm256_loadu_pd(churn_pen + k));
+            }
         } else {
             __m256d weight = _mm256_loadu_pd(weights + k);
             weight = _mm256_max_pd(weight, weight_floor);
@@ -12758,6 +12774,7 @@ static DSPriceChoice ds_price_avx2(
             double score;
             if (dantzig) {
                 score = viol;
+                if (churn_pen != NULL) score /= churn_pen[k];
             } else {
                 double w = weights[k];
                 if (w < 1e-12) w = 1e-12;
@@ -13274,6 +13291,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_churn();
     ds_refresh_tabu();
     ds_refresh_churn_dead();
+    ds_refresh_churn_dantzig();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -13359,6 +13377,10 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * certificate.  This is the bounded-memory alternative -- a row whose basic
      * variable entered within the last T pivots is skipped, with a fail-open
      * fallback so the pivot is never lost. */
+    /* Per-basis-position churn penalty, maintained incrementally: only the
+     * position that just received the entering column can change. */
+    double *churn_pen = malloc((size_t)(m > 0 ? m : 1) * sizeof(double));
+    if (churn_pen != NULL) { for (int32_t k = 0; k < m; k++) churn_pen[k] = 1.0; }
     int32_t *enter_iter = malloc((size_t)(n_total > 0 ? n_total : 1) * sizeof(int32_t));
     if (enter_iter != NULL) {
         for (int32_t j = 0; j < n_total; j++) enter_iter[j] = -1000000000;
@@ -14597,7 +14619,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 #if LINPROGX_X86_SIMD
                 DSPriceChoice choice = ds_price_avx2(
                     basis, x_B, lo_ext, hi_ext, devex_w, m, tol,
-                    leaving_rule == 1);
+                    leaving_rule == 1,
+                    (leaving_rule == 1 && ds_churn_dantzig()) ? churn_pen : NULL);
                 max_score = choice.score;
                 leaving_basis_pos = choice.basis_pos;
                 leaving_sigma = choice.sigma;
@@ -14641,6 +14664,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         } else if (leaving_rule == 1) {
                             /* plain max violation (Dantzig analogue) */
                             score = viol;
+                            /* CHURN PENALTY ON DANTZIG.  The penalty was only
+                             * ever attached to the Devex score (rule 4), where
+                             * it improves greenbea 12.8% against ITS baseline --
+                             * i.e. the penalty helps greenbea, Devex hurts it.
+                             * Dantzig is greenbea's best rule, so this is the
+                             * untested combination that matters. */
+                            if (ds_churn_dantzig()) {
+                                int32_t ec = (enter_count != NULL) ? enter_count[j] : 0;
+                                int32_t cap = ds_churn_cap();
+                                if (ec > cap) ec = cap;
+                                int32_t dead = ds_churn_deadband();
+                                double pen = (double)(ec > dead ? ec - dead : 0);
+                                score /= (1.0 + ds_churn_alpha() * pen);
+                            }
                         } else {
                             /* Devex score: violation^2 / weight (Harris 1973) */
                             double w = devex_w[k];
@@ -15720,6 +15757,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             if (enter_count != NULL) {
                 enter_count[entering_col]++;
                 if (enter_iter != NULL) enter_iter[entering_col] = (int32_t)iter;
+                if (churn_pen != NULL && ds_churn_dantzig()) {
+                    int32_t ec = enter_count[entering_col];
+                    int32_t cp = ds_churn_cap(); if (ec > cp) ec = cp;
+                    int32_t dd = ds_churn_deadband();
+                    double pen = (double)(ec > dd ? ec - dd : 0);
+                    churn_pen[leaving_basis_pos] = 1.0 + ds_churn_alpha() * pen;
+                }
             }
             basis[leaving_basis_pos] = entering_col;
             basis_pos[entering_col] = leaving_basis_pos;
@@ -16575,7 +16619,7 @@ done:
     free(x_ext); free(r_ext); free(basis_pos); free(bound_status);
     free(b); free(y); free(x_B); free(rhs);
     free(rho); free(alpha_col); free(e_i); free(c_B);
-    free(devex_w); free(dse_tau); free(dse_reject); free(enter_count); free(enter_iter); free(c_shift); free(basis);
+    free(devex_w); free(dse_tau); free(dse_reject); free(enter_count); free(enter_iter); free(churn_pen); free(c_shift); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched); free(alpha_pattern);
