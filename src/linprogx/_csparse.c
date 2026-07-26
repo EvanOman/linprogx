@@ -10364,13 +10364,26 @@ static void ds_refresh_churn_dead(void) {
 }
 static int32_t ds_churn_deadband(void) { return g_churn_dead; }
 
-/* Apply the churn penalty to the Dantzig score (forces the scalar scan). */
+/* Apply the churn penalty to the Dantzig score (leaving_rule=1). */
 static int g_churn_dantzig = 0;
 static void ds_refresh_churn_dantzig(void) {
     const char *e = getenv("LINPROGX_DS_CHURN_DANTZIG");
     g_churn_dantzig = (e != NULL && atoi(e) == 1) ? 1 : 0;
 }
 static int ds_churn_dantzig(void) { return g_churn_dantzig; }
+
+/* Apply the churn penalty to the exact-DSE score (leaving_rule=5).
+ * DSE wins the simplex class outright -- 25fv47 8,300 -> 2,613 (below HiGHS's
+ * 3,033) and degen2 1,447 -> 653 -- but LOSES greenbea (4,399 -> 4,675). The
+ * campaign's recorded "exact DSE is worse" verdict was a greenbea-only fact.
+ * Churn is the mechanism that helps greenbea specifically, so DSE+churn is the
+ * combination that could win the class without a per-problem rule choice. */
+static int g_churn_dse = 0;
+static void ds_refresh_churn_dse(void) {
+    const char *e = getenv("LINPROGX_DS_CHURN_DSE");
+    g_churn_dse = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_churn_dse(void) { return g_churn_dse; }
 
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
@@ -12717,18 +12730,23 @@ static DSPriceChoice ds_price_avx2(
         __m256d score;
         if (dantzig) {
             score = viol;
-            /* CHURN PENALTY, VECTORISED.  The penalty depends only on the
-             * entering column's total entry count, so it changes for exactly
-             * one basis position per pivot and is maintained incrementally.
-             * Folding it in here keeps the AVX2 scan -- the scalar fallback
-             * costs ~11% of wall, which previously ate the entire pivot win. */
-            if (churn_pen != NULL) {
-                score = _mm256_div_pd(score, _mm256_loadu_pd(churn_pen + k));
-            }
         } else {
             __m256d weight = _mm256_loadu_pd(weights + k);
             weight = _mm256_max_pd(weight, weight_floor);
             score = _mm256_div_pd(_mm256_mul_pd(viol, viol), weight);
+        }
+        /* CHURN PENALTY, VECTORISED.  The penalty depends only on the entering
+         * column's total entry count, so it changes for exactly one basis
+         * position per pivot and is maintained incrementally.  Folding it in
+         * here keeps the AVX2 scan -- the scalar fallback costs ~11% of wall,
+         * which previously ate the entire pivot win.
+         *
+         * Applied to WHICHEVER score the rule produced, so it composes with
+         * exact DSE as well as Dantzig.  That combination is the one that
+         * matters: DSE wins the class but loses greenbea (4,399 -> 4,675),
+         * and churn is the mechanism that helps greenbea specifically. */
+        if (churn_pen != NULL) {
+            score = _mm256_div_pd(score, _mm256_loadu_pd(churn_pen + k));
         }
         __m256d better = _mm256_cmp_pd(score, lane_best_score, _CMP_GT_OQ);
         __m256d index = _mm256_setr_pd(
@@ -12774,12 +12792,12 @@ static DSPriceChoice ds_price_avx2(
             double score;
             if (dantzig) {
                 score = viol;
-                if (churn_pen != NULL) score /= churn_pen[k];
             } else {
                 double w = weights[k];
                 if (w < 1e-12) w = 1e-12;
                 score = (viol * viol) / w;
             }
+            if (churn_pen != NULL) score /= churn_pen[k];
             if (score > choice.score) {
                 choice.score = score;
                 choice.basis_pos = k;
@@ -13292,6 +13310,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_tabu();
     ds_refresh_churn_dead();
     ds_refresh_churn_dantzig();
+    ds_refresh_churn_dse();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -14620,7 +14639,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 DSPriceChoice choice = ds_price_avx2(
                     basis, x_B, lo_ext, hi_ext, devex_w, m, tol,
                     leaving_rule == 1,
-                    (leaving_rule == 1 && ds_churn_dantzig()) ? churn_pen : NULL);
+                    ((leaving_rule == 1 && ds_churn_dantzig()) ||
+                     (leaving_rule == 5 && ds_churn_dse())) ? churn_pen : NULL);
                 max_score = choice.score;
                 leaving_basis_pos = choice.basis_pos;
                 leaving_sigma = choice.sigma;
@@ -14679,10 +14699,22 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                                 score /= (1.0 + ds_churn_alpha() * pen);
                             }
                         } else {
-                            /* Devex score: violation^2 / weight (Harris 1973) */
+                            /* Devex score: violation^2 / weight (Harris 1973);
+                             * with leaving_rule=5 devex_w holds the EXACT DSE
+                             * weights, so the same expression is the DSE score. */
                             double w = devex_w[k];
                             { double wf = ds_edge_floor(); if (w < wf) w = wf; }
                             score = (viol * viol) / w;
+                            if (leaving_rule == 5 && ds_churn_dse()) {
+                                /* Churn on top of exact DSE -- see
+                                 * ds_refresh_churn_dse for why this cell. */
+                                int32_t ec = (enter_count != NULL) ? enter_count[j] : 0;
+                                int32_t cap = ds_churn_cap();
+                                if (ec > cap) ec = cap;
+                                int32_t dead = ds_churn_deadband();
+                                double pen = (double)(ec > dead ? ec - dead : 0);
+                                score /= (1.0 + ds_churn_alpha() * pen);
+                            }
                             if (leaving_rule == 4) {
                                 /* CHURN PENALTY.  The original form divides by
                                  * (1 + enter_count): unbounded and permanent,
@@ -15757,7 +15789,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             if (enter_count != NULL) {
                 enter_count[entering_col]++;
                 if (enter_iter != NULL) enter_iter[entering_col] = (int32_t)iter;
-                if (churn_pen != NULL && ds_churn_dantzig()) {
+                if (churn_pen != NULL &&
+                    (ds_churn_dantzig() || ds_churn_dse())) {
                     int32_t ec = enter_count[entering_col];
                     int32_t cp = ds_churn_cap(); if (ec > cp) ec = cp;
                     int32_t dd = ds_churn_deadband();
