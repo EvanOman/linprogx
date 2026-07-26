@@ -169,3 +169,49 @@ the way an unbounded divisor does.
 persistent divisor (big class win, breaks greenbea), its bounded/damped variants
 (no configuration wins without a regression or failure), and the recency window
 (worse everywhere). Board unchanged: **23W-0P-1L**.
+
+---
+
+## CORRECTION + best result: the churn penalty's real baseline is Devex, not Dantzig
+
+`leaving_rule=4` computes the **Devex** score (`viol^2 / w`) and then applies the
+churn penalty; `leaving_rule=1` is **Dantzig** (`viol`). So comparing rule 4
+against rule 1 conflates a scoring-rule change with the penalty. Confirmed
+directly: **`rule4` with a large deadband reproduces `rule0` Devex exactly**
+(5,144 / 9,766 / 6,807 / 1,174 / 258 — identical in every cell).
+
+Measured against the correct baseline:
+
+| config | 25fv47 | greenbeb | greenbea | degen2 | agg2 | total |
+|---|---:|---:|---:|---:|---:|---:|
+| Dantzig (rule 1) | 8,300 | 8,919 | **4,399** | 1,447 | 274 | 23,339 |
+| Devex (rule 0) | 5,144 | 9,766 | 6,807 | 1,174 | 258 | 23,149 |
+| **Devex + churn, deadband 5** | 5,264 | **9,129** | **5,934** | **1,110** | 258 | **21,695** |
+| *penalty effect vs Devex* | +2.3% | **−6.5%** | **−12.8%** | **−5.5%** | 0% | **−6.3%** |
+
+### Two real results
+
+1. **The churn penalty is genuinely good — against its own baseline.** It
+   improves four of five instances versus Devex, including **greenbea by 12.8%**,
+   for **−6.3%** overall. The deadband is what makes it safe: at K=0 the
+   unbounded penalty drives greenbea to `dual_infeasible`; at K=5 every instance
+   certifies. Penalising only *demonstrable* churners (greenbea has 14 columns
+   re-entering >10x against 25fv47's 226) removes the destabilisation.
+2. **It is the best class configuration found**: 21,695 total pivots against
+   Dantzig's 23,339, **−7.0%**, all optimal, all certified.
+
+### Why it still cannot ship
+
+Dantzig remains the best rule for **greenbea specifically** (4,399, versus 5,934
+for the best churn-aware configuration). So adopting Devex+churn globally would
+trade a 7% class gain for a ~35% regression on the one cell that is already our
+only loss. Under "no per-problem tuning" that trade is not available, and it
+moves the board in the wrong direction.
+
+**This is the sharpest statement of greenbea's peculiarity yet found:** it is the
+one instance in its class where the *cheap, memoryless* rule beats every
+sophisticated one. Devex loses to Dantzig on it by 55%; DSE by 6%; churn-aware
+Devex by 35%. Every mechanism that helps the class hurts greenbea, and every
+mechanism greenbea likes (plain Dantzig) leaves the class on the table.
+
+Board unchanged: **23W-0P-1L**.

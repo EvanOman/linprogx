@@ -10356,6 +10356,14 @@ static void ds_refresh_tabu(void) {
 }
 static int32_t ds_tabu_window(void) { return g_tabu_window; }
 
+/* Churn deadband: columns entering <= K times are not penalised at all. */
+static int32_t g_churn_dead = 0;
+static void ds_refresh_churn_dead(void) {
+    const char *e = getenv("LINPROGX_DS_CHURN_DEADBAND");
+    g_churn_dead = (e != NULL && atoi(e) > 0) ? (int32_t)atoi(e) : 0;
+}
+static int32_t ds_churn_deadband(void) { return g_churn_dead; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -13265,6 +13273,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_logical_basis();
     ds_refresh_churn();
     ds_refresh_tabu();
+    ds_refresh_churn_dead();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -14652,7 +14661,18 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                                 int32_t ec = (enter_count != NULL) ? enter_count[j] : 0;
                                 int32_t cap = ds_churn_cap();
                                 if (ec > cap) ec = cap;
-                                score /= (1.0 + ds_churn_alpha() * (double)ec);
+                                /* DEADBAND: penalise only DEMONSTRABLE churners.
+                                 * greenbea has just 14 columns re-entering >10x
+                                 * (25fv47 has 226), so a proportional penalty
+                                 * distorts its selection where there is almost
+                                 * nothing to fix -- which is the likely reason
+                                 * rule 4 destabilises it. Subtracting a deadband
+                                 * K leaves ordinary columns untouched and is a
+                                 * global, self-targeting rule. K=0 reproduces
+                                 * the previous behaviour exactly. */
+                                int32_t dead = ds_churn_deadband();
+                                double pen = (double)(ec > dead ? ec - dead : 0);
+                                score /= (1.0 + ds_churn_alpha() * pen);
                             }
                         }
                         if (score > max_score) {
