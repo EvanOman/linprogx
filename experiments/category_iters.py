@@ -56,8 +56,8 @@ def lx_iters(d):
     from linprogx.sparse import SparseLPProblem, SparseSolver, from_scipy_sparse
 
     bounds = [
-        (None if l == -INF else float(l), None if h == INF else float(h))
-        for l, h in zip(d["lo"], d["hi"], strict=True)
+        (None if low == -INF else float(low), None if up == INF else float(up))
+        for low, up in zip(d["lo"], d["hi"], strict=True)
     ]
     t0 = time.perf_counter()
     r = SparseSolver(
