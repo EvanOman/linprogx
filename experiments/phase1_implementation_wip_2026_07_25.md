@@ -212,3 +212,73 @@ which HiGHS also pays.
 
 **This is the next wave, and it is the last item on S3's ranked list that has not
 been either built or killed.**
+
+---
+
+## KILL: DSE row re-selection — the last ranked lever, and it does nothing
+
+Implemented HiGHS's acceptance test faithfully: after the BTRAN, compare the
+**previously stored** weight against the exact `‖rho‖²` and, if it was
+`< 0.25x` exact, ban that row and re-select (`LINPROGX_DS_RESELECT=1`,
+tolerance and retry cap both tunable). The discarded BTRAN is a real cost —
+HiGHS pays it too.
+
+| reselect | tol | rule | phase1 | pivots | ms | status |
+|---|---|---|---|---:|---:|---|
+| off | — | DSE | — | 4,675 | 940.0 | optimal |
+| **on** | 0.25 | DSE | — | **4,675** | 908.0 | optimal |
+| on | 0.50 | DSE | — | 4,675 | 950.6 | optimal |
+| on | 0.90 | DSE | — | 4,679 | 1955.3 | optimal |
+| off | — | DSE | ✓ | 9,895 | 2425.9 | dual_infeasible |
+| on | 0.25 | DSE | ✓ | 11,864 | 2699.1 | dual_infeasible |
+
+**Zero effect at HiGHS's own threshold**, and at 0.9 it only wastes BTRANs
+(wall doubles for +4 pivots).
+
+**Why — and this is the interesting part.** The acceptance test cannot fire
+because linprogx **already anchors `gamma_r` with the exact `‖rho‖²` on every
+single pivot** (`_csparse.c`, the "Continuous drift anchor" block). Our weights
+are never stale enough to reject. HiGHS needs the test because its weights can
+drift between selections; ours cannot, because we pay for an exact anchor every
+iteration that HiGHS does not.
+
+So the difference S3 identified is real in the code but **not operative in our
+implementation** — we had already solved the problem it protects against, by a
+more expensive route.
+
+## Final tally of the source-informed attack
+
+Every item on the ranked list is now built or killed:
+
+| # | mechanism | outcome |
+|---|---|---|
+| 1 | in-place dual Phase 1 (bound swap) | **built, correct** (dual objective = 0), **loses**: 5,124 vs 4,399 |
+| 1b | logical form (RHS in logical bounds) | **built, result-identical** — the prerequisite |
+| 2 | BFRT with boxed columns | 4,298 pivots but **slower wall** |
+| 3 | DSE weight floor `1e-4` | **KILLED** — exact DSE flat across 5 orders of magnitude |
+| 4 | DSE re-selection on stale weights | **KILLED** — zero effect; we already anchor exactly every pivot |
+| 5 | row-cost perturbation | untested (ranked below) |
+| 6 | randomised CHUZR/CHUZC tie-breaks | untested (ranked below) |
+
+**Nothing tested beats the shipped 4,399.** HiGHS's 2,836 is not explained by any
+single mechanism we have isolated.
+
+## What the source-informed attack DID deliver
+
+1. **The Phase-1 mystery is solved completely.** HiGHS constructs nothing; the
+   conservation law was an artefact of assuming Phase 1 must be built rather
+   than entered. That question is closed permanently.
+2. **Two campaign assumptions corrected.** HiGHS takes 2,836 iterations (not the
+   inferred ~3,334), and **linprogx's per-pivot cost is 1.73x better** — on this
+   box linprogx is faster in absolute wall. Every clean-room wave was optimising
+   the slice where we were already ahead.
+3. **The residual is diffuse.** The gap is accumulated pivot-selection quality
+   across ~1,500 pivots, not a single missing mechanism. That is a much harder
+   and much less glamorous target than "the one trick we could not see".
+
+## Safety
+
+All four new gates default **OFF**: `g_logical_form=0`, `g_ds_phase1=0`,
+`g_reselect=0`, `g_edge_floor=1e-12`. Default path verified: trace digest
+`679168a4baad36d6`, 4,399 pivots, objective `-72555248.12984592`, **111 tests
+passing**. Board unchanged at **23W-0P-1L**.
