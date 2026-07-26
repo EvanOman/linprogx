@@ -151,3 +151,50 @@ What does **not** follow is that we currently know how to fix it. Every mechanis
 transplanted from HiGHS — Phase 1, BFRT, DSE, weight floor, re-selection,
 tie-breaks, row-cost perturbation, logical-basis start — has now been measured on
 this category, and none is a net win on wall.
+
+---
+
+## Why greenbea specifically: it is the one cell where BOTH routes fail
+
+The category analysis raised a new question the campaign had not revisited: our
+IPM beats HiGHS's simplex by 20–500x on every IPM-routed cell, so could greenbea
+simply be routed to the strong solver instead of the weak one? The `_ipm_stall_risk`
+predicate that sends it to the dual simplex was added when the IPM failed on it —
+a verdict predating presolve v2, the supernodal factor and the a2 dense-tail ship.
+
+Re-tested by forcing `algorithm="ipm"`:
+
+| instance | auto (simplex) | forced IPM | verdict |
+|---|---|---|---|
+| **greenbea** | optimal 4,399 / 668 ms | **iteration_limit**, obj `-72462139` vs true `-72555248` (0.13% off) | **both routes fail** |
+| **greenbeb** | optimal 8,919 / 1,784 ms | **optimal, 58 iters / 1,411 ms** | **MISROUTED — IPM is 21% faster** |
+| 25fv47 | optimal 8,300 / 1,065 ms | optimal, 34 / 1,361 ms | simplex correct |
+| degen2 | optimal 1,447 / 122 ms | optimal, 14 / 686 ms | simplex correct |
+
+### Two conclusions
+
+**1. greenbea's uniqueness is now fully explained.** It is the only instance
+found where *both* linprogx routes fail: the IPM genuinely stalls (the dated
+verdict holds, and it still returns an uncertified objective 0.13% off), and the
+dual simplex is on our documented weak side (1.55x HiGHS's trajectory). Every
+other cell has at least one route where linprogx is strong. That is why it is the
+last cell standing, and it is not bad luck — it is the intersection of two
+independent weaknesses.
+
+Note also that fixing the IPM stall would probably **not** flip it: on
+greenbeb — same shape, same family — a *successful* IPM solve takes 1,411 ms
+against the dual simplex's 1,784 ms, and greenbea's dual simplex already finishes
+in 668 ms. A working IPM at this size looks roughly 2x slower than our DS, so
+that route could not clear the board gap either.
+
+**2. A real routing bug, off-board.** greenbeb does **not** stall, and the IPM
+solves it 21% faster, yet `_ipm_stall_risk` routes it to the dual simplex because
+it is structurally near-identical to greenbea (92.7% vs 93.0% one-sided, both
+cnnz 5.55). The predicate is over-broad: it generalises from greenbea's stall to
+an instance that does not stall.
+
+This is not a board cell, so it changes nothing about 23W-0P-1L. But it is a
+genuine defect worth recording: the stall predictor trades a 21% regression on
+greenbeb for safety on greenbea, and a sharper predicate (or a
+try-IPM-then-fall-back-on-failure policy, which the code already does for the DS
+in the opposite direction) would recover it without per-problem tuning.
