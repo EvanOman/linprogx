@@ -612,7 +612,7 @@ def run_instance(
                 f"({time.perf_counter() - t_start:.0f}s)"
             )
 
-    rep = bench.report()
+    rep: dict[str, Any] = dict(bench.report())
     rep.update(
         instance=name,
         rule="dse" if rule == RULE_DSE else "dantzig",
