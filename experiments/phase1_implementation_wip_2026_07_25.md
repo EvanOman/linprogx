@@ -92,3 +92,58 @@ Both gates default **OFF**. Default path re-verified: trace digest
 `679168a4baad36d6` over 6,016 solve vectors, 4,399 pivots, objective
 `-72555248.12984592`, 93 targeted tests passing. The board is unaffected and
 remains **23W-0P-1L**.
+
+---
+
+## CORRECTION (same session): Phase 1 is NOT incomplete — it works, and it loses
+
+Above I attributed the `dual_infeasible` result to a missing
+`dual_objective_value == 0` check. **That diagnosis was wrong.** Measuring the
+quantity HiGHS actually tests:
+
+```
+[phase] DuPh1 dual_objective = 0.000000e+00 ; columns with no valid true placement = 94
+[phase] DuPh1 = 2921 pivots
+[phase] TOTAL = 5124 pivots (status optimal)
+```
+
+**The Phase-1 dual objective reaches exactly zero** — HiGHS's own success
+criterion (`HEkkDual.cpp:688`) is satisfied. Phase 1 is doing its job: it
+removes every dual infeasibility and hands Phase 2 a dual-feasible basis, which
+then completes to `optimal` with the correct objective.
+
+The "94 columns with no valid true placement" is a **tolerance artifact**: those
+are columns whose `|r_j|` lies below the dual feasibility tolerance, so the
+solver legitimately treats them as feasible while my strict `r_j > 0.0` test
+counts them as violations.
+
+### The real verdict
+
+The mechanism is **correctly implemented and it does not help**:
+
+| | Phase 1 | Phase 2 | total |
+|---|---:|---:|---:|
+| linprogx in-place two-phase | 2,921 | 2,203 | **5,124** |
+| linprogx big-M (shipped) | — | — | **4,399** |
+| **HiGHS** | **1,448** | **1,376 (+12)** | **2,836** |
+
+We are roughly **2x worse than HiGHS in both phases independently**. That
+reproduces the standalone Python simulation (2,418 + 2,399 = 4,817) from a
+completely different code path, so it is a property of our pivot selection, not
+of this implementation.
+
+### What this settles
+
+The phase architecture was **necessary to understand** — it dissolved the
+conservation law and explained the b-invariance — but it is **not the source of
+HiGHS's advantage**. Worker S3 predicted exactly this and ranked the ratio test
+and pricing above the phase structure. That ranking is now confirmed
+experimentally from two independent directions.
+
+The remaining 1,563-pivot gap is in **CHUZR/CHUZC quality**, and the specific
+unbuilt items are enumerated above (DSE acceptance test with row re-selection,
+the `1e-4` weight floor, row-cost perturbation, randomised tie-breaks). Those
+are the next wave, and they are pivot-selection changes rather than
+architectural ones.
+
+Both gates remain default **OFF**; the shipped path is untouched.
