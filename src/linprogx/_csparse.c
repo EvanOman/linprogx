@@ -10312,6 +10312,22 @@ static int ds_reselect_on(void) { return g_reselect; }
 static double ds_reselect_tol(void) { return g_reselect_tol; }
 static int ds_reselect_cap(void) { return g_reselect_cap; }
 
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). Rotating CHUZR scan start. */
+static int g_rot_start = 0;
+static void ds_refresh_rot_start(void) {
+    const char *e = getenv("LINPROGX_DS_ROT_START");
+    g_rot_start = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_rot_start_on(void) { return g_rot_start; }
+
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). Perturb row/logical costs too. */
+static int g_perturb_rows = 0;
+static void ds_refresh_perturb_rows(void) {
+    const char *e = getenv("LINPROGX_DS_PERTURB_ROWS");
+    g_perturb_rows = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_perturb_rows_on(void) { return g_perturb_rows; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -13216,6 +13232,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_phase1();
     ds_refresh_edge_floor();
     ds_refresh_reselect();
+    ds_refresh_rot_start();
+    ds_refresh_perturb_rows();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -13657,7 +13675,12 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
          * compound. Deterministic multiplicative-hash psi; exit checks,
          * objective, and dual gates all use c_orig, so this steers the
          * path only. */
-        for (int32_t j = 0; j < n; j++) {
+        /* PROVENANCE: SOURCE-INFORMED (HiGHS).  HiGHS perturbs ROW/LOGICAL
+         * costs as well as structural ones (HEkk.cpp:2551-2560), which breaks
+         * ties among slacks; ours perturbed structural columns only.
+         * LINPROGX_DS_PERTURB_ROWS=1 extends the loop over the artificials. */
+        const int32_t pert_end = ds_perturb_rows_on() ? n_total : n;
+        for (int32_t j = 0; j < pert_end; j++) {
             uint32_t h = (uint32_t)j * 2654435761u;
             double psi = 0.5 + 0.5 * ((double)h / 4294967296.0);
             c_ext[j] += 1e-9 * (1.0 + fabs(c_ext[j])) * psi;
@@ -14513,7 +14536,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 leaving_sigma = choice.sigma;
 #endif
             } else {
-                for (int32_t k = 0; k < m; k++) {
+                /* PROVENANCE: SOURCE-INFORMED (HiGHS).  HiGHS randomises the
+                 * CHUZR scan start (HEkkDualRHS.cpp:60-63) so that ties in the
+                 * merit are not always resolved to the lowest row index.  Our
+                 * own ledger records index-order tie-breaking costing 2x pivots
+                 * on cre_d, and greenbea's matrix is +-1-heavy, so ties are
+                 * pervasive.  A rotating start keeps the argmax global and
+                 * changes only tie resolution. */
+                const int32_t rot0 = ds_rot_start_on() ? (int32_t)(iter % m) : 0;
+                for (int32_t kk = 0; kk < m; kk++) {
+                    int32_t k = rot0 + kk; if (k >= m) k -= m;
                     int32_t j = basis[k];
                     double viol = 0.0;
                     int sigma = 0;
