@@ -855,13 +855,16 @@ def test_instance_id_is_fail_open_when_runtime_identity_sources_fail(
 # --- The real app ------------------------------------------------------------
 
 
-def test_real_app_success_routes_finish_before_a_hard_deadline() -> None:
-    """Catch web-stack execution hangs without wedging the whole test run."""
+def test_real_app_success_routes_finish_over_http_before_a_hard_deadline() -> None:
+    """Exercise the production ASGI server without a deprecated client shim."""
     probe = textwrap.dedent(
         """
-        from fastapi.testclient import TestClient
+        import asyncio
+        import json
+        import socket
 
         from demo.api.main import app
+        import uvicorn
 
         request = {
             "nodes": [
@@ -878,14 +881,75 @@ def test_real_app_success_routes_finish_before_a_hard_deadline() -> None:
             ],
         }
 
-        with TestClient(app) as client:
-            health = client.get("/api/health")
-            assert health.status_code == 200, health.text
-            assert health.json() == {"status": "ok"}
+        async def exchange(port, method, path, payload=None):
+            body = b"" if payload is None else json.dumps(payload).encode()
+            headers = [
+                f"{method} {path} HTTP/1.1",
+                f"Host: 127.0.0.1:{port}",
+                "Connection: close",
+            ]
+            if body:
+                headers.extend(
+                    [
+                        "Content-Type: application/json",
+                        f"Content-Length: {len(body)}",
+                    ]
+                )
+            wire_request = ("\\r\\n".join(headers) + "\\r\\n\\r\\n").encode() + body
 
-            solve = client.post("/api/solve/network-flow", json=request)
-            assert solve.status_code == 200, solve.text
-            assert solve.json()["status"] == "optimal"
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            writer.write(wire_request)
+            await writer.drain()
+            response = await asyncio.wait_for(reader.read(), timeout=6)
+            writer.close()
+            await writer.wait_closed()
+
+            head, response_body = response.split(b"\\r\\n\\r\\n", 1)
+            status_line = head.split(b"\\r\\n", 1)[0]
+            assert status_line == b"HTTP/1.1 200 OK", response
+            return json.loads(response_body)
+
+        async def main():
+            listener = socket.socket()
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(128)
+            listener.setblocking(False)
+            port = listener.getsockname()[1]
+
+            config = uvicorn.Config(
+                app,
+                log_level="critical",
+                access_log=False,
+                lifespan="on",
+                timeout_graceful_shutdown=2,
+            )
+            server = uvicorn.Server(config)
+            server_task = asyncio.create_task(server.serve(sockets=[listener]))
+            try:
+                for _ in range(300):
+                    if server.started:
+                        break
+                    if server_task.done():
+                        await server_task
+                    await asyncio.sleep(0.01)
+                assert server.started, "Uvicorn did not finish startup"
+
+                health = await exchange(port, "GET", "/api/health")
+                assert health == {"status": "ok"}
+
+                solve = await exchange(
+                    port,
+                    "POST",
+                    "/api/solve/network-flow",
+                    request,
+                )
+                assert solve["status"] == "optimal"
+            finally:
+                server.should_exit = True
+                await asyncio.wait_for(server_task, timeout=3)
+
+        asyncio.run(asyncio.wait_for(main(), timeout=10))
         """
     )
     env = os.environ.copy()
@@ -899,10 +963,10 @@ def test_real_app_success_routes_finish_before_a_hard_deadline() -> None:
             check=False,
             env=env,
             text=True,
-            timeout=5,
+            timeout=12,
         )
     except subprocess.TimeoutExpired:
-        pytest.fail("successful FastAPI routes did not terminate within 5 seconds")
+        pytest.fail("successful production HTTP routes did not terminate within 12 seconds")
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
 

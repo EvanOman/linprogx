@@ -154,9 +154,12 @@ dependencies also make real FastAPI tests mandatory in `just ci`; they cover a
 successful solve and child span, validation, auth and rate-limit short-circuits,
 and middleware ordering. The endpoints are async, with the blocking solver
 explicitly dispatched to its bounded executor, rather than relying on
-Starlette's implicit sync-route thread pool. A subprocess-isolated `TestClient`
-probe gives the successful health and solve routes a hard five-second deadline,
-so a web-stack compatibility regression fails CI instead of hanging it.
+Starlette's implicit sync-route thread pool. A subprocess-isolated Uvicorn probe
+opens a real loopback HTTP socket and drives successful health and solve
+requests, including application startup and shutdown, under a hard twelve-second
+deadline. This tests the deployed server path without Starlette's deprecated
+`httpx` compatibility shim, and a web-stack regression fails CI instead of
+hanging it.
 
 ## Live smoke query
 
