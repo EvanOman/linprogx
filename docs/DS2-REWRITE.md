@@ -29,16 +29,40 @@ regime, not a missing component.** Hence DS2.
 
 | instance | linprogx now | HiGHS | target |
 |---|---:|---:|---|
-| greenbea | 4,399 | 2,836 | pivots at HiGHS parity, wall <= current 668 ms |
+| greenbea | 4,399 (4,283 with shipped churn) | 2,836 | **-35.5% pivots**; the cell is 1.527 and its loss is entirely pivot count |
 | greenbeb | 8,919 | 4,910 | same |
 | 25fv47 | 8,300 | 3,033 | same |
 | degen2 | 1,447 | 537 | same |
 | sierra | 725 | 914 | do not regress (we already win) |
 
-linprogx's per-pivot cost is **1.73x better** than HiGHS's (85.7us vs 148.4us).
-**Do not trade that away.** At our per-pivot cost, HiGHS's trajectory would put
-greenbea at ~243 ms against a ~311 ms flip target. Pivot count is the target;
-per-pivot cost is the thing to protect.
+**CORRECTED 2026-07-26 -- the previous version of this paragraph was wrong.**
+It claimed linprogx's per-pivot cost is "1.73x better than HiGHS's (85.7us vs
+148.4us)" and told you to protect that advantage. There is no such advantage. A
+direct v3 paired measurement putting both solvers on the same clean Modal hosts
+(`assets/modal_bench_af6bd89823fd_paired_hosts3.json`, loadavg 0.00) gives:
+
+| host | lx us/pivot | hx us/iter | lx per-pivot advantage |
+|---|---:|---:|---:|
+| 0 | 125.4 | 130.6 | 1.041x |
+| 1 | 136.9 | 137.6 | 1.005x |
+| 2 | 92.9 | 94.4 | 1.016x |
+
+**Per-pivot cost is at PARITY.** The 1.73x compared linprogx measured on a quiet
+local box against HiGHS measured in a different context.
+
+Two consequences you must reason with:
+
+1. **greenbea's board ratio is ~1.527, not 1.156** (0/21 pairs, hosts
+   [1.4897, 1.5428]). The 1.215/1.156 record was a favourable host draw. envab
+   results are still valid -- both arms share a container -- but never compose an
+   envab gain onto a paired ratio from an older host draw.
+2. **pivot ratio 4,399/2,836 = 1.551 and wall ratio 1.527 AGREE**, so greenbea's
+   loss is *entirely* its pivot-count deficit. **The target is -35.5% pivots.**
+   The old claim that closing the pivot gap is "worth -35.5% against a 13.46%
+   bar, a 2.6x margin" is VOID: there is no margin, they are the same quantity.
+
+Pivot-count work and per-pivot work therefore pay at the **same** rate (both are
+~99.5% of the cell). Neither is privileged; choose by expected effect size.
 
 ## Architecture
 
