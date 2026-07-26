@@ -428,3 +428,32 @@ All six gates default **OFF**. Default path verified: digest
 recertification run.
 
 **Board: 23W-0P-1L. greenbea ~1.156.**
+
+---
+
+## KILL: OpenBLAS thread oversubscription (checked, no Modal spend)
+
+The local-vs-host inversion (linprogx 377 ms vs HiGHS 421 ms on the dev box, yet
+1.156 against it on Modal) suggested a threading artefact:
+`ensure_blas_threads()` pins OpenBLAS to **4 threads**, a constant tuned on a
+12-core dev box where it leaves 8 cores free. On a Modal container with exactly
+**4 vCPUs** that would consume the whole machine.
+
+**Dead on inspection.** Both call sites (`_csparse.c:5787`, `:5967`) are inside
+`chol_*` — the Cholesky/IPM path. greenbea routes to the **dual simplex**, whose
+LU is hand-written and never calls BLAS. The route census already established
+that greenbea is the only DS-routed cell. So BLAS threading cannot affect this
+cell at all.
+
+### What does explain the inversion
+
+linprogx trades **more pivots** (55% more memory traffic) for **cheaper
+per-pivot** cache-friendly kernels (85.7 us vs HiGHS's 148.4 us). That wins on a
+large-L3 desktop and loses on a bandwidth-constrained 4-vCPU container, which is
+consistent with the measured host spread (HiGHS's own greenbea wall varied
+0.2738–0.4221 s, 54%, across three same-class Modal hosts; the ratio varied
+1.16–1.47).
+
+So the board gap **is** the pivot count — mediated through memory pressure rather
+than raw per-pivot cost. Which returns the problem to the trajectory, and the
+trajectory is where every mechanism above was measured dead.
