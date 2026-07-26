@@ -510,3 +510,57 @@ verified unchanged: trace digest `679168a4baad36d6`, 4,399 pivots, objective
 recertification run.
 
 **Board: 23W-0P-1L. greenbea ~1.156.**
+
+---
+
+## The final diagnostic: the 53% is EVENLY SPLIT — there is no isolated target
+
+Measured the phase split inside the best (HiGHS-shaped) configuration —
+logical basis + two-phase + DSE + BFRT:
+
+```
+[phase] DuPh1 dual_objective = 5.378865e-15   (i.e. zero: Phase 1 succeeded)
+[phase] DuPh1 = 2273 pivots
+[phase] TOTAL = 4334 pivots (status optimal)
+```
+
+| phase | linprogx | HiGHS | ratio |
+|---|---:|---:|---:|
+| DuPh1 | 2,273 | 1,448 | **1.57x** |
+| DuPh2 | 2,061 | 1,376 | **1.50x** |
+| total | 4,334 | 2,836 | 1.53x |
+
+**Both phases are ~1.5x worse, independently.** The excess is not concentrated in
+Phase 1 (which would have made a better Phase-1 pricing rule the fix), nor in
+Phase 2 (which would have pointed at the ratio test alone). It is spread almost
+uniformly.
+
+This is the last piece of evidence, and it is conclusive: **there is no isolated
+target.** A 1.5x uniform penalty across two structurally identical phases is the
+signature of implementation quality, not of a missing or misconfigured
+mechanism.
+
+# CLOSING STATEMENT
+
+The source-informed attack is complete. It:
+
+- **answered the question it was authorised for** — HiGHS's dual Phase 1
+  constructs nothing, and our "conservation law" was an artefact of assuming
+  Phase 1 must be built rather than entered;
+- **corrected two campaign assumptions** — HiGHS takes 2,836 iterations, not the
+  inferred ~3,334; and linprogx's per-pivot cost is **1.73x better**, so every
+  clean-room wave optimised the slice where we were already ahead;
+- **implemented every mechanism HiGHS uses** — logical form, in-place dual
+  Phase 1, logical-basis start, DSE with HiGHS's weight floor and acceptance
+  test, BFRT, rotating tie-breaks, row-cost perturbation;
+- **and did not close the gap.** HiGHS's exact configuration in linprogx needs
+  4,334 pivots against HiGHS's 2,836, with the excess split 1.57x / 1.50x across
+  the two phases.
+
+**Remaining path:** reimplement the pivot-selection machinery to HiGHS's
+standard — a dual simplex rewrite. No partial version is viable: every component
+measured here is unprofitable individually *and* jointly in our implementation.
+
+**Board: 23W-0P-1L. greenbea ~1.156.** Nothing shipped from this wave; all seven
+gates default OFF; default path verified at digest `679168a4baad36d6`, 4,399
+pivots, 522 tests passing.
