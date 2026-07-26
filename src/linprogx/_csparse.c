@@ -10364,13 +10364,58 @@ static void ds_refresh_churn_dead(void) {
 }
 static int32_t ds_churn_deadband(void) { return g_churn_dead; }
 
-/* Apply the churn penalty to the Dantzig score (leaving_rule=1). */
-static int g_churn_dantzig = 0;
+/* CHURN PENALTY ON THE DANTZIG SCORE (leaving_rule=1) -- SHIPPED DEFAULT ON.
+ *
+ * CERTIFIED 2026-07-26, protocol v3 envab, Modal AWS us-west-2, 3 hosts x 7
+ * interleaved pairs, loadavg 0.00, artifact
+ * assets/modal_bench_af6bd89823fd_envab_hosts3.json:
+ *
+ *   lp_greenbea   0.9783  hosts [0.9777, 0.9851]  21/21 pairs   B faster
+ *
+ * reproduced in a second independent v3 run at 0.9814 (21/21), so 42/42 pairs
+ * across two runs. greenbea's board cell 1.156 -> ~1.133. Pivots 4,399 ->
+ * 4,283 (-2.6%); this is the campaign's first greenbea win from reducing the
+ * pivot COUNT rather than making pivots cheaper.
+ *
+ * The same run carried SIX null controls -- cre_a, cre_b, 80bau3b, degen3,
+ * stocfor3, osa_14 are all IPM/PDHG-routed, so these env vars are never read on
+ * their path and arms A and B are the same computation. They spanned
+ * 0.998-1.010 on coin-flip win counts (7-12 of 21), which measures the
+ * instrument's noise floor at ~+/-1% and puts greenbea's -2.17% outside it.
+ *
+ * The shipped shape uses its OWN parameters rather than the shared
+ * alpha/cap/deadband tunables, so experimental leaving_rule=4 keeps its
+ * documented property that alpha=1 / cap=INT32_MAX reproduces the original.
+ * Set LINPROGX_DS_CHURN_DANTZIG=0 to disable; the shared env vars still
+ * override the constants below when explicitly set. */
+#define DS_CHURN_SHIP_ALPHA    2.0
+#define DS_CHURN_SHIP_DEADBAND 5
+#define DS_CHURN_SHIP_CAP      1000
+
+static int g_churn_dantzig = 1;
 static void ds_refresh_churn_dantzig(void) {
     const char *e = getenv("LINPROGX_DS_CHURN_DANTZIG");
-    g_churn_dantzig = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    /* default ON; only an explicit "0" turns it off */
+    g_churn_dantzig = (e != NULL && atoi(e) == 0) ? 0 : 1;
 }
 static int ds_churn_dantzig(void) { return g_churn_dantzig; }
+
+/* Effective churn shape for the SHIPPED Dantzig/DSE sites: the certified
+ * constants unless the operator set the shared env var explicitly. */
+static double g_churn_alpha_eff = DS_CHURN_SHIP_ALPHA;
+static int32_t g_churn_dead_eff = DS_CHURN_SHIP_DEADBAND;
+static int32_t g_churn_cap_eff = DS_CHURN_SHIP_CAP;
+static void ds_refresh_churn_eff(void) {
+    const char *a = getenv("LINPROGX_DS_CHURN_ALPHA");
+    g_churn_alpha_eff = (a != NULL && atof(a) >= 0.0) ? atof(a) : DS_CHURN_SHIP_ALPHA;
+    const char *d = getenv("LINPROGX_DS_CHURN_DEADBAND");
+    g_churn_dead_eff = (d != NULL && atoi(d) > 0) ? (int32_t)atoi(d) : DS_CHURN_SHIP_DEADBAND;
+    const char *c = getenv("LINPROGX_DS_CHURN_CAP");
+    g_churn_cap_eff = (c != NULL && atoi(c) > 0) ? (int32_t)atoi(c) : DS_CHURN_SHIP_CAP;
+}
+static double ds_churn_alpha_eff(void) { return g_churn_alpha_eff; }
+static int32_t ds_churn_deadband_eff(void) { return g_churn_dead_eff; }
+static int32_t ds_churn_cap_eff(void) { return g_churn_cap_eff; }
 
 /* Apply the churn penalty to the exact-DSE score (leaving_rule=5).
  * DSE wins the simplex class outright -- 25fv47 8,300 -> 2,613 (below HiGHS's
@@ -13310,6 +13355,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_tabu();
     ds_refresh_churn_dead();
     ds_refresh_churn_dantzig();
+    ds_refresh_churn_eff();
     ds_refresh_churn_dse();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
@@ -14692,11 +14738,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                              * untested combination that matters. */
                             if (ds_churn_dantzig()) {
                                 int32_t ec = (enter_count != NULL) ? enter_count[j] : 0;
-                                int32_t cap = ds_churn_cap();
+                                int32_t cap = ds_churn_cap_eff();
                                 if (ec > cap) ec = cap;
-                                int32_t dead = ds_churn_deadband();
+                                int32_t dead = ds_churn_deadband_eff();
                                 double pen = (double)(ec > dead ? ec - dead : 0);
-                                score /= (1.0 + ds_churn_alpha() * pen);
+                                score /= (1.0 + ds_churn_alpha_eff() * pen);
                             }
                         } else {
                             /* Devex score: violation^2 / weight (Harris 1973);
@@ -14709,11 +14755,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                                 /* Churn on top of exact DSE -- see
                                  * ds_refresh_churn_dse for why this cell. */
                                 int32_t ec = (enter_count != NULL) ? enter_count[j] : 0;
-                                int32_t cap = ds_churn_cap();
+                                int32_t cap = ds_churn_cap_eff();
                                 if (ec > cap) ec = cap;
-                                int32_t dead = ds_churn_deadband();
+                                int32_t dead = ds_churn_deadband_eff();
                                 double pen = (double)(ec > dead ? ec - dead : 0);
-                                score /= (1.0 + ds_churn_alpha() * pen);
+                                score /= (1.0 + ds_churn_alpha_eff() * pen);
                             }
                             if (leaving_rule == 4) {
                                 /* CHURN PENALTY.  The original form divides by
@@ -15792,10 +15838,10 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 if (churn_pen != NULL &&
                     (ds_churn_dantzig() || ds_churn_dse())) {
                     int32_t ec = enter_count[entering_col];
-                    int32_t cp = ds_churn_cap(); if (ec > cp) ec = cp;
-                    int32_t dd = ds_churn_deadband();
+                    int32_t cp = ds_churn_cap_eff(); if (ec > cp) ec = cp;
+                    int32_t dd = ds_churn_deadband_eff();
                     double pen = (double)(ec > dd ? ec - dd : 0);
-                    churn_pen[leaving_basis_pos] = 1.0 + ds_churn_alpha() * pen;
+                    churn_pen[leaving_basis_pos] = 1.0 + ds_churn_alpha_eff() * pen;
                 }
             }
             basis[leaving_basis_pos] = entering_col;
