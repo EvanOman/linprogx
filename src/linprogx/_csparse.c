@@ -14563,6 +14563,29 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                  * bounds means the true problem is now dual feasible.  Restore
                  * the true bounds and continue on the SAME basis and LU. */
                 if (ds_phase == 1) {
+                    /* HiGHS tests info.dual_objective_value == 0 here
+                     * (HEkkDual.cpp:688).  The dual objective is
+                     * sum_j x_j * r_j over nonbasics; under the Phase-1 map it
+                     * equals -(sum of dual infeasibilities), so a nonzero value
+                     * means infeasibilities remain and Phase 2 must not be
+                     * entered.  Also count the columns that will have NO valid
+                     * true-bound placement, which is the direct symptom. */
+                    if (getenv("LINPROGX_DS_PHASE_REPORT") != NULL) {
+                        double p1_dualobj = 0.0;
+                        int32_t n_bad = 0;
+                        for (int32_t j = 0; j < n_total; j++) {
+                            if (basis_pos[j] >= 0) continue;
+                            p1_dualobj += x_ext[j] * r_ext[j];
+                            int lo_fin = isfinite(lo_true_all[j]);
+                            int hi_fin = isfinite(hi_true_all[j]);
+                            if ((r_ext[j] > 0.0 && !lo_fin) ||
+                                (r_ext[j] < 0.0 && !hi_fin)) n_bad++;
+                        }
+                        fprintf(stderr,
+                            "[phase] DuPh1 dual_objective = %.6e ; columns with "
+                            "no valid true placement = %d\n", p1_dualobj, (int)n_bad);
+                        fflush(stderr);
+                    }
                     memcpy(lo_ext, lo_true_all, (size_t)n_total * sizeof(double));
                     memcpy(hi_ext, hi_true_all, (size_t)n_total * sizeof(double));
                     for (int32_t j = 0; j < n_total; j++) {
