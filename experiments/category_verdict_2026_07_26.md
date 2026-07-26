@@ -98,3 +98,56 @@ sample is ~30 of the ~100 LPnetlib instances, biased toward moderate sizes.
 
 Artifacts: `/tmp/category_iters.jsonl`, `/tmp/cat2.jsonl`,
 `experiments/category_iters.py`, `experiments/category_bench.py`.
+
+---
+
+## CORRECTION (same day): finding 3 was wrong — Phase 1 does NOT help the category
+
+Finding 3 above credited "Phase 1 + BFRT" with improving 25fv47 (−8.5%), degen2
+(−23%) and sierra (−11%). **That comparison was against baseline WITHOUT BFRT, so
+it attributed BFRT's gains to Phase 1.** The fair comparison isolates each
+mechanism. Four arms, pivots and wall (ms):
+
+| instance | base | bfrt | ph1 | ph1+bfrt | best by WALL |
+|---|---|---|---|---|---|
+| greenbea | 4399 / **802** | 4298 / 970 | 5124 / 906 | 4675 / 1056 | **base** |
+| greenbeb | 8919 / **1702** | 8916 / 2735 | 10728 / 2474 | 9570 / 3602 | **base** |
+| 25fv47 | 8300 / **1475** | 7454 / 2070 | 28738 / 5112 | 7592 / 1980 | **base** |
+| degen2 | 1447 / 167 | 1435 / 195 | 1574 / **131** | 1115 / 154 | ph1 |
+| sierra | 725 / 27 | 645 / 24 | 726 / **17** | 647 / 52 | ph1 |
+
+**Corrected conclusions:**
+
+- **Phase 1's own contribution is negative or neutral** on every instance except
+  degen2: greenbea +8.8%, greenbeb +7.3%, 25fv47 +1.9%, sierra +0.3%, degen2
+  −22.3% (measured against base+bfrt, holding BFRT constant).
+- **BFRT is the mechanism with real pivot value** — 25fv47 8,300→7,454 (−10.2%),
+  sierra 725→645 (−11.0%), greenbea 4,399→4,298 (−2.3%) — but it costs more wall
+  than it saves on every instance measured.
+- **Baseline wins on wall for all three larger instances.** The two apparent
+  Phase-1 wall wins are on the smallest instances in the sample (167 ms and
+  27 ms), where local noise dominates and no conclusion is warranted.
+
+So there is **no shippable mechanism here**, and my previous claim of one was an
+artefact of an unfair baseline. This is the second correction to this document
+and both were mine.
+
+## What survives, and it is the valuable part
+
+The **category finding itself is unaffected**, because it rests on iteration
+ratios against HiGHS, not on our own mechanism arms:
+
+1. **greenbea is a category, not an outlier.** All five simplex-routed cells sit
+   at 0.79–2.74x HiGHS's iteration count; all ~25 IPM-routed cells sit at
+   0.00–0.35x. greenbea (1.55x) is not even the worst — 25fv47 (2.74x) and
+   degen2 (2.69x) are.
+2. **linprogx's IPM is exceptional and its dual simplex is the weakness.** That
+   asymmetry is the real story behind the 23 board wins, and the board masks the
+   weakness because only 1 of its 24 cells routes to the simplex.
+3. **Within the category, losses track the one-sided fraction** — the big-M
+   signature. sierra (26.5% one-sided) wins; the four cells at 93–98% all lose.
+
+What does **not** follow is that we currently know how to fix it. Every mechanism
+transplanted from HiGHS — Phase 1, BFRT, DSE, weight floor, re-selection,
+tie-breaks, row-cost perturbation, logical-basis start — has now been measured on
+this category, and none is a net win on wall.
