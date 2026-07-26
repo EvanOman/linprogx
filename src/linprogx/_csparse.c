@@ -2356,6 +2356,7 @@ done:
 static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
 static PyObject *CSRMatrix_solve_eq_box_dual_simplex(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
+static PyObject *CSRMatrix_solve_eq_box_ds2(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
 static PyObject *CSRMatrix_supernode_sizes(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_supernode_symbolic_structure(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_cholesky_symbolic_fingerprint(CSRMatrixObject *self, PyObject *args);
@@ -2376,6 +2377,7 @@ static PyMethodDef CSRMatrix_methods[] = {
     {"normal_equations_solve", (PyCFunction)CSRMatrix_normal_equations_solve, METH_VARARGS, "Solve (A diag(d) A' + delta I) x = rhs with the native sparse Cholesky."},
     {"solve_eq_box_ipm", (PyCFunction)CSRMatrix_solve_eq_box_ipm, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with a native interior point method."},
     {"solve_eq_box_dual_simplex", (PyCFunction)CSRMatrix_solve_eq_box_dual_simplex, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with bounded-variable dual simplex."},
+    {"solve_eq_box_ds2", (PyCFunction)CSRMatrix_solve_eq_box_ds2, METH_VARARGS | METH_KEYWORDS, "DS2 (gated rewrite): solve min c'x subject to Ax=b and lo<=x<=hi with the new dual simplex."},
     {"supernode_sizes", (PyCFunction)CSRMatrix_supernode_sizes, METH_NOARGS, "Test hook: fundamental supernode sizes of the Cholesky factor of A A'."},
     {"supernode_symbolic_structure", (PyCFunction)CSRMatrix_supernode_symbolic_structure, METH_NOARGS, "Test hook: supernodal row lists and descendant update maps."},
     {"cholesky_symbolic_fingerprint", (PyCFunction)CSRMatrix_cholesky_symbolic_fingerprint, METH_NOARGS, "Test hook: hashes of Cholesky symbolic structures."},
@@ -13192,6 +13194,35 @@ static PyObject *ds_build_rate_hist_dict(
     return hist;
 }
 
+/* DS2 -- the gated dual-simplex rewrite.  Additive: everything it needs from
+ * this file (the LU kernels, the crash helpers) is already defined above, and
+ * nothing below it changes.
+ *
+ * The two selection components are dropped in by FILE PRESENCE: the real
+ * implementation if it exists, otherwise the stub shipped with ds2_core.  A
+ * component lands by adding its file -- no edit here and none in _ds2_core.c.
+ *
+ * DS2_AT_LO/HI/FREE/FIXED/BASIC in _ds2_iface.h are the same integers as the
+ * shipped DS_BOUND_* codes, so the shared basis-repair helpers above stay
+ * usable from DS2 unchanged. */
+#include "_ds2_iface.h"
+#if defined(__has_include)
+#  if __has_include("_ds2_chuzr.c")
+#    include "_ds2_chuzr.c"
+#  else
+#    include "_ds2_stub_chuzr.c"
+#  endif
+#  if __has_include("_ds2_chuzc.c")
+#    include "_ds2_chuzc.c"
+#  else
+#    include "_ds2_stub_chuzc.c"
+#  endif
+#else
+#  include "_ds2_stub_chuzr.c"
+#  include "_ds2_stub_chuzc.c"
+#endif
+#include "_ds2_core.c"
+
 static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     CSRMatrixObject *self, PyObject *args, PyObject *kwds)
 {
@@ -13224,6 +13255,13 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     if (self->rows > INT32_MAX || self->cols > INT32_MAX) {
         PyErr_SetString(PyExc_ValueError, "matrix too large for 32-bit factorization");
         return NULL;
+    }
+    /* DS2 GATE (LINPROGX_DS2=1, default OFF).  The only line of this function
+     * the rewrite touches: unset, control falls straight through and the
+     * shipped path is byte-identical (greenbea trace digest 679168a4baad36d6,
+     * 4,399 pivots). */
+    if (ds2_enabled()) {
+        return ds2_solve(self, c_obj, b_obj, lo_obj, hi_obj, max_iter_arg, tol);
     }
     /* Refresh the Harris A/B arm once per solve (never inside the hot loop). */
     ds_harris_refresh_fastpath();
