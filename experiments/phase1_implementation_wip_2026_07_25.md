@@ -147,3 +147,68 @@ are the next wave, and they are pivot-selection changes rather than
 architectural ones.
 
 Both gates remain default **OFF**; the shipped path is untouched.
+
+---
+
+## Pricing wave: the edge-weight floor is NOT the lever
+
+HiGHS clamps every updated dual edge weight to `>= 1e-4`
+(`SimplexConst.h:162`, applied `HEkk.cpp:2234-2235`); linprogx shipped `1e-12`.
+Worker S3 flagged this as eight orders of magnitude in which a drifted-small
+weight can make a row "unreasonably attractive". Made tunable
+(`LINPROGX_DS_EDGE_FLOOR`) and swept:
+
+| floor | Devex (rule 0) | exact DSE (rule 5) |
+|---|---:|---:|
+| 1e-12 (shipped) | 6,807 | 4,675 |
+| 1e-8 | 6,807 | 4,675 |
+| 1e-6 | 6,614 | 4,675 |
+| **1e-4 (HiGHS)** | 7,060 | 4,675 |
+| 1e-2 | 6,162 | 4,675 |
+
+Dantzig baseline **4,399**; HiGHS **2,836**.
+
+**KILLED as a lever.** Exact DSE is completely insensitive to the floor (flat at
+4,675 across five orders of magnitude); Devex moves erratically and is far worse
+than Dantzig throughout. The floor alone does not explain anything.
+
+## Cumulative pricing/architecture results on greenbea
+
+| change | pivots | verdict |
+|---|---:|---|
+| Dantzig, big-M (shipped) | **4,399** | baseline |
+| BFRT on | 4,298 | fewer pivots, **slower wall** |
+| logical form | 4,399 | result-identical (prerequisite) |
+| in-place two-phase | 5,124 | correct, **loses** |
+| two-phase + BFRT | 4,675 | loses |
+| exact DSE (any weight floor) | 4,675 | loses |
+| Devex (any weight floor) | 6,162–7,060 | loses badly |
+| **HiGHS** | **2,836** | — |
+
+## The one structural lever left untested
+
+**DSE weight-error rejection with row RE-SELECTION**
+(`HEkkDual.cpp:1423-1490`, `acceptDualSteepestEdgeWeight` `:1504-1512`,
+threshold `SimplexConst.h:160`). HiGHS's CHUZR is a **loop**: pick a row, BTRAN,
+compute the exact `‖row_ep‖²`, overwrite the stored weight — and if the
+*previously stored* weight was `< 0.25 x` exact, **discard that row and choose
+another**.
+
+linprogx anchors `gamma_r` with the exact value at `_csparse.c:14494-14507`, but
+**after** the row is already committed. It corrects the bookkeeping; it never
+undoes the bad selection. That is a genuine algorithmic difference, not a
+constant.
+
+Why it is plausibly the real lever: it is the only mechanism found that changes
+*which row leaves* on the basis of information that arrives *after* the
+tentative choice. Every other difference tested (floor, rule family, phase
+structure, BFRT) only re-scores the same candidate set.
+
+Implementation cost is real: HiGHS gets the exact weight free because `row_ep`
+is the BTRAN it was going to compute anyway, then re-selects if the check fails
+(paying a wasted BTRAN). linprogx computes `rho` only *after* choosing, so
+re-selection means restructuring the iteration to tolerate a discarded BTRAN —
+which HiGHS also pays.
+
+**This is the next wave, and it is the last item on S3's ranked list that has not
+been either built or killed.**
