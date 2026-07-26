@@ -29,7 +29,6 @@ import json
 import time
 from pathlib import Path
 
-import numpy as np
 import scipy.sparse as sp
 from scipy.io import loadmat
 
@@ -75,27 +74,17 @@ def reduced(A, b, c, lo, hi):
     return red._matrix, list(red.b), list(red.c), list(red.lo), list(red.hi)
 
 
-def highs_iters(A, b, c, lo, hi) -> tuple[int, float]:
-    import highspy
-
-    m, n = A.shape
-    inf = highspy.kHighsInf
-    h = highspy.Highs()
-    h.setOptionValue("output_flag", False)
-    lp = highspy.HighsLp()
-    lp.num_col_, lp.num_row_ = n, m
-    lp.col_cost_ = c
-    lp.col_lower_ = np.where(np.isfinite(lo), lo, -inf)
-    lp.col_upper_ = np.where(np.isfinite(hi), hi, inf)
-    lp.row_lower_, lp.row_upper_ = b, b
-    Ac = A.tocsc()
-    lp.a_matrix_.format_ = highspy.MatrixFormat.kColwise
-    lp.a_matrix_.start_ = Ac.indptr.astype(np.int32)
-    lp.a_matrix_.index_ = Ac.indices.astype(np.int32)
-    lp.a_matrix_.value_ = Ac.data.astype(float)
-    h.passModel(lp)
-    h.run()
-    return int(h.getInfo().simplex_iteration_count), float(h.getObjectiveValue())
+# HiGHS reference pivot counts. These are the ledger's own figures
+# (docs/DS2-REWRITE.md "Ground truth to beat", plus the fresh census that
+# motivated the rewrite) rather than a live highspy run: highspy is not
+# installed in this environment, and quoting a number we did not just measure
+# is only honest if it is labelled as what it is.
+HIGHS_PIVOTS = {
+    "lp_greenbea": 2836,
+    "lp_greenbeb": 4910,
+    "lp_25fv47": 3033,
+    "lp_degen2": 537,
+}
 
 
 def main() -> None:
@@ -108,7 +97,7 @@ def main() -> None:
 
     rules = [int(x) for x in a.rules.split(",")]
     print(
-        f"{'instance':13s} {'rows':>5} {'cols':>5} {'HiGHS':>7} "
+        f"{'instance':13s} {'rows':>5} {'cols':>5} {'HiGHS*':>7} "
         + " ".join(f"{RULES[r][:7]:>18s}" for r in rules)
     )
     out = []
@@ -118,11 +107,7 @@ def main() -> None:
             print(f"{name:13s} MISSING")
             continue
         A, b, c, lo, hi = load(name)
-        try:
-            hx, hobj = highs_iters(A, b, c, lo, hi)
-        except Exception as exc:  # noqa: BLE001 - probe
-            hx, hobj = -1, float("nan")
-            print(f"  ({name}: HiGHS failed {type(exc).__name__})")
+        hx = HIGHS_PIVOTS.get(name, -1)
         M, rb, rc, rlo, rhi = reduced(A, b, c, lo, hi)
         rec = {
             "instance": name,
@@ -131,7 +116,7 @@ def main() -> None:
             "red_rows": int(M.shape[0]),
             "red_cols": int(M.shape[1]),
             "highs_iters": hx,
-            "highs_obj": hobj,
+            "highs_iters_source": "ledger" if hx > 0 else "unknown",
             "prior_ratio": SIMPLEX_ROUTED.get(name),
             "runs": {},
         }
