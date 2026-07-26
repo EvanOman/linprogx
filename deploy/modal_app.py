@@ -37,7 +37,11 @@ import modal  # ty: ignore[unresolved-import] -- optional deploy-only dependency
 # The solver itself is dependency-free; its source is copied in directly.
 image = (
     modal.Image.debian_slim(python_version="3.13")
-    .pip_install("fastapi==0.139.0", "pydantic==2.13.4")
+    .pip_install(
+        "fastapi==0.139.0",
+        "pydantic==2.13.4",
+        "starlette==1.3.1",
+    )
     .add_local_dir("src/linprogx", remote_path="/root/linprogx")
     .add_local_python_source("demo")
 )

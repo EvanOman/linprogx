@@ -10,4 +10,8 @@ fi
 pip install .
 
 # Install API dependencies
-pip install fastapi==0.139.0 uvicorn==0.34.2 pydantic==2.13.4
+pip install \
+    fastapi==0.139.0 \
+    pydantic==2.13.4 \
+    starlette==1.3.1 \
+    uvicorn==0.34.2

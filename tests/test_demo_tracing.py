@@ -19,6 +19,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
+import textwrap
 import time
 from typing import Any
 
@@ -849,6 +853,58 @@ def test_instance_id_is_fail_open_when_runtime_identity_sources_fail(
 
 
 # --- The real app ------------------------------------------------------------
+
+
+def test_real_app_success_routes_finish_before_a_hard_deadline() -> None:
+    """Catch web-stack execution hangs without wedging the whole test run."""
+    probe = textwrap.dedent(
+        """
+        from fastapi.testclient import TestClient
+
+        from demo.api.main import app
+
+        request = {
+            "nodes": [
+                {"id": "Warehouse", "type": "supply", "value": 10},
+                {"id": "Store", "type": "demand", "value": 10},
+            ],
+            "edges": [
+                {
+                    "from": "Warehouse",
+                    "to": "Store",
+                    "cost": 2,
+                    "capacity": 20,
+                }
+            ],
+        }
+
+        with TestClient(app) as client:
+            health = client.get("/api/health")
+            assert health.status_code == 200, health.text
+            assert health.json() == {"status": "ok"}
+
+            solve = client.post("/api/solve/network-flow", json=request)
+            assert solve.status_code == 200, solve.text
+            assert solve.json()["status"] == "optimal"
+        """
+    )
+    env = os.environ.copy()
+    env["OTEL_SDK_DISABLED"] = "true"
+    env.pop("DEMO_SHARED_SECRET", None)
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True,
+            check=False,
+            env=env,
+            text=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("successful FastAPI routes did not terminate within 5 seconds")
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def _real_request(

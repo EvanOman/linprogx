@@ -32,7 +32,7 @@ infrastructure, and the solver itself stays dependency-free and untouched.
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | to export anything | OTLP base URL, e.g. `https://otlp-gateway-prod-us-east-0.grafana.net/otlp`. `/v1/traces` is appended. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | to export anything | OTLP base URL, e.g. `https://otlp-gateway-prod-us-east-2.grafana.net/otlp`. `/v1/traces` is appended. |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | no | Full traces URL; overrides the base above. |
 | `OTEL_EXPORTER_OTLP_AUTHORIZATION` | for Grafana Cloud | Complete `Authorization` header value, e.g. `Basic <base64 instance-id:token>`. Omit for an unauthenticated local collector. |
 | `OTEL_SDK_DISABLED` | no | `true` turns export off without a redeploy path change. |
@@ -53,7 +53,7 @@ deploy time and fails the deploy if the name does not exist:
 
 ```bash
 modal secret create otel-grafana \
-  OTEL_EXPORTER_OTLP_ENDPOINT='https://otlp-gateway-prod-us-east-0.grafana.net/otlp' \
+  OTEL_EXPORTER_OTLP_ENDPOINT='https://otlp-gateway-prod-us-east-2.grafana.net/otlp' \
   OTEL_EXPORTER_OTLP_AUTHORIZATION='Basic <base64 instance-id:token>'
 ```
 
@@ -152,7 +152,11 @@ fault injection, future-version propagation, streaming behavior, and bounded
 lifespan shutdown are isolated from the framework. The pinned development
 dependencies also make real FastAPI tests mandatory in `just ci`; they cover a
 successful solve and child span, validation, auth and rate-limit short-circuits,
-and middleware ordering.
+and middleware ordering. The endpoints are async, with the blocking solver
+explicitly dispatched to its bounded executor, rather than relying on
+Starlette's implicit sync-route thread pool. A subprocess-isolated `TestClient`
+probe gives the successful health and solve routes a hard five-second deadline,
+so a web-stack compatibility regression fails CI instead of hanging it.
 
 ## Live smoke query
 

@@ -7,10 +7,10 @@ interactive demo.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -236,17 +236,17 @@ class InfoResponse(BaseModel):
 
 
 @app.get("/api/info", response_model=InfoResponse)
-def solver_info() -> InfoResponse:
+async def solver_info() -> InfoResponse:
     return InfoResponse()
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
+async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.post("/api/solve/network-flow", response_model=FlowResponse)
-def solve_network_flow(req: FlowRequest) -> FlowResponse:
+async def solve_network_flow(req: FlowRequest) -> FlowResponse:
     node_ids = {n.id for n in req.nodes}
 
     # Validate edges reference valid nodes
@@ -307,9 +307,12 @@ def solve_network_flow(req: FlowRequest) -> FlowResponse:
     )
     t0 = time.perf_counter()
     try:
-        future = _solve_pool.submit(model.solve)
-        solution = future.result(timeout=SOLVE_TIMEOUT_SECONDS)
-    except FuturesTimeoutError:
+        loop = asyncio.get_running_loop()
+        solution = await asyncio.wait_for(
+            loop.run_in_executor(_solve_pool, model.solve),
+            timeout=SOLVE_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
         elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
         # A hit solve cap is an expected outcome at demo scale, not an incident:
         # the span status stays UNSET so it never fires a 5xx-shaped alert.
