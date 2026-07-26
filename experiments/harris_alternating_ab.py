@@ -109,6 +109,11 @@ def main() -> None:
         default="LINPROGX_DS_HARRIS_FASTPATH",
         help="env var(s), comma-separated, toggled between arms",
     )
+    parser.add_argument(
+        "--allow-trajectory-change",
+        action="store_true",
+        help="permit differing pivot counts between arms (a trajectory\n                              change rather than a bit-identical unit); each arm must\n                              still be internally consistent across repetitions",
+    )
     parser.add_argument("--treatment", default="ratio_test", help="phase expected to change")
     args = parser.parse_args()
 
@@ -134,13 +139,25 @@ def main() -> None:
                     "phases": phases,
                     "total": sum(phases.values()),
                     "iterations": int(out["iterations"]),
+                    "obj": repr(float(out["objective"])),
                 }
             )
 
     if len(signatures) != 1:
-        raise SystemExit(f"BIT-IDENTITY VIOLATED across arms/reps: {sorted(signatures)}")
-    iters, obj_repr = next(iter(signatures))
-    print(f"bit-identity     OK  ({iters} pivots, objective {obj_repr})")
+        if not args.allow_trajectory_change:
+            raise SystemExit(f"BIT-IDENTITY VIOLATED across arms/reps: {sorted(signatures)}")
+        # Trajectory change: each ARM must still be internally consistent.
+        sig_a = {(r["iterations"], r["obj"]) for r in rows if r["arm"] == "A"}
+        sig_b = {(r["iterations"], r["obj"]) for r in rows if r["arm"] == "B"}
+        if len(sig_a) != 1 or len(sig_b) != 1:
+            raise SystemExit(f"ARM NON-DETERMINISM: A={sorted(sig_a)} B={sorted(sig_b)}")
+        (ia, oa), (ib, ob) = next(iter(sig_a)), next(iter(sig_b))
+        print(f"trajectory change  A: {ia} pivots {oa}")
+        print(f"                   B: {ib} pivots {ob}   ({100.0 * (ib - ia) / ia:+.2f}% pivots)")
+        iters, obj_repr = ib, ob
+    else:
+        iters, obj_repr = next(iter(signatures))
+        print(f"bit-identity     OK  ({iters} pivots, objective {obj_repr})")
     print(f"pairs            {args.pairs}")
 
     b_rows = [r for r in rows if r["arm"] == "B"]
