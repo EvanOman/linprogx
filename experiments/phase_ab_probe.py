@@ -64,15 +64,25 @@ def main() -> None:
     for _ in range(args.repeats):
         original = from_scipy_sparse(data["A_scipy"])
         reduction = presolve_matrix(original, b, c, lo, hi, algorithm="auto")
+    if reduction is None:
+        raise SystemExit("presolve returned no reduction")
         matrix = reduction._matrix
         if matrix is None:
             matrix = csr_matrix(
-                reduction.rows, reduction.cols, reduction.indptr,
-                reduction.indices, reduction.data,
+                reduction.rows,
+                reduction.cols,
+                reduction.indptr,
+                reduction.indices,
+                reduction.data,
             )
         out = matrix.solve_eq_box_dual_simplex(
-            reduction.c, reduction.b, reduction.lo, reduction.hi,
-            max_iter=50_000, leaving_rule=1, expand=1,
+            reduction.c,
+            reduction.b,
+            reduction.lo,
+            reduction.hi,
+            max_iter=50_000,
+            leaving_rule=1,
+            expand=1,
         )
         iters = int(out["iterations"])
         phases = out.get("phase_us") or {}
@@ -89,10 +99,8 @@ def main() -> None:
     result: dict[str, Any] = {"label": args.label, "iterations": iters, "phases": {}}
     for name, samples in sorted(per_phase.items(), key=lambda kv: -min(kv[1])):
         lo_us, med_us = min(samples), statistics.median(samples)
-        print(f"{name:18s} {lo_us / 1e3:10.3f} {med_us / 1e3:11.3f} "
-              f"{lo_us / max(1, iters):10.3f}")
-        result["phases"][name] = {"min_us": lo_us, "median_us": med_us,
-                                  "all_us": samples}
+        print(f"{name:18s} {lo_us / 1e3:10.3f} {med_us / 1e3:11.3f} {lo_us / max(1, iters):10.3f}")
+        result["phases"][name] = {"min_us": lo_us, "median_us": med_us, "all_us": samples}
     total_min = min(totals)
     print(f"\n{'TOTAL (min)':18s} {total_min / 1e3:10.3f} ms")
     print(f"{'TOTAL (median)':18s} {statistics.median(totals) / 1e3:10.3f} ms")
