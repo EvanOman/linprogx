@@ -67,6 +67,10 @@ touching code, replace the endpoint with an empty string (or set
 per-container-process id, minted lazily after a Modal snapshot restore, so a
 trace can be attributed to the actual serving container without recording
 anything about the caller or cloning an import-time id across restored workers.
+Inbound W3C version `00` context is validated as lowercase hexadecimal. For a
+future version, the known trace id, parent id, and sampled bit are retained while
+opaque trailing fields are ignored; this service emits its child context as
+version `00`.
 
 | Span | Kind | When |
 | --- | --- | --- |
@@ -144,10 +148,11 @@ five-second HTTP export timeout. `atexit` uses the same budget as a fallback.
 trace context, unsampled upstream decisions, collector connection failure,
 collector 500, a hanging collector, unconfigured and disabled exporters, and the
 privacy assertions. It drives the middleware through the raw ASGI protocol, so
-fault injection and streaming behavior are isolated from the framework. The
-pinned development dependencies also make real FastAPI tests mandatory in
-`just ci`; they cover a successful solve and child span, validation, auth and
-rate-limit short-circuits, and middleware ordering.
+fault injection, future-version propagation, streaming behavior, and bounded
+lifespan shutdown are isolated from the framework. The pinned development
+dependencies also make real FastAPI tests mandatory in `just ci`; they cover a
+successful solve and child span, validation, auth and rate-limit short-circuits,
+and middleware ordering.
 
 ## Live smoke query
 

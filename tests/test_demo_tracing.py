@@ -249,11 +249,11 @@ def test_span_context_round_trips_to_a_traceparent() -> None:
         ("non-hex flags", f"00-{VALID_TRACE_ID}-{VALID_SPAN_ID}-zz"),
         ("uppercase", VALID_TRACEPARENT.upper()),
         ("leading whitespace", f" {VALID_TRACEPARENT}"),
-        ("future version", f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01"),
         ("forbidden version ff", f"ff-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01"),
         ("v00 with extra field", f"00-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01-extra"),
-        ("future version, empty field", f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01-"),
-        ("oversized", "00-" + "a" * 300),
+        ("future version, missing extension dash", f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01x"),
+        ("future version, control character", f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01-\n"),
+        ("oversized", "00-" + "a" * 600),
     ],
 )
 def test_parse_traceparent_rejects_invalid_headers(label: str, value: str | None) -> None:
@@ -268,6 +268,24 @@ def test_parse_traceparent_masks_reserved_flag_bits(flags: str, expected: str) -
     assert context.trace_flags == expected
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01",
+        f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01-vendor-fields",
+        f"fe-{VALID_TRACE_ID}-{VALID_SPAN_ID}-03-opaque-extension",
+        f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-00-",
+    ],
+)
+def test_parse_traceparent_accepts_the_known_prefix_of_future_versions(value: str) -> None:
+    context = tracing.parse_traceparent(value)
+
+    assert context is not None
+    assert context.trace_id == VALID_TRACE_ID
+    assert context.span_id == VALID_SPAN_ID
+    assert context.trace_flags in {"00", "01"}
+
+
 # --- Trace continuation ------------------------------------------------------
 
 
@@ -280,6 +298,19 @@ def test_valid_context_makes_the_server_span_a_child_of_the_edge_span(
     assert server["traceId"] == VALID_TRACE_ID
     assert server["parentSpanId"] == VALID_SPAN_ID
     assert server["kind"] == tracing.KIND_SERVER
+
+
+def test_future_context_keeps_the_server_span_in_the_upstream_trace(
+    collector: _Collector, traced: Any
+) -> None:
+    future = f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-03-opaque"
+
+    _request(traced, headers={"traceparent": future})
+
+    server = collector.await_named("GET /api/health")
+    assert server["traceId"] == VALID_TRACE_ID
+    assert server["parentSpanId"] == VALID_SPAN_ID
+    assert server["flags"] == 1
 
 
 def test_missing_context_starts_a_new_root_trace(collector: _Collector, traced: Any) -> None:
@@ -484,6 +515,27 @@ def test_lifespan_shutdown_flushes_an_in_flight_export(collector: _Collector) ->
 
     assert sent == [{"type": "lifespan.shutdown.complete"}]
     assert collector.named("shutdown.probe") is not None
+
+
+def test_lifespan_shutdown_honors_the_flush_deadline_without_an_executor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = tracing.SpanExporter("linprogx")
+    # Model an export that never completes without starting another thread.
+    exporter._pending = 1
+    monkeypatch.setattr(tracing, "_TRACER", tracing.Tracer("linprogx", exporter))
+    monkeypatch.setattr(tracing, "_SHUTDOWN_FLUSH_TIMEOUT_S", 0.05)
+
+    async def lifespan(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        await send({"type": "lifespan.shutdown.complete"})
+
+    middleware = tracing.TracingMiddleware(lifespan, routes=ROUTES)
+    started = time.monotonic()
+    sent = _request(middleware, scope_type="lifespan")
+    elapsed = time.monotonic() - started
+
+    assert sent == [{"type": "lifespan.shutdown.complete"}]
+    assert 0.04 <= elapsed < 0.25
 
 
 def test_id_generation_failure_never_reaches_the_user(

@@ -182,22 +182,36 @@ def parse_traceparent(value: str | None) -> SpanContext | None:
     Mirrors the edge parser: an unparseable, malformed, or all-zero header is not
     an error -- it simply means this request starts a new trace.
     """
-    if not value or len(value) != 55 or value != value.strip():
+    if not value or len(value) < 55 or len(value) > 512:
         return None
-    parts = value.split("-")
-    if len(parts) != 4:
+    if any(ord(character) < 0x20 or ord(character) > 0x7E for character in value):
         return None
 
-    version, trace_id, span_id, flags = parts
+    version = value[0:2]
+    trace_id = value[3:35]
+    span_id = value[36:52]
+    flags = value[53:55]
 
     if (
-        version != "00"
+        not _HEX_2.match(version)
+        or version == "ff"
+        or value[2] != "-"
+        or value[35] != "-"
+        or value[52] != "-"
         or not _HEX_32.match(trace_id)
         or not trace_id.strip("0")
         or not _HEX_16.match(span_id)
         or not span_id.strip("0")
         or not _HEX_2.match(flags)
     ):
+        return None
+
+    if version == "00":
+        if len(value) != 55:
+            return None
+    elif len(value) > 55 and value[55] != "-":
+        # For a future version, the known flags must be followed by either the
+        # end of the value or a dash. Everything after that dash is opaque.
         return None
 
     # Only the sampled bit is currently defined. Reserved bits must not be
@@ -888,13 +902,11 @@ class TracingMiddleware:
         async def send_wrapper(message: MutableMapping[str, Any]) -> None:
             if message.get("type") == "lifespan.shutdown.complete":
                 try:
-                    await asyncio.wait_for(
-                        asyncio.to_thread(
-                            get_tracer().flush,
-                            _SHUTDOWN_FLUSH_TIMEOUT_S,
-                        ),
-                        timeout=_SHUTDOWN_FLUSH_TIMEOUT_S + 0.5,
-                    )
+                    # Span export already runs on its own daemon worker. A
+                    # synchronous condition wait here releases the GIL, has a
+                    # real deadline, and avoids Python's default executor (whose
+                    # shutdown can outlive wait_for cancellation).
+                    get_tracer().flush(_SHUTDOWN_FLUSH_TIMEOUT_S)
                 except Exception:  # noqa: BLE001 -- shutdown must still complete
                     pass
             await send(message)
