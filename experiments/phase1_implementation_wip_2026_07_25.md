@@ -457,3 +457,56 @@ consistent with the measured host spread (HiGHS's own greenbea wall varied
 So the board gap **is** the pivot count — mediated through memory pressure rather
 than raw per-pivot cost. Which returns the problem to the trajectory, and the
 trajectory is where every mechanism above was measured dead.
+
+---
+
+# DEFINITIVE: HiGHS's exact configuration, in linprogx, gives 4,334 — not 2,836
+
+The last untested item was HiGHS's **starting basis**. S2's study found HiGHS's
+crash is **OFF by default** (`HighsOptions.h:914-919`): it starts the dual
+simplex from the pure **logical (slack) basis**, where DSE weights are exactly 1
+for free because `B = I` (`HEkkDual.cpp:148-155`). linprogx always builds a
+triangular crash and then computes exact weights by m BTRANs on a basis where
+they are not naturally 1 — the weight-initialisation problem S3 identified.
+
+Implemented (`LINPROGX_DS_LOGICAL_BASIS=1`, skips the crash so the basis is all
+artificials, i.e. exactly `B = I`) and tested in HiGHS's full configuration:
+
+| logical basis | two-phase | rule | BFRT | pivots | ms | status |
+|---|---|---|---|---:|---:|---|
+| — | — | Dantzig | — | 4,399 | 521.5 | optimal (shipped) |
+| ✓ | — | Dantzig | — | 7,603 | 902.6 | optimal |
+| ✓ | ✓ | Dantzig | — | 5,097 | 436.0 | dual_infeasible |
+| ✓ | ✓ | DSE | — | 9,494 | 1221.5 | dual_infeasible |
+| **✓** | **✓** | **DSE** | **✓** | **4,334** | 1045.0 | **optimal — HiGHS's configuration** |
+| ✓ | — | DSE | ✓ | 4,585 | 1264.3 | optimal |
+| **HiGHS** | | | | **2,836** | | |
+
+**4,334 versus 2,836.** With the *same* starting basis, the *same* two-phase
+architecture, the *same* pricing rule and the *same* ratio test, linprogx needs
+**53% more pivots**. It is also 2x the wall of our own Dantzig/big-M baseline,
+so it is not shippable either.
+
+## This closes the source-informed attack conclusively
+
+The gap is **not** architectural, and it is not a missing mechanism. Every
+mechanism HiGHS uses is now present in linprogx and configurable, and the
+configuration that matches HiGHS exactly still needs 53% more pivots. **The
+difference is the quality of each individual implementation** — HiGHS's DSE,
+BFRT, perturbation, shifting, rebuild cadence and tolerance management are tuned
+against one another over many years and many thousands of models.
+
+Closing the remaining gap therefore requires *reimplementing those mechanisms to
+HiGHS's standard*, not configuring linprogx's versions differently. That is a
+dual simplex rewrite, and no partial version of it will do — this wave
+demonstrates that the components are individually and jointly unprofitable in
+our implementation.
+
+## Final state
+
+Seven experiment gates added this wave, **all default OFF**. Default path
+verified unchanged: trace digest `679168a4baad36d6`, 4,399 pivots, objective
+`-72555248.12984592`. No production default changed, nothing shipped, no v3
+recertification run.
+
+**Board: 23W-0P-1L. greenbea ~1.156.**
