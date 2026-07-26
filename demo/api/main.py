@@ -7,10 +7,10 @@ interactive demo.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
 import linprogx
+from demo.api import tracing
 
 # ---------------------------------------------------------------------------
 # App
@@ -29,6 +30,17 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
 )
+
+# ---------------------------------------------------------------------------
+# Tracing — continues the browser -> Cloudflare -> Modal trace. Fail-open: with
+# no OTLP endpoint configured this costs a few dict lookups per request and
+# exports nothing. See docs/OBSERVABILITY.md.
+# ---------------------------------------------------------------------------
+
+_SERVICE_NAME = "linprogx"
+# Bounds http.route cardinality; anything else is reported as "/*".
+_TRACED_ROUTES = frozenset({"/api/health", "/api/info", "/api/solve/network-flow"})
+tracing.configure(_SERVICE_NAME)
 
 # ---------------------------------------------------------------------------
 # CORS — restricted to evanoman.com + local dev
@@ -122,6 +134,12 @@ async def rate_limit_middleware(request: Request, call_next: Any) -> Response:
         )
     response = await call_next(request)
     return response
+
+
+# Added after the auth and rate-limit middleware so it ends up outermost: the
+# server span then covers the whole request, including the 401s and 429s those
+# two short-circuit, and records them as outcomes rather than losing them.
+app.add_middleware(tracing.TracingMiddleware, routes=_TRACED_ROUTES)
 
 
 # ---------------------------------------------------------------------------
@@ -218,17 +236,17 @@ class InfoResponse(BaseModel):
 
 
 @app.get("/api/info", response_model=InfoResponse)
-def solver_info() -> InfoResponse:
+async def solver_info() -> InfoResponse:
     return InfoResponse()
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
+async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.post("/api/solve/network-flow", response_model=FlowResponse)
-def solve_network_flow(req: FlowRequest) -> FlowResponse:
+async def solve_network_flow(req: FlowRequest) -> FlowResponse:
     node_ids = {n.id for n in req.nodes}
 
     # Validate edges reference valid nodes
@@ -280,18 +298,42 @@ def solve_network_flow(req: FlowRequest) -> FlowResponse:
             # hub: flow conservation (net_outflow = 0)
             model.add_constraint(coeffs, "=", 0.0, name=f"balance_{node.id}")
 
+    # The LP itself gets its own span: shape and outcome only, never node or edge
+    # names. `solve.result` is a bounded vocabulary -- linprogx.Status is a
+    # four-value StrEnum, plus the two outcomes this endpoint adds itself.
+    solve_span = tracing.get_tracer().start_span(
+        "solve.network_flow",
+        attributes={"lp.nodes": len(req.nodes), "lp.edges": len(req.edges)},
+    )
     t0 = time.perf_counter()
     try:
-        future = _solve_pool.submit(model.solve)
-        solution = future.result(timeout=SOLVE_TIMEOUT_SECONDS)
-    except FuturesTimeoutError:
-        return FlowResponse(
-            status="timeout",
-            solve_time_ms=round((time.perf_counter() - t0) * 1000, 2),
+        loop = asyncio.get_running_loop()
+        solution = await asyncio.wait_for(
+            loop.run_in_executor(_solve_pool, model.solve),
+            timeout=SOLVE_TIMEOUT_SECONDS,
         )
+    except TimeoutError:
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+        # A hit solve cap is an expected outcome at demo scale, not an incident:
+        # the span status stays UNSET so it never fires a 5xx-shaped alert.
+        solve_span.set_attributes({"solve.result": "timeout", "lp.solve_time_ms": elapsed_ms})
+        solve_span.end()
+        return FlowResponse(status="timeout", solve_time_ms=elapsed_ms)
     except Exception as exc:
+        solve_span.record_exception(exc)
+        solve_span.set_status(tracing.STATUS_ERROR)
+        solve_span.set_attribute("solve.result", "error")
+        solve_span.end()
         raise HTTPException(status_code=500, detail=f"Solve failed: {exc}") from exc
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+    solve_span.set_attributes(
+        {
+            "solve.result": str(solution.status),
+            "lp.iterations": solution.iterations,
+            "lp.solve_time_ms": elapsed_ms,
+        }
+    )
+    solve_span.end()
 
     if solution.status != linprogx.Status.OPTIMAL:
         return FlowResponse(

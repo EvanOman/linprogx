@@ -147,3 +147,12 @@ The API runs on Render (free tier, Oregon). Cold start after inactivity takes
 
 The C extensions build at deploy time. OpenBLAS is detected automatically;
 the solver works with or without it (BLAS only matters for large sparse problems).
+
+## Observability
+
+The API continues the W3C trace context the Cloudflare Pages proxy forwards, so
+browser, edge, and Modal spans land in one trace. Configuration is two
+environment variables (`OTEL_EXPORTER_OTLP_ENDPOINT` and
+`OTEL_EXPORTER_OTLP_AUTHORIZATION`), supplied on Modal by the `otel-grafana`
+secret. Tracing is fail-open and exports nothing when unconfigured. See
+[docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md).
