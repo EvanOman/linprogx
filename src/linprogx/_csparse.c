@@ -10284,6 +10284,18 @@ static void ds_refresh_phase1(void) {
 }
 static int ds_phase1_on(void) { return g_ds_phase1; }
 
+/* PROVENANCE: SOURCE-INFORMED (HiGHS).  Edge-weight floor.  HiGHS clamps every
+ * updated dual edge weight to >= kMinDualSteepestEdgeWeight = 1e-4
+ * (SimplexConst.h:162, applied HEkk.cpp:2234-2235).  linprogx shipped 1e-12 --
+ * eight orders of magnitude in which a drifted-small weight can make a row look,
+ * in HiGHS's own words, "unreasonably attractive". */
+static double g_edge_floor = 1e-12;
+static void ds_refresh_edge_floor(void) {
+    const char *e = getenv("LINPROGX_DS_EDGE_FLOOR");
+    g_edge_floor = (e != NULL && atof(e) > 0.0) ? atof(e) : 1e-12;
+}
+static double ds_edge_floor(void) { return g_edge_floor; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -13186,6 +13198,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     lu_refresh_lt_skip();
     ds_refresh_logical_form();
     ds_refresh_phase1();
+    ds_refresh_edge_floor();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -14443,7 +14456,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         }
                         if (viol > 0.0) {
                             double w = devex_w[k];
-                            if (w < 1e-12) w = 1e-12;
+                            { double wf = ds_edge_floor(); if (w < wf) w = wf; }
                             double score = (viol * viol) / w;
                             if (score > max_score) {
                                 max_score = score;
@@ -14489,7 +14502,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                         } else {
                             /* Devex score: violation^2 / weight (Harris 1973) */
                             double w = devex_w[k];
-                            if (w < 1e-12) w = 1e-12;
+                            { double wf = ds_edge_floor(); if (w < wf) w = wf; }
                             score = (viol * viol) / w;
                             if (leaving_rule == 4) {
                                 int32_t ec = (enter_count != NULL) ? enter_count[j] : 0;
