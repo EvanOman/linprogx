@@ -89,10 +89,12 @@ Notable attributes:
 `solve.result` is bounded by construction: `linprogx.Status` is a four-value
 `StrEnum`, plus the two outcomes the endpoint adds itself.
 
-Only 5xx sets span status `ERROR`. Infeasible or unbounded results, a hit solve
-cap, the 30 req/min rate limit, 4xx validation failures, and a client that
-disconnects mid-request (`request.outcome=cancelled`) are recorded as outcomes,
-not incidents — they are the API working correctly.
+5xx responses and unhandled server exceptions set span status `ERROR`. A late
+stream exception preserves the status already sent to the client while still
+marking the span as an error. Infeasible or unbounded results, a hit solve cap,
+the 30 req/min rate limit, 4xx validation failures, and a client that disconnects
+mid-request (`request.outcome=cancelled`) are recorded as outcomes, not incidents
+— they are the API working correctly.
 
 ### Cold starts
 
