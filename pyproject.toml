@@ -101,6 +101,10 @@ exclude = ["tools/modal_bench.py"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+# The solver itself is installed into the environment; `demo/` is not a package
+# and is only ever run from a checkout (Render, Modal), so tests reach it through
+# the repository root.
+pythonpath = ["."]
 
 [tool.coverage.report]
 fail_under = 85

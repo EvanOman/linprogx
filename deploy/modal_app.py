@@ -7,6 +7,12 @@ site's Cloudflare Pages proxy (`/api/lp`) points its origin here; Render stays
 available as a config-flip rollback (LINPROGX_ORIGIN env var on the proxy).
 
 Deploy:  uv run --with modal --no-project modal deploy deploy/modal_app.py
+Secrets: `otel-grafana` holds OTEL_EXPORTER_OTLP_ENDPOINT and
+         OTEL_EXPORTER_OTLP_AUTHORIZATION, shared with the TourneyDesk demo app
+         so one token rotation covers both. It must exist before this deploys --
+         Modal resolves secrets by name at deploy time. Tracing is fail-open, so
+         an empty-but-present secret is a valid "tracing off" configuration.
+         See docs/OBSERVABILITY.md.
 
 The image ships the pure-Python solver source — the guarded `_cfast`/`_csparse`
 imports fall back to `_fast.py` cleanly, and demo-scale problems (<= 20 nodes,
@@ -41,6 +47,8 @@ app = modal.App("linprogx-demo")
 
 @app.function(
     image=image,
+    # Telemetry export configuration only; the demo needs no other secrets.
+    secrets=[modal.Secret.from_name("otel-grafana")],
     min_containers=0,  # scale-to-zero; set to 1 for always-warm
     # Modal's maximum idle window: absorb clustered personal-site visits while
     # retaining scale-to-zero instead of paying for permanent warm capacity.
