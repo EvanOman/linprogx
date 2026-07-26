@@ -10328,6 +10328,14 @@ static void ds_refresh_perturb_rows(void) {
 }
 static int ds_perturb_rows_on(void) { return g_perturb_rows; }
 
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). Skip the crash; start from B = I. */
+static int g_logical_basis = 0;
+static void ds_refresh_logical_basis(void) {
+    const char *e = getenv("LINPROGX_DS_LOGICAL_BASIS");
+    g_logical_basis = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_logical_basis_on(void) { return g_logical_basis; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -13234,6 +13242,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_reselect();
     ds_refresh_rot_start();
     ds_refresh_perturb_rows();
+    ds_refresh_logical_basis();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -13734,7 +13743,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * Any uncovered row gets its artificial column. A diagnostic warm start
      * supplies the complete basis directly and skips only this crash build.
      */
-    if (!warm_start_requested) {
+    /* PROVENANCE: SOURCE-INFORMED (HiGHS).  LOGICAL-BASIS START
+     * (LINPROGX_DS_LOGICAL_BASIS=1).  HiGHS's crash is OFF by default
+     * (HighsOptions.h:914-919): it starts the dual simplex from the pure
+     * logical (slack) basis, where the dual steepest-edge weights are exactly
+     * 1 for free because B = I (HEkkDual.cpp:148-155).  linprogx always builds
+     * a triangular crash and must then compute exact weights by m BTRANs on a
+     * basis where they are not naturally 1 -- which is the weight-initialisation
+     * problem identified in the S3 study.  This skips the crash so the basis is
+     * all artificials, i.e. exactly B = I. */
+    if (!warm_start_requested && ds_logical_basis_on()) {
+        for (int32_t k = 0; k < m; k++) basis[k] = n + k;
+        basis_initialized = 1;
+    }
+    if (!warm_start_requested && !basis_initialized) {
         int8_t *row_covered = calloc((size_t)(m > 0 ? m : 1), sizeof(int8_t));
         /* Track which basis position each row is assigned to */
         int32_t *row_to_bpos = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
