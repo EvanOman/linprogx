@@ -198,3 +198,59 @@ genuine defect worth recording: the stall predictor trades a 21% regression on
 greenbeb for safety on greenbea, and a sharper predicate (or a
 try-IPM-then-fall-back-on-failure policy, which the code already does for the DS
 in the opposite direction) would recover it without per-problem tuning.
+
+---
+
+## The IPM stall, precisely characterised — and why fixing it would not help
+
+Forced IPM on presolved greenbea (1,525 x 3,868, 23,274 nnz), `max_iter=400`,
+`tol=1e-9`, `feas_tol=2e-5`:
+
+```
+status               iteration_limit   (after only 58 of 400 iterations)
+mu                   3.013e-09         <- complementarity essentially converged
+rel_primal_residual  1.091e-13         <- primal excellent
+max_primal_residual  7.942e-10         <- primal excellent
+rel_dual_residual    1.815e-06         <- STUCK; this is the stall
+dual_cleanup_rounds  5                 <- five repair attempts, all insufficient
+objective            -72,464,559.56    vs true -72,555,248.13  (0.125% off)
+```
+
+**This is not a convergence failure — it is a dual stall.** The primal converges
+to 1e-13 and `mu` reaches 3e-9, but the relative dual residual pins at 1.8e-06
+and five dual-cleanup rounds cannot move it. The solver bails at iteration 58 of
+a 400 budget and reports `iteration_limit`. That matches the campaign's dated
+description ("stalls on a pinned dual certificate",
+`greenbea_ipm_stall_2026_07_18.md`) and confirms it still reproduces.
+
+**But this path is closed on funding, not on difficulty.** Even a fully repaired
+IPM cannot flip the cell:
+
+- greenbeb — same shape, same family, IPM does **not** stall there — takes
+  **1,411 ms** for a successful IPM solve.
+- greenbea's dual simplex already finishes in **668 ms**.
+
+So a working IPM at this size is roughly **2x slower** than the route we already
+use. Repairing the stall is genuine numerical work on a degenerate dual, and it
+would buy a *slower* solve. The route-change idea is dead regardless of whether
+the stall is fixable.
+
+## Complete closure map for greenbea
+
+Every avenue is now measured, not argued:
+
+| avenue | status |
+|---|---|
+| per-pivot / kernel work | exhausted — complete cycle-level phase map; six idealised models falsified |
+| trajectory via mechanism transplant | exhausted — all eight HiGHS mechanisms measured; none a net wall win |
+| trajectory via architecture | exhausted — HiGHS's exact configuration gives 4,334 vs its own 2,836 |
+| route change to IPM | **closed** — stalls, and ~2x slower than the DS even if repaired |
+| parallelism | closed — 7.12% net, reconstructed and matching the recorded prototype |
+| composition / stacking | `COMPOSITION_KILL` — best honest stack 0.863557 vs 0.822987 required |
+| protocol change | economics case built; recommended **against**; needs owner authority |
+
+**greenbea sits at the intersection of two independent weaknesses** — a stalling
+IPM and a dual simplex 1.5–2.7x behind HiGHS on its whole structural class. That
+is why it is the last cell, and why no single mechanism closes it.
+
+**Board: 23W-0P-1L. greenbea ~1.156.**
