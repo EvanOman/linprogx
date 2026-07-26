@@ -10296,6 +10296,22 @@ static void ds_refresh_edge_floor(void) {
 }
 static double ds_edge_floor(void) { return g_edge_floor; }
 
+/* PROVENANCE: SOURCE-INFORMED (HiGHS).  Row re-selection on stale DSE weights. */
+static int g_reselect = 0;
+static double g_reselect_tol = 0.25;   /* HiGHS: SimplexConst.h:160 */
+static int g_reselect_cap = 10;        /* bound the retries per pivot */
+static void ds_refresh_reselect(void) {
+    const char *e = getenv("LINPROGX_DS_RESELECT");
+    g_reselect = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    const char *t = getenv("LINPROGX_DS_RESELECT_TOL");
+    g_reselect_tol = (t != NULL && atof(t) > 0.0) ? atof(t) : 0.25;
+    const char *c = getenv("LINPROGX_DS_RESELECT_CAP");
+    g_reselect_cap = (c != NULL && atoi(c) > 0) ? atoi(c) : 10;
+}
+static int ds_reselect_on(void) { return g_reselect; }
+static double ds_reselect_tol(void) { return g_reselect_tol; }
+static int ds_reselect_cap(void) { return g_reselect_cap; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -13199,6 +13215,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_logical_form();
     ds_refresh_phase1();
     ds_refresh_edge_floor();
+    ds_refresh_reselect();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -13258,6 +13275,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *c_B = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *devex_w = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *dse_tau = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    int8_t *dse_reject = calloc((size_t)(m > 0 ? m : 1), sizeof(int8_t));
     int32_t *basis = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
 
     /* Basis CSC workspace (max nnz = A's nnz + m for artificials) */
@@ -14083,6 +14101,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     /* pivot-type composition, for degenerate-structure diagnosis */
     int64_t stat_flips = 0;
     int64_t stat_degenerate = 0;
+    int64_t stat_reselect = 0;
     int64_t stat_bland_pivots = 0;
     int64_t stat_max_degen_streak = 0;
     int64_t stat_art_ejections = 0;
@@ -14387,6 +14406,21 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             int32_t leaving_basis_pos = -1;
             double max_score = 0.0;
             int leaving_sigma = 0;
+            /* PROVENANCE: SOURCE-INFORMED (HiGHS).  DSE weight-error rejection
+             * with row RE-SELECTION (HEkkDual.cpp:1423-1490,
+             * acceptDualSteepestEdgeWeight :1504-1512, threshold
+             * SimplexConst.h:160).  HiGHS's CHUZR is a LOOP: pick a row, BTRAN,
+             * compute the exact ||rho||^2, and if the stored weight was
+             * < 0.25x exact, discard the row and choose another.  linprogx
+             * previously used the stored weight and never revisited the choice.
+             * dse_reject[] bans rows already found to have badly stale weights
+             * within this pivot. */
+            int32_t dse_n_reject = 0;
+            if (ds_reselect_on()) memset(dse_reject, 0, (size_t)m * sizeof(int8_t));
+        ds_reselect_retry:
+            leaving_basis_pos = -1;
+            max_score = 0.0;
+            leaving_sigma = 0;
             if (leaving_rule == 3) {
                 /* Two passes: (1) compute violations, maintain per-row
                  * 'infeasible-since' stamps, track the stamp range; (2) pick
@@ -14454,7 +14488,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             double v2 = x_B[k] - hi_ext[j];
                             if (v2 > viol) { viol = v2; sigma = -1; }
                         }
-                        if (viol > 0.0) {
+                        if (viol > 0.0 && !(ds_reselect_on() && dse_reject[k])) {
                             double w = devex_w[k];
                             { double wf = ds_edge_floor(); if (w < wf) w = wf; }
                             double score = (viol * viol) / w;
@@ -14496,7 +14530,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                     if (viol > 0.0) {
                         double score;
-                        if (leaving_rule == 1) {
+                        if (ds_reselect_on() && dse_reject[k]) {
+                            score = -1.0;
+                        } else if (leaving_rule == 1) {
                             /* plain max violation (Dantzig analogue) */
                             score = viol;
                         } else {
@@ -14686,7 +14722,30 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     g_exact += v * v;
                 }
                 if (g_exact < 1e-12) g_exact = 1e-12;
-                devex_w[leaving_basis_pos] = g_exact;
+                /* PROVENANCE: SOURCE-INFORMED (HiGHS).  Acceptance test.
+                 * HiGHS compares the PREVIOUSLY STORED weight against the exact
+                 * one and, if it was < 0.25x exact, rejects this row and
+                 * re-selects (acceptDualSteepestEdgeWeight, HEkkDual.cpp:1504-
+                 * 1512; threshold kDualSteepestEdgeWeightErrorTolerance,
+                 * SimplexConst.h:160).  Anchoring alone fixes the bookkeeping
+                 * but keeps a selection made on a badly stale weight.  The
+                 * BTRAN just spent is discarded -- HiGHS pays this too. */
+                if (ds_reselect_on()) {
+                    double g_stored = devex_w[leaving_basis_pos];
+                    devex_w[leaving_basis_pos] = g_exact;
+                    if (g_stored < ds_reselect_tol() * g_exact &&
+                        dse_n_reject < ds_reselect_cap()) {
+                        dse_reject[leaving_basis_pos] = 1;
+                        dse_n_reject++;
+                        stat_reselect++;
+                        for (int32_t ri = 0; ri < rho_nnz; ri++)
+                            rho[rho_nz_rows[ri]] = 0.0;
+                        rho_nnz = 0;
+                        goto ds_reselect_retry;
+                    }
+                } else {
+                    devex_w[leaving_basis_pos] = g_exact;
+                }
             }
             if (rate_hist_enabled) {
                 rate_hist_cur_rho_nnz = rho_nnz;
@@ -16379,7 +16438,7 @@ done:
     free(x_ext); free(r_ext); free(basis_pos); free(bound_status);
     free(b); free(y); free(x_B); free(rhs);
     free(rho); free(alpha_col); free(e_i); free(c_B);
-    free(devex_w); free(dse_tau); free(enter_count); free(c_shift); free(basis);
+    free(devex_w); free(dse_tau); free(dse_reject); free(enter_count); free(c_shift); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched); free(alpha_pattern);
