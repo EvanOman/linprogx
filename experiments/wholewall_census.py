@@ -65,7 +65,6 @@ def instrument() -> dict[str, list[float]]:
             finally:
                 record(label, time.perf_counter() - begin)
 
-        timed.__wrapped__ = original  # type: ignore[attr-defined]
         setattr(module, name, timed)
 
     wrap(sparse_mod, "presolve_matrix", "presolve")
@@ -144,7 +143,7 @@ def main() -> None:
         walls.append(time.perf_counter() - begin)
         iterations = result.solution.iterations
         status = result.solution.status.value
-        objective = float(result.solution.objective_value)
+        objective = float(result.solution.objective_value or 0.0)
 
     x = np.array(result.solution.x, dtype=float)
     residual = float(np.max(np.abs(data["A_scipy"] @ x - data["b"])))
@@ -175,9 +174,13 @@ def main() -> None:
             # postsolve_inner double-counts postsolve; residual_check may fire twice
             if name not in {"postsolve_inner"}:
                 charged += med
-        print(f"{'CHARGED TOTAL':26s} {charged * 1e3:9.3f} ms  {100.0 * charged / median_wall:6.2f}%")
+        print(
+            f"{'CHARGED TOTAL':26s} {charged * 1e3:9.3f} ms  {100.0 * charged / median_wall:6.2f}%"
+        )
         gap = median_wall - charged
-        print(f"{'UNCHARGED (python glue)':26s} {gap * 1e3:9.3f} ms  {100.0 * gap / median_wall:6.2f}%")
+        print(
+            f"{'UNCHARGED (python glue)':26s} {gap * 1e3:9.3f} ms  {100.0 * gap / median_wall:6.2f}%"
+        )
 
 
 if __name__ == "__main__":

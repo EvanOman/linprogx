@@ -52,18 +52,28 @@ def main() -> None:
     lo, hi = data["lo"].tolist(), data["hi"].tolist()
 
     reduction = presolve_matrix(original, b, c, lo, hi, algorithm="auto")
+    if reduction is None:
+        raise SystemExit("presolve returned no reduction")
     if reduction._matrix is not None:
         matrix = reduction._matrix
     else:
         matrix = csr_matrix(
-            reduction.rows, reduction.cols, reduction.indptr,
-            reduction.indices, reduction.data,
+            reduction.rows,
+            reduction.cols,
+            reduction.indptr,
+            reduction.indices,
+            reduction.data,
         )
     print(f"presolved shape   {matrix.shape}  nnz={matrix.nnz}")
 
     out = matrix.solve_eq_box_dual_simplex(
-        reduction.c, reduction.b, reduction.lo, reduction.hi,
-        max_iter=50_000, leaving_rule=1, expand=1,
+        reduction.c,
+        reduction.b,
+        reduction.lo,
+        reduction.hi,
+        max_iter=50_000,
+        leaving_rule=1,
+        expand=1,
     )
     iters = int(out["iterations"])
     print(f"status            {out['status']}")
@@ -73,8 +83,10 @@ def main() -> None:
     total = sum(phases.values())
     print(f"\n--- 13-phase profile (sum {total / 1e3:.2f} ms; shares are the robust part) ---")
     for name, us in sorted(phases.items(), key=lambda kv: -kv[1]):
-        print(f"{name:18s} {us / 1e3:9.3f} ms  {100.0 * us / total:6.2f}%  "
-              f"{us / max(1, iters):8.3f} us/pivot")
+        print(
+            f"{name:18s} {us / 1e3:9.3f} ms  {100.0 * us / total:6.2f}%  "
+            f"{us / max(1, iters):8.3f} us/pivot"
+        )
 
     slice_info = out.get("solve_slice") or {}
     if slice_info:
@@ -86,13 +98,13 @@ def main() -> None:
                 print(f"{name:22s} {value}")
 
     grouped = {
-        "solves (btran_rho+pivot_row+ftran_col)":
-            phases.get("btran_rho", 0) + phases.get("pivot_row", 0) + phases.get("ftran_col", 0),
+        "solves (btran_rho+pivot_row+ftran_col)": phases.get("btran_rho", 0)
+        + phases.get("pivot_row", 0)
+        + phases.get("ftran_col", 0),
         "btran_rho alone": phases.get("btran_rho", 0),
-        "factor (lu_update+refactor)":
-            phases.get("lu_update", 0) + phases.get("refactor", 0),
-        "pricing (leaving_scan+pricing_update)":
-            phases.get("leaving_scan", 0) + phases.get("pricing_update", 0),
+        "factor (lu_update+refactor)": phases.get("lu_update", 0) + phases.get("refactor", 0),
+        "pricing (leaving_scan+pricing_update)": phases.get("leaving_scan", 0)
+        + phases.get("pricing_update", 0),
         "ratio_test": phases.get("ratio_test", 0),
         "rcost_update": phases.get("rcost_update", 0),
     }
@@ -100,11 +112,20 @@ def main() -> None:
     for name, us in grouped.items():
         print(f"{name:42s} {100.0 * us / total:6.2f}%")
 
-    Path(args.out).write_text(json.dumps(
-        {"iterations": iters, "status": out["status"], "phase_us": phases,
-         "solve_slice": {k: v for k, v in slice_info.items()},
-         "presolved_shape": list(matrix.shape), "presolved_nnz": matrix.nnz},
-        indent=2, default=str))
+    Path(args.out).write_text(
+        json.dumps(
+            {
+                "iterations": iters,
+                "status": out["status"],
+                "phase_us": phases,
+                "solve_slice": {k: v for k, v in slice_info.items()},
+                "presolved_shape": list(matrix.shape),
+                "presolved_nnz": matrix.nnz,
+            },
+            indent=2,
+            default=str,
+        )
+    )
     print(f"\nartifact: {args.out}")
 
 

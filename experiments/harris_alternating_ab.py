@@ -34,8 +34,15 @@ from typing import Any
 
 SUITE = Path("/tmp/lpsuite")
 ARM_ENV = "LINPROGX_DS_HARRIS_FASTPATH"
-CONTROL_PHASES_ALL = ("btran_rho", "ftran_col", "pivot_row", "refactor",
-                      "lu_update", "ratio_test", "rcost_update")
+CONTROL_PHASES_ALL = (
+    "btran_rho",
+    "ftran_col",
+    "pivot_row",
+    "refactor",
+    "lu_update",
+    "ratio_test",
+    "rcost_update",
+)
 
 
 def load_instance(path: Path) -> dict[str, Any]:
@@ -62,18 +69,32 @@ def solve_once(data: dict[str, Any], arm: str) -> dict[str, Any]:
 
     original = from_scipy_sparse(data["A_scipy"])
     reduction = presolve_matrix(
-        original, data["b"].tolist(), data["c"].tolist(),
-        data["lo"].tolist(), data["hi"].tolist(), algorithm="auto",
+        original,
+        data["b"].tolist(),
+        data["c"].tolist(),
+        data["lo"].tolist(),
+        data["hi"].tolist(),
+        algorithm="auto",
     )
+    if reduction is None:
+        raise SystemExit("presolve returned no reduction")
     matrix = reduction._matrix
     if matrix is None:
         matrix = csr_matrix(
-            reduction.rows, reduction.cols, reduction.indptr,
-            reduction.indices, reduction.data,
+            reduction.rows,
+            reduction.cols,
+            reduction.indptr,
+            reduction.indices,
+            reduction.data,
         )
     out = matrix.solve_eq_box_dual_simplex(
-        reduction.c, reduction.b, reduction.lo, reduction.hi,
-        max_iter=50_000, leaving_rule=1, expand=1,
+        reduction.c,
+        reduction.b,
+        reduction.lo,
+        reduction.hi,
+        max_iter=50_000,
+        leaving_rule=1,
+        expand=1,
     )
     return out
 
@@ -83,10 +104,12 @@ def main() -> None:
     parser.add_argument("--pairs", type=int, default=11)
     parser.add_argument("--instance", default="lp_greenbea")
     parser.add_argument("--out", default="/tmp/harris_alternating_ab.json")
-    parser.add_argument("--env", default="LINPROGX_DS_HARRIS_FASTPATH",
-                        help="env var(s), comma-separated, toggled between arms")
-    parser.add_argument("--treatment", default="ratio_test",
-                        help="phase expected to change")
+    parser.add_argument(
+        "--env",
+        default="LINPROGX_DS_HARRIS_FASTPATH",
+        help="env var(s), comma-separated, toggled between arms",
+    )
+    parser.add_argument("--treatment", default="ratio_test", help="phase expected to change")
     args = parser.parse_args()
 
     global ARM_ENV
@@ -105,9 +128,14 @@ def main() -> None:
             out = solve_once(data, arm)
             phases = out.get("phase_us") or {}
             signatures.add((int(out["iterations"]), repr(float(out["objective"]))))
-            rows.append({"arm": arm, "phases": phases,
-                         "total": sum(phases.values()),
-                         "iterations": int(out["iterations"])})
+            rows.append(
+                {
+                    "arm": arm,
+                    "phases": phases,
+                    "total": sum(phases.values()),
+                    "iterations": int(out["iterations"]),
+                }
+            )
 
     if len(signatures) != 1:
         raise SystemExit(f"BIT-IDENTITY VIOLATED across arms/reps: {sorted(signatures)}")
@@ -128,8 +156,12 @@ def main() -> None:
         return out
 
     print(f"\n{'phase':18s} {'B/A median':>11s} {'B/A min':>9s} {'B/A max':>9s}  note")
-    result: dict[str, Any] = {"pairs": args.pairs, "iterations": iters,
-                              "objective_repr": obj_repr, "ratios": {}}
+    result: dict[str, Any] = {
+        "pairs": args.pairs,
+        "iterations": iters,
+        "objective_repr": obj_repr,
+        "ratios": {},
+    }
     CONTROL_PHASES = tuple(p for p in CONTROL_PHASES_ALL if p != args.treatment)
     ordered = [args.treatment, *CONTROL_PHASES, "TOTAL"]
     for key in ordered:
@@ -137,11 +169,18 @@ def main() -> None:
         if not ratios:
             continue
         med = statistics.median(ratios)
-        note = "<-- TREATMENT" if key == args.treatment else (
-            "control" if key in CONTROL_PHASES else "")
+        note = (
+            "<-- TREATMENT"
+            if key == args.treatment
+            else ("control" if key in CONTROL_PHASES else "")
+        )
         print(f"{key:18s} {med:11.4f} {min(ratios):9.4f} {max(ratios):9.4f}  {note}")
-        result["ratios"][key] = {"median": med, "min": min(ratios),
-                                 "max": max(ratios), "all": ratios}
+        result["ratios"][key] = {
+            "median": med,
+            "min": min(ratios),
+            "max": max(ratios),
+            "all": ratios,
+        }
 
     treat = statistics.median(paired_ratios(args.treatment))
     controls = [statistics.median(paired_ratios(p)) for p in CONTROL_PHASES]
@@ -149,8 +188,7 @@ def main() -> None:
     print(f"\ntreatment effect on {args.treatment} : {100.0 * (treat - 1.0):+.2f}%")
     print(f"worst control-phase drift      : {100.0 * worst_control_drift:.2f}%")
 
-    a_share = statistics.median(
-        [ra["phases"][args.treatment] / ra["total"] for ra in a_rows])
+    a_share = statistics.median([ra["phases"][args.treatment] / ra["total"] for ra in a_rows])
     saved_share = a_share * (1.0 - treat)
     print(f"{args.treatment} share of wall (arm A): {100.0 * a_share:.2f}%")
     print(f"=> whole-wall saving           : {100.0 * saved_share:.2f}%")

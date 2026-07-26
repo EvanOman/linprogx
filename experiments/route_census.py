@@ -41,8 +41,7 @@ def load_instance(path: Path) -> dict[str, Any]:
 
 def bounds_of(data: dict[str, Any]) -> list[tuple[float | None, float | None]]:
     return [
-        (None if low == float("-inf") else float(low),
-         None if up == float("inf") else float(up))
+        (None if low == float("-inf") else float(low), None if up == float("inf") else float(up))
         for low, up in zip(data["lo"], data["hi"], strict=True)
     ]
 
@@ -67,7 +66,9 @@ def main() -> None:
         begin = time.perf_counter()
         try:
             result = SparseSolver(
-                algorithm="auto", max_iterations=50_000, eps=2e-5,
+                algorithm="auto",
+                max_iterations=50_000,
+                eps=2e-5,
                 check_interval=50_000,
             ).solve(problem)
             backend = result.backend
@@ -77,10 +78,20 @@ def main() -> None:
             backend, status, iters = f"ERROR:{type(exc).__name__}", "error", 0
         wall = time.perf_counter() - begin
         touched = "dual-simplex" in backend
-        rows.append({"instance": name, "backend": backend, "status": status,
-                     "iterations": iters, "seconds": wall, "ds_touched": touched})
-        print(f"{name:16s} {backend:34s} {status:10s} it={iters:<7d} "
-              f"{wall:8.3f}s  {'DS-TOUCHED' if touched else ''}")
+        rows.append(
+            {
+                "instance": name,
+                "backend": backend,
+                "status": status,
+                "iterations": iters,
+                "seconds": wall,
+                "ds_touched": touched,
+            }
+        )
+        print(
+            f"{name:16s} {backend:34s} {status:10s} it={iters:<7d} "
+            f"{wall:8.3f}s  {'DS-TOUCHED' if touched else ''}"
+        )
 
     touched = [r["instance"] for r in rows if r["ds_touched"]]
     print(f"\nDS-touched cells ({len(touched)}): {','.join(touched)}")

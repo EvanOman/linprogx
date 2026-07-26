@@ -132,3 +132,94 @@ Mechanism understood by reading HiGHS (MIT, ERGO-Code/HiGHS,
 The implementation in linprogx is written independently from this algorithm
 description. Per `docs/PROVENANCE.md`, any greenbea result following from this
 is a **source-informed** result and must never be reported as a clean-room one.
+
+---
+
+# PART 2 — the measured ground truth, and the correction to our central assumption
+
+## HiGHS's actual numbers on greenbea (measured, not inferred)
+
+The campaign's "HiGHS takes ~3,334 pivots" was **inferred** — it was linprogx's
+*Phase-2* count starting from a HiGHS-derived basis. HiGHS's own iteration count
+was never measured. Measured now via `highspy==1.14.0`:
+
+```
+Simplex iterations: DuPh1 1448; DuPh2 1376; PrPh2 12; Total 2836
+```
+
+| | iterations | wall (this box) | us/pivot |
+|---|---:|---:|---:|
+| HiGHS | **2,836** | 421.2 ms | 148.4 |
+| linprogx | **4,399** | ~377 ms | **85.7** |
+
+## Two corrections this forces
+
+**1. HiGHS really does win on trajectory: 2,836 vs 4,399, −35.5%.** The inferred
+3,334 was in the right region but pessimistic.
+
+**2. linprogx's per-pivot cost is 1.73x BETTER than HiGHS's**, and on this box
+linprogx is *faster in absolute wall* (377 ms vs 421 ms). The board loss exists
+only on Modal's 4-vCPU containers, which matches the host-dependence measured
+in the v3 paired cert (ratio varied 1.16–1.47 across three hosts of the same
+class, and HiGHS's own wall varied 54%).
+
+**This reframes the whole target.** Closing the pivot gap is worth **−35.5%**
+against a **13.46%** bar — a 2.6x margin. Every clean-room wave was optimising
+the slice where we were already ahead.
+
+## What the bound swap alone does NOT do
+
+Simulated end-to-end with the existing diagnostic hooks
+(`experiments/phase1_bound_swap_probe.py`), Phase 1 solving `Ax = 0` under the
+Phase-1 bound map and Phase 2 warm-started from its basis:
+
+| | Phase 1 | Phase 2 | total |
+|---|---:|---:|---:|
+| linprogx two-phase (Dantzig) | 2,418 | 2,399 | **4,817** |
+| linprogx two-phase (Devex) | 5,603 | 2,239 | 7,842 |
+| linprogx two-phase (exact DSE) | 5,198 | 1,883 | 7,081 |
+| linprogx big-M baseline | — | — | 4,399 |
+| **HiGHS** | **1,448** | **1,376 (+12)** | **2,836** |
+
+Two things stand out:
+
+- The Phase-1 basis is genuinely excellent: Phase 2 from it costs **2,399**
+  pivots, which is *exactly* the campaign's recorded "K7 2,399-pivot native
+  basis". Independent confirmation that we had reached the right vertex before.
+- But our Phase 1 costs 2,418 pivots where HiGHS's costs 1,448, and our Phase 2
+  costs 2,399 where HiGHS's costs 1,376. **We are ~1.7x worse in BOTH phases.**
+
+So the bound-swap structure is **necessary but not sufficient**. It removes
+big-M and makes Phase 1 free to *enter*, but it does not by itself produce
+HiGHS's trajectory.
+
+## The remaining gap is pricing
+
+HiGHS uses **dual steepest edge** throughout. Our recorded verdict that "exact
+DSE measured worse" was obtained on the **cold big-M path** — a different
+regime. DSE weight *initialisation* is the classic failure mode: from a logical
+basis the initial weights are exactly 1, but from a crash basis they must be
+computed or approximated, and a poor approximation makes DSE behave worse than
+Dantzig. Our sweep above shows exactly that signature: DSE gives the *best*
+Phase 2 (1,883, better than Dantzig's 2,399) but a terrible Phase 1 (5,198).
+
+**DSE is helping where its weights are meaningful and hurting where they are
+not.** That is an initialisation problem, not a rule problem.
+
+## Implementation target (next wave)
+
+1. Replace big-M with the in-place two-phase structure (bound swap, `Ax=0`
+   Phase 1, restore bounds, continue on the same basis and factorization).
+2. Implement dual steepest edge with **correct weight initialisation** for the
+   starting basis, used in both phases.
+3. Target: 2,836 pivots at linprogx's existing 85.7 us/pivot.
+
+At our current per-pivot cost that projects to roughly `2,836 x 85.7us = 243 ms`
+against HiGHS's 421 ms on this box — and against the board, a pivot reduction of
+35.5% versus the 13.46% required.
+
+## Attribution
+
+Mechanism understood by reading HiGHS (MIT, ERGO-Code/HiGHS). Iteration counts
+measured through the public `highspy` API. **No code copied.** Per
+`docs/PROVENANCE.md` any resulting greenbea win is **source-informed**.
