@@ -282,3 +282,93 @@ All four new gates default **OFF**: `g_logical_form=0`, `g_ds_phase1=0`,
 `g_reselect=0`, `g_edge_floor=1e-12`. Default path verified: trace digest
 `679168a4baad36d6`, 4,399 pivots, objective `-72555248.12984592`, **111 tests
 passing**. Board unchanged at **23W-0P-1L**.
+
+---
+
+## KILL: the last two ranked items — tie-breaks and row-cost perturbation
+
+### Rotating CHUZR scan start (`LINPROGX_DS_ROT_START=1`)
+
+HiGHS randomises the CHUZR scan start (`HEkkDualRHS.cpp:60-63`) so merit ties are
+not always resolved to the lowest row index. Our own ledger records index-order
+tie-breaking costing **2x pivots on cre_d**, and greenbea's matrix is ±1-heavy,
+so ties should be pervasive. Implemented as a rotating start (`iter % m`), which
+keeps the argmax global and changes only tie resolution:
+
+| SIMD | rotate | pivots |
+|---|---|---:|
+| on | off | 4,399 |
+| on | on | 4,399 |
+| off | off | 4,399 |
+| off | on | **4,399** |
+
+**Zero effect in every configuration. KILLED.** Whatever ties exist on greenbea
+do not change the trajectory.
+
+### Row/logical cost perturbation (`LINPROGX_DS_PERTURB_ROWS=1`)
+
+HiGHS perturbs row/logical costs as well as structural ones
+(`HEkk.cpp:2551-2560`), breaking ties among slacks; ours covered structural
+columns only.
+
+| pricing | perturb rows | pivots |
+|---|---|---:|
+| 0 | off | 4,399 |
+| 0 | on | 4,399 |
+| 1 | off | 4,453 |
+| 1 | on | **4,453** |
+
+**Zero effect. KILLED.** The reason is structural: greenbea's presolved model is
+all-equality, so every logical is *fixed*. There are no slack ranges and
+therefore no slack ties to break. HiGHS's mechanism is real but has no purchase
+on this instance.
+
+---
+
+# FINAL: the source-informed attack is complete and did not close the gap
+
+Every mechanism identified by reading HiGHS is now built or killed:
+
+| # | mechanism | outcome | pivots |
+|---|---|---|---:|
+| — | shipped baseline (Dantzig, big-M) | — | **4,399** |
+| 1a | logical form (RHS in logical bounds) | built, **result-identical** | 4,399 |
+| 1b | in-place dual Phase 1 (bound swap) | built, **correct** (dual obj = 0), loses | 5,124 |
+| 2 | BFRT with boxed columns | fewer pivots, **slower wall** | 4,298 |
+| 3 | DSE weight floor `1e-4` | **KILLED** (flat over 5 orders) | 4,675 |
+| 4 | DSE re-selection on stale weights | **KILLED** (zero effect) | 4,675 |
+| 5 | rotating CHUZR tie-break | **KILLED** (zero effect) | 4,399 |
+| 6 | row/logical cost perturbation | **KILLED** (no slack ties exist) | 4,399 |
+| — | **HiGHS** | — | **2,836** |
+
+**Nothing beats 4,399.** HiGHS's 1,563-pivot advantage is not attributable to any
+single mechanism we could isolate, implement and measure.
+
+## What the attack delivered anyway
+
+1. **The Phase-1 mystery is closed permanently.** HiGHS constructs nothing. The
+   "conservation law" was an artefact of assuming Phase 1 must be *built* rather
+   than *entered*. We had the right mathematical object and the wrong
+   implementation strategy.
+2. **Two campaign assumptions corrected.** HiGHS takes **2,836** iterations, not
+   the inferred ~3,334; and **our per-pivot cost is 1.73x better** (85.7us vs
+   148.4us), so on this box linprogx is *faster in absolute wall*. Every
+   clean-room wave optimised the slice where we were already ahead.
+3. **A negative result with teeth.** The residual is **diffuse** — accumulated
+   pivot-selection quality across ~1,500 pivots, not one missing trick. Six
+   mechanisms, each real in HiGHS and each individually worth nothing here.
+
+## Honest assessment of what would be required
+
+Matching 2,836 would need HiGHS's *entire* pivot-selection regime as a coupled
+system — DSE from a logical basis with its full acceptance/fallback machinery,
+its BFRT, its perturbation and shifting, and its rebuild cadence — not
+individual mechanisms grafted onto a Dantzig/big-M core. That is a rewrite of
+the dual simplex, not a patch, and this wave demonstrates that the pieces do not
+pay off individually.
+
+## Safety
+
+All six gates default **OFF**. Default path verified unchanged: trace digest
+`679168a4baad36d6`, 4,399 pivots, objective `-72555248.12984592`, residual
+1.769e-07. Board remains **23W-0P-1L**, greenbea **~1.156**.
