@@ -372,3 +372,59 @@ pay off individually.
 All six gates default **OFF**. Default path verified unchanged: trace digest
 `679168a4baad36d6`, 4,399 pivots, objective `-72555248.12984592`, residual
 1.769e-07. Board remains **23W-0P-1L**, greenbea **~1.156**.
+
+---
+
+## KILL: the coupled configuration too — the "pieces must work together" hypothesis is FALSE
+
+The previous section concluded that matching HiGHS would need its *entire*
+pivot-selection regime as a coupled system rather than individual mechanisms
+grafted on. **That hypothesis has now been tested and it is false.**
+
+Full HiGHS-shaped configuration and its ablations:
+
+| phase1 | rule | BFRT | reselect | pivots | ms | status |
+|---|---|---|---|---:|---:|---|
+| — | Dantzig | — | — | **4,399** | 544.7 | optimal (shipped) |
+| ✓ | DSE | ✓ | ✓ | **6,771** | 1863.2 | optimal — **full coupled config** |
+| ✓ | DSE | ✓ | — | 6,769 | 1920.8 | optimal |
+| ✓ | Devex | ✓ | ✓ | 5,919 | 1436.9 | optimal |
+| — | DSE | ✓ | ✓ | **4,368** | 1480.4 | optimal |
+| ✓ | DSE | — | ✓ | 11,864 | 3762.4 | dual_infeasible |
+| **HiGHS** | | | | **2,836** | | |
+
+**The full coupled configuration is 54% WORSE than baseline** (6,771 vs 4,399).
+The only variant that beats baseline on pivots is DSE+BFRT+reselect *without* the
+phase structure, at 4,368 — a 0.7% pivot gain for **2.7x the wall time**.
+
+## The definitive negative result
+
+The source-informed attack has now tested:
+
+- every mechanism **individually** (6 of them),
+- selected **pairs** (phase1+BFRT, DSE+floor, DSE+reselect),
+- the **full coupled configuration**, and
+- **four ablations** of that configuration.
+
+**Nothing beats the shipped 4,399 pivots at a competitive wall.** Adding HiGHS's
+mechanisms to linprogx's dual simplex makes it worse, individually and jointly.
+
+The conclusion is uncomfortable but well-evidenced: **the gap is not in which
+mechanisms are present, it is in the quality of every implementation of them.**
+HiGHS's DSE, BFRT, perturbation and rebuild cadence are each tuned against each
+other over years; ours are individually reasonable and collectively
+counterproductive on this instance. That is not something a mechanism transplant
+can fix, and it is not something this campaign can close by patching.
+
+What linprogx *does* have is a **1.73x better per-pivot cost** — which is why it
+is faster than HiGHS in absolute wall on the dev box despite 55% more pivots, and
+why the board loss exists only on Modal's 4-vCPU hosts.
+
+## Final state
+
+All six gates default **OFF**. Default path verified: digest
+`679168a4baad36d6`, 4,399 pivots, objective `-72555248.12984592`, residual
+1.769e-07, **522 passed / 7 skipped**. No production default changed, no v3
+recertification run.
+
+**Board: 23W-0P-1L. greenbea ~1.156.**
