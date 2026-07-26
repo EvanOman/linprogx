@@ -564,3 +564,45 @@ measured here is unprofitable individually *and* jointly in our implementation.
 **Board: 23W-0P-1L. greenbea ~1.156.** Nothing shipped from this wave; all seven
 gates default OFF; default path verified at digest `679168a4baad36d6`, 4,399
 pivots, 522 tests passing.
+
+---
+
+## The tradeoff curve — why greenbea is lost, in one table
+
+| configuration | pivots | ms | us/pivot |
+|---|---:|---:|---:|
+| shipped: Dantzig + big-M | 4,399 | 377 | **85.7** |
+| HiGHS's config in linprogx | 4,334 | 1,045 | 241.1 |
+| HiGHS itself | 2,836 | 421 | 148.4 |
+
+linprogx and HiGHS sit at **different points on the pivots-versus-per-pivot
+tradeoff curve**, and each is well optimised for its own point:
+
+- Our advantage is a **very cheap pricing rule** — Dantzig, SIMD-scanned, at
+  85.7 us/pivot, 1.73x cheaper per pivot than HiGHS.
+- Our cost is **55% more pivots**, because cheap pricing chooses worse rows.
+- Turning on the pricing that *would* cut pivots (DSE) costs us
+  **241.1 us/pivot** — 2.8x our Dantzig cost — and nets a *loss*.
+
+**The arithmetic of the ideal, for the record:**
+
+```
+our per-pivot cost x HiGHS's pivot count = 85.7 us x 2,836 = 243 ms
+local flip target                                          ~311 ms
+                                            clears it by     68 ms
+```
+
+If linprogx could reach HiGHS's trajectory *at its own per-pivot cost*, greenbea
+would flip decisively — not marginally. **That is the entire prize, and it is why
+the trajectory was always the right target.**
+
+It also explains the local-vs-host inversion. More pivots means more memory
+traffic; a large-L3 desktop absorbs it (we win there, 377 ms vs 421 ms) and a
+bandwidth-constrained 4-vCPU container does not (we lose there, 1.156x).
+
+**What would be required:** a pricing rule that selects like DSE but costs like
+Dantzig. HiGHS achieves ~2,836 pivots at 148 us/pivot; we achieve 4,399 at 85.7
+or 4,334 at 241. The missing point on the curve — roughly 2,800 pivots at under
+110 us/pivot — is what a rewrite would have to hit. Nothing in this wave got
+near it, and the uniform 1.57x/1.50x per-phase penalty says the deficit is in
+selection quality throughout, not in one component.
