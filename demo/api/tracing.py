@@ -14,8 +14,9 @@ Deliberately dependency-free (stdlib only), for three reasons:
 2. The Pages Function exporter (``functions/_observability.ts`` in the site repo)
    is already a hand-rolled OTLP/HTTP JSON client. Matching its payload shape,
    env var names, and privacy rules keeps one reviewable contract instead of two.
-3. It keeps this repo's dependency set, lockfile, and package release-age policy
-   untouched.
+3. It keeps the solver and deployed demo runtime dependency set untouched. The
+   development extra carries the pinned FastAPI stack for mandatory integration
+   tests.
 
 The wire format is standard OTLP/HTTP with a JSON payload and standard OTel
 semantic conventions, so Grafana Cloud (or any OTLP receiver) ingests it with no
@@ -75,24 +76,12 @@ _MAX_QUEUED_SPANS = 2048
 _MAX_BATCH = 128
 _SCHEDULE_DELAY_S = 0.25
 _EXPORT_TIMEOUT_S = 5.0
+_SHUTDOWN_FLUSH_TIMEOUT_S = _EXPORT_TIMEOUT_S + 1.0
 _FAILURE_LOG_INTERVAL_S = 60.0
-
-# A container that has been idle for longer than this cannot plausibly be
-# reporting a real init duration: Modal memory-snapshot restores resume a process
-# whose monotonic clock predates the snapshot, so the measured "import to first
-# request" gap becomes meaningless. Past the cap we still report the cold start,
-# just without a duration.
-_MAX_PLAUSIBLE_INIT_S = 120.0
 
 _HEX_2 = re.compile(r"^[0-9a-f]{2}$")
 _HEX_16 = re.compile(r"^[0-9a-f]{16}$")
 _HEX_32 = re.compile(r"^[0-9a-f]{32}$")
-# Accept only random-looking UUID/trace-id shapes so a caller cannot smuggle
-# arbitrary text into telemetry through an otherwise "safe" header.
-_CORRELATION_ID = re.compile(
-    r"^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
-    re.IGNORECASE,
-)
 
 # --- Process identity and cold-start bookkeeping -----------------------------
 
@@ -112,59 +101,40 @@ def instance_id() -> str:
     global _instance_key, _instance_value
     try:
         hostname = socket.gethostname()
-    except OSError:
+    except Exception:  # noqa: BLE001 -- platform identity is best-effort
         # Container identity is useful telemetry, never a serving dependency.
         hostname = ""
-    key = (os.getpid(), hostname)
-    with _instance_lock:
-        if key != _instance_key:
-            _instance_key = key
-            try:
-                _instance_value = secrets.token_hex(8)
-            except (OSError, RuntimeError):
-                # Python salts hash() per process, keeping this opaque while
-                # preserving fail-open behavior if the OS CSPRNG is unavailable.
-                _instance_value = f"{hash(key) & ((1 << 64) - 1):016x}"
-        return _instance_value
-
-
-def _process_start_monotonic() -> float:
-    """Return process start on the monotonic clock when Linux exposes it.
-
-    Capturing the clock only when this module imports misses imports that ran
-    before it. Modal runs Linux, where ``/proc/self/stat`` supplies process start
-    in clock ticks since boot -- the same origin as ``monotonic()``. The fallback
-    keeps local non-Linux development fail-open.
-    """
-    now = time.monotonic()
     try:
-        with open("/proc/self/stat", encoding="utf-8") as stat_file:
-            stat = stat_file.read()
-        # The second field is parenthesized and may contain spaces, so split only
-        # after its closing parenthesis. Field 22 is then index 19 in the tail.
-        fields = stat.rpartition(")")[2].split()
-        ticks_per_second = int(os.sysconf("SC_CLK_TCK"))
-        if ticks_per_second <= 0:
-            return now
-        started = int(fields[19]) / ticks_per_second
-        return started if 0.0 <= started <= now else now
-    except (OSError, ValueError, IndexError):
-        return now
+        key = (os.getpid(), hostname)
+        with _instance_lock:
+            if key != _instance_key:
+                _instance_key = key
+                try:
+                    _instance_value = secrets.token_hex(8)
+                except (OSError, RuntimeError):
+                    # Python salts hash() per process, keeping this opaque while
+                    # preserving fail-open behavior if the OS CSPRNG is unavailable.
+                    _instance_value = f"{hash(key) & ((1 << 64) - 1):016x}"
+            return _instance_value
+    except Exception:  # noqa: BLE001 -- identity must never affect serving
+        return "0000000000000000"
 
 
-_init_monotonic = _process_start_monotonic()
 _cold_start_lock = threading.Lock()
 _served_a_request = False
 _request_count = 0
 
 
-def request_container_state() -> tuple[bool, str, float | None]:
+def request_container_state() -> tuple[bool, str]:
     """Claim the cold-start marker for this process.
 
-    Returns ``(is_cold, reuse_bucket, init_seconds)``. The reuse bucket is
-    deliberately bounded (``first``, ``2-5``, ``6-20``, ``21+``) rather than
-    exporting an ever-growing request count as a high-cardinality attribute.
-    ``init_seconds`` is ``None`` when the measured value is not plausible.
+    Returns ``(is_cold, reuse_bucket)``. The reuse bucket is deliberately bounded
+    (``first``, ``2-5``, ``6-20``, ``21+``) rather than exporting an ever-growing
+    request count as a high-cardinality attribute.
+
+    No cold-start duration is inferred from an import-time clock: Modal snapshots
+    module globals, so that value can describe snapshot age rather than the
+    serving container's initialization.
     """
     global _request_count, _served_a_request
     with _cold_start_lock:
@@ -172,27 +142,16 @@ def request_container_state() -> tuple[bool, str, float | None]:
         count = _request_count
         is_cold = not _served_a_request
         _served_a_request = True
-        elapsed = time.monotonic() - _init_monotonic if is_cold else None
     bucket = "first" if count == 1 else "2-5" if count <= 5 else "6-20" if count <= 20 else "21+"
-    init_seconds = (
-        elapsed if elapsed is not None and 0.0 <= elapsed <= _MAX_PLAUSIBLE_INIT_S else None
-    )
-    return is_cold, bucket, init_seconds
+    return is_cold, bucket
 
 
 def reset_cold_start_for_tests() -> None:
-    """Restore the freshly-imported-process state. Test-only.
-
-    Re-anchors the init clock as well as the marker: a long test session would
-    otherwise leave an implausible (>120 s) init window and suppress the
-    duration, making cold-start assertions depend on how long the suite has
-    been running.
-    """
-    global _request_count, _served_a_request, _init_monotonic
+    """Restore the freshly-imported-process state. Test-only."""
+    global _request_count, _served_a_request
     with _cold_start_lock:
         _served_a_request = False
         _request_count = 0
-        _init_monotonic = time.monotonic()
 
 
 # --- W3C trace context -------------------------------------------------------
@@ -223,18 +182,16 @@ def parse_traceparent(value: str | None) -> SpanContext | None:
     Mirrors the edge parser: an unparseable, malformed, or all-zero header is not
     an error -- it simply means this request starts a new trace.
     """
-    if not value or len(value) > 256:
+    if not value or len(value) != 55 or value != value.strip():
         return None
-    parts = value.strip().split("-")
-    if len(parts) < 4:
+    parts = value.split("-")
+    if len(parts) != 4:
         return None
 
-    version, trace_id, span_id, flags = (part.lower() for part in parts[:4])
-    future_fields = parts[4:]
+    version, trace_id, span_id, flags = parts
 
     if (
-        not _HEX_2.match(version)
-        or version == "ff"
+        version != "00"
         or not _HEX_32.match(trace_id)
         or not trace_id.strip("0")
         or not _HEX_16.match(span_id)
@@ -243,12 +200,10 @@ def parse_traceparent(value: str | None) -> SpanContext | None:
     ):
         return None
 
-    # Version 00 has exactly four fields. Later versions may append fields, but
-    # never empty ones.
-    if (version == "00" and future_fields) or any(not field for field in future_fields):
-        return None
-
-    return SpanContext(trace_id=trace_id, span_id=span_id, trace_flags=flags)
+    # Only the sampled bit is currently defined. Reserved bits must not be
+    # propagated or exported.
+    trace_flags = "01" if int(flags, 16) & 0x01 else "00"
+    return SpanContext(trace_id=trace_id, span_id=span_id, trace_flags=trace_flags)
 
 
 # --- OTLP attribute encoding -------------------------------------------------
@@ -301,9 +256,12 @@ def _traces_endpoint() -> str:
         if not base:
             return ""
         url = f"{base.rstrip('/')}/v1/traces"
-    # Refuse anything that is not a real HTTP(S) receiver: a file:// or similar
-    # endpoint in the environment must not turn into a local-file write.
-    return url if url.startswith(("http://", "https://")) else ""
+    authorization = _env("OTEL_EXPORTER_OTLP_AUTHORIZATION")
+    if url.startswith("https://"):
+        return url
+    # Plain HTTP is useful for an unauthenticated collector on a trusted local
+    # network. Never put the Grafana credential on it.
+    return url if url.startswith("http://") and not authorization else ""
 
 
 class SpanExporter:
@@ -330,34 +288,43 @@ class SpanExporter:
 
     @property
     def enabled(self) -> bool:
-        return bool(_traces_endpoint())
+        try:
+            return bool(_traces_endpoint())
+        except Exception:  # noqa: BLE001 -- configuration must remain fail-open
+            return False
 
     def submit(self, span: dict[str, Any]) -> None:
-        if not self.enabled:
-            return
-        self._ensure_worker()
-        dropped = False
-        # Count and enqueue under one lock so the worker cannot finish a span
-        # before flush() knows that it is pending.
-        with self._pending_condition:
-            try:
-                self._queue.put_nowait(span)
-            except queue.Full:
-                dropped = True
-            else:
-                self._pending += 1
-        if dropped:
+        try:
+            if not self.enabled:
+                return
+            self._ensure_worker()
+            dropped = False
+            # Count and enqueue under one lock so the worker cannot finish a span
+            # before flush() knows that it is pending.
+            with self._pending_condition:
+                try:
+                    self._queue.put_nowait(span)
+                except queue.Full:
+                    dropped = True
+                else:
+                    self._pending += 1
+            if dropped:
+                self._note_failure()
+        except Exception:  # noqa: BLE001 -- even thread/queue failures are inert
             self._note_failure()
 
     def flush(self, timeout: float = 3.0) -> None:
         """Best-effort drain, used at process exit. Never raises."""
-        deadline = time.monotonic() + timeout
-        with self._pending_condition:
-            while self._pending:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return
-                self._pending_condition.wait(remaining)
+        try:
+            deadline = time.monotonic() + timeout
+            with self._pending_condition:
+                while self._pending:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return
+                    self._pending_condition.wait(remaining)
+        except Exception:  # noqa: BLE001 -- shutdown telemetry is best-effort
+            return
 
     # -- worker lifecycle --
 
@@ -423,27 +390,27 @@ class SpanExporter:
         return {"attributes": _attributes(attributes)}
 
     def _send(self, batch: list[dict[str, Any]]) -> None:
-        url = _traces_endpoint()
-        if not url:
-            return
-        payload = {
-            "resourceSpans": [
-                {
-                    "resource": self._resource(),
-                    "scopeSpans": [
-                        {
-                            "scope": {"name": "linprogx.demo", "version": "1"},
-                            "spans": batch,
-                        }
-                    ],
-                }
-            ]
-        }
-        headers = {"Content-Type": "application/json"}
-        authorization = _env("OTEL_EXPORTER_OTLP_AUTHORIZATION")
-        if authorization:
-            headers["Authorization"] = authorization
         try:
+            url = _traces_endpoint()
+            if not url:
+                return
+            payload = {
+                "resourceSpans": [
+                    {
+                        "resource": self._resource(),
+                        "scopeSpans": [
+                            {
+                                "scope": {"name": "linprogx.demo", "version": "1"},
+                                "spans": batch,
+                            }
+                        ],
+                    }
+                ]
+            }
+            headers = {"Content-Type": "application/json"}
+            authorization = _env("OTEL_EXPORTER_OTLP_AUTHORIZATION")
+            if authorization:
+                headers["Authorization"] = authorization
             request = urllib.request.Request(  # noqa: S310 -- scheme validated above
                 url,
                 data=json.dumps(payload).encode("utf-8"),
@@ -461,14 +428,20 @@ class SpanExporter:
 
         The exception, URL, and credentials are deliberately never logged.
         """
-        with self._failure_lock:
-            self._failures += 1
-            now = time.monotonic()
-            if now - self._last_failure_log < _FAILURE_LOG_INTERVAL_S:
-                return
-            self._last_failure_log = now
-            dropped, self._failures = self._failures, 0
-        logger.warning("otel: dropped %d span export(s); tracing is fail-open", dropped)
+        try:
+            with self._failure_lock:
+                self._failures += 1
+                now = time.monotonic()
+                if now - self._last_failure_log < _FAILURE_LOG_INTERVAL_S:
+                    return
+                self._last_failure_log = now
+                dropped, self._failures = self._failures, 0
+            try:
+                logger.warning("otel: dropped %d span export(s); tracing is fail-open", dropped)
+            except Exception:  # noqa: BLE001 -- logging handlers are outside our control
+                pass
+        except Exception:  # noqa: BLE001 -- accounting must also remain fail-open
+            pass
 
 
 # --- Spans -------------------------------------------------------------------
@@ -518,30 +491,42 @@ class Span:
         self._ended = False
 
     def set_attribute(self, key: str, value: AttributeValue | None) -> None:
-        if value is None or not self.sampled:
+        try:
+            if value is None or not self.sampled:
+                return
+            if key not in self._attributes and len(self._attributes) >= _MAX_ATTRS:
+                return
+            self._attributes[key] = value
+        except Exception:  # noqa: BLE001 -- span mutation is never serving-critical
             return
-        if key not in self._attributes and len(self._attributes) >= _MAX_ATTRS:
-            return
-        self._attributes[key] = value
 
     def set_attributes(self, values: Mapping[str, AttributeValue | None]) -> None:
-        for key, value in values.items():
-            self.set_attribute(key, value)
+        try:
+            for key, value in values.items():
+                self.set_attribute(key, value)
+        except Exception:  # noqa: BLE001 -- span mutation is never serving-critical
+            return
 
     def set_status(self, code: int, message: str = "") -> None:
-        self._status = code
-        self._status_message = message[:_MAX_ATTR_CHARS]
+        try:
+            self._status = code
+            self._status_message = message[:_MAX_ATTR_CHARS]
+        except Exception:  # noqa: BLE001 -- span mutation is never serving-critical
+            return
 
     def add_event(self, name: str, attributes: Mapping[str, AttributeValue] | None = None) -> None:
-        if not self.sampled:
+        try:
+            if not self.sampled:
+                return
+            self._events.append(
+                {
+                    "timeUnixNano": str(time.time_ns()),
+                    "name": name[:_MAX_ATTR_CHARS],
+                    "attributes": _attributes(attributes or {}),
+                }
+            )
+        except Exception:  # noqa: BLE001 -- events are best-effort
             return
-        self._events.append(
-            {
-                "timeUnixNano": str(time.time_ns()),
-                "name": name[:_MAX_ATTR_CHARS],
-                "attributes": _attributes(attributes or {}),
-            }
-        )
 
     def record_exception(self, exc: BaseException, *, escaped: bool = True) -> None:
         """Record the exception's *type* only.
@@ -549,12 +534,15 @@ class Span:
         Messages and stack traces are omitted on purpose: a validation error can
         echo request content, and no exception text is worth the PII risk.
         """
-        exception_type = type(exc).__name__
-        self.add_event(
-            "exception",
-            {"exception.type": exception_type, "exception.escaped": escaped},
-        )
-        self.set_attribute("error.type", exception_type)
+        try:
+            exception_type = type(exc).__name__
+            self.add_event(
+                "exception",
+                {"exception.type": exception_type, "exception.escaped": escaped},
+            )
+            self.set_attribute("error.type", exception_type)
+        except Exception:  # noqa: BLE001 -- exception recording cannot mask the exception
+            return
 
     def end(self, end_time_ns: int | None = None) -> None:
         if self._ended:
@@ -562,26 +550,29 @@ class Span:
         self._ended = True
         if not self.sampled or self._exporter is None:
             return
-        otlp: dict[str, Any] = {
-            "traceId": self.context.trace_id,
-            "spanId": self.context.span_id,
-            "name": self.name[:_MAX_ATTR_CHARS],
-            "kind": self.kind,
-            "flags": int(self.context.trace_flags, 16),
-            "startTimeUnixNano": str(self.start_time_ns),
-            "endTimeUnixNano": str(end_time_ns if end_time_ns is not None else time.time_ns()),
-            "attributes": _attributes(self._attributes),
-            "status": (
-                {"code": self._status, "message": self._status_message}
-                if self._status_message
-                else {"code": self._status}
-            ),
-        }
-        if self.parent_span_id:
-            otlp["parentSpanId"] = self.parent_span_id
-        if self._events:
-            otlp["events"] = self._events
-        self._exporter.submit(otlp)
+        try:
+            otlp: dict[str, Any] = {
+                "traceId": self.context.trace_id,
+                "spanId": self.context.span_id,
+                "name": self.name[:_MAX_ATTR_CHARS],
+                "kind": self.kind,
+                "flags": int(self.context.trace_flags, 16) & 0x01,
+                "startTimeUnixNano": str(self.start_time_ns),
+                "endTimeUnixNano": str(end_time_ns if end_time_ns is not None else time.time_ns()),
+                "attributes": _attributes(self._attributes),
+                "status": (
+                    {"code": self._status, "message": self._status_message}
+                    if self._status_message
+                    else {"code": self._status}
+                ),
+            }
+            if self.parent_span_id:
+                otlp["parentSpanId"] = self.parent_span_id
+            if self._events:
+                otlp["events"] = self._events
+            self._exporter.submit(otlp)
+        except Exception:  # noqa: BLE001 -- ending a span must never end a request
+            return
 
 
 class Tracer:
@@ -607,35 +598,47 @@ class Tracer:
         valid but *not sampled* still produces a span object with the right
         identity -- it simply records nothing, honouring the upstream decision.
         """
-        if parent is None:
-            active = _current_span.get()
-            parent = active.context if active is not None else None
+        try:
+            if parent is None:
+                active = _current_span.get()
+                parent = active.context if active is not None else None
 
-        if parent is None:
-            context = SpanContext(trace_id=secrets.token_hex(16), span_id=secrets.token_hex(8))
-            parent_span_id = None
-            sampled = True
-        else:
-            context = SpanContext(
-                trace_id=parent.trace_id,
-                span_id=secrets.token_hex(8),
-                trace_flags=parent.trace_flags,
+            if parent is None:
+                context = SpanContext(trace_id=secrets.token_hex(16), span_id=secrets.token_hex(8))
+                parent_span_id = None
+                sampled = True
+            else:
+                context = SpanContext(
+                    trace_id=parent.trace_id,
+                    span_id=secrets.token_hex(8),
+                    trace_flags=parent.trace_flags,
+                )
+                parent_span_id = parent.span_id
+                sampled = parent.sampled
+
+            span = Span(
+                name=name,
+                kind=kind,
+                context=context,
+                parent_span_id=parent_span_id,
+                sampled=sampled,
+                exporter=self.exporter,
+                start_time_ns=start_time_ns if start_time_ns is not None else time.time_ns(),
             )
-            parent_span_id = parent.span_id
-            sampled = parent.sampled
-
-        span = Span(
-            name=name,
-            kind=kind,
-            context=context,
-            parent_span_id=parent_span_id,
-            sampled=sampled,
-            exporter=self.exporter,
-            start_time_ns=start_time_ns if start_time_ns is not None else time.time_ns(),
-        )
-        if attributes:
-            span.set_attributes(attributes)
-        return span
+            if attributes:
+                span.set_attributes(attributes)
+            return span
+        except Exception:  # noqa: BLE001 -- degrade to an inert span
+            trace_id = parent.trace_id if parent is not None else f"{1:032x}"
+            return Span(
+                name="inert",
+                kind=kind,
+                context=SpanContext(trace_id=trace_id, span_id=f"{1:016x}", trace_flags="00"),
+                parent_span_id=parent.span_id if parent is not None else None,
+                sampled=False,
+                exporter=None,
+                start_time_ns=0,
+            )
 
     @contextmanager
     def span(
@@ -648,7 +651,11 @@ class Tracer:
     ) -> Iterator[Span]:
         """Run a block as a span, making it the active parent for nested spans."""
         span = self.start_span(name, kind=kind, parent=parent, attributes=attributes)
-        token = _current_span.set(span)
+        token = None
+        try:
+            token = _current_span.set(span)
+        except Exception:  # noqa: BLE001 -- business code must still run
+            pass
         try:
             yield span
         except _CANCELLED:
@@ -659,8 +666,20 @@ class Tracer:
             span.set_status(STATUS_ERROR)
             raise
         finally:
-            _current_span.reset(token)
+            if token is not None:
+                try:
+                    _current_span.reset(token)
+                except Exception:  # noqa: BLE001 -- context cleanup is telemetry-only
+                    pass
             span.end()
+
+    def flush(self, timeout: float = _SHUTDOWN_FLUSH_TIMEOUT_S) -> None:
+        """Best-effort exporter flush for ASGI and process shutdown."""
+        try:
+            if self.exporter is not None:
+                self.exporter.flush(timeout)
+        except Exception:  # noqa: BLE001 -- lifecycle telemetry is best-effort
+            return
 
 
 def current_span() -> Span | None:
@@ -687,12 +706,18 @@ _configure_lock = threading.Lock()
 def configure(service_name: str) -> Tracer:
     """Install the process-wide tracer. Idempotent; safe to call at import."""
     global _TRACER
-    with _configure_lock:
-        if _TRACER is None:
-            exporter = SpanExporter(service_name)
-            _TRACER = Tracer(service_name, exporter)
-            atexit.register(exporter.flush)
-        return _TRACER
+    try:
+        with _configure_lock:
+            if _TRACER is None:
+                try:
+                    exporter = SpanExporter(service_name)
+                    _TRACER = Tracer(service_name, exporter)
+                    atexit.register(exporter.flush, _SHUTDOWN_FLUSH_TIMEOUT_S)
+                except Exception:  # noqa: BLE001 -- import must remain serving-safe
+                    _TRACER = Tracer(service_name, None)
+            return _TRACER
+    except Exception:  # noqa: BLE001 -- even lock/runtime failures are inert
+        return Tracer(service_name, None)
 
 
 def get_tracer() -> Tracer:
@@ -732,7 +757,7 @@ def _header(scope: Mapping[str, Any], name: bytes) -> str | None:
     for key, value in scope.get("headers", ()):
         if key == name:
             try:
-                return value.decode("latin-1").strip()
+                return value.decode("latin-1")
             except Exception:  # noqa: BLE001 -- a malformed header is simply absent
                 return None
     return None
@@ -767,49 +792,57 @@ class TracingMiddleware:
         return path if path in self.routes else "/*"
 
     async def __call__(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
-        if scope.get("type") != "http":
+        scope_type = scope.get("type")
+        if scope_type == "lifespan":
+            await self._lifespan(scope, receive, send)
+            return
+        if scope_type != "http":
             await self.app(scope, receive, send)
             return
 
-        tracer = get_tracer()
-        parent = parse_traceparent(_header(scope, b"traceparent"))
-        method = _method(scope.get("method", "GET"))
-        route = self._route(str(scope.get("path", "")))
+        # Set up the instrumentation before invoking the app. Any failure here
+        # degrades to an entirely untraced request; the application is still
+        # called exactly once.
+        try:
+            tracer = get_tracer()
+            parent = parse_traceparent(_header(scope, b"traceparent"))
+            method = _method(scope.get("method", "GET"))
+            route = self._route(str(scope.get("path", "")))
 
-        span = tracer.start_span(f"{method} {route}", kind=KIND_SERVER, parent=parent)
-        span.set_attributes(
-            {
-                "http.request.method": method,
-                "http.route": route,
-                "url.scheme": str(scope.get("scheme", "http")),
-                "network.protocol.version": str(scope.get("http_version", "1.1")),
-                "faas.instance": instance_id(),
-            }
-        )
+            span = tracer.start_span(f"{method} {route}", kind=KIND_SERVER, parent=parent)
+            span.set_attributes(
+                {
+                    "http.request.method": method,
+                    "http.route": route,
+                    "url.scheme": str(scope.get("scheme", "http")),
+                    "network.protocol.version": str(scope.get("http_version", "1.1")),
+                    "faas.instance": instance_id(),
+                }
+            )
 
-        correlation_id = _header(scope, b"x-correlation-id")
-        if correlation_id and _CORRELATION_ID.match(correlation_id):
-            span.set_attribute("request.correlation_id", correlation_id.lower())
-        if _header(scope, b"x-request-purpose") == "warmup":
-            span.set_attribute("request.purpose", "warmup")
+            if _header(scope, b"x-request-purpose") == "warmup":
+                span.set_attribute("request.purpose", "warmup")
 
-        cold, reuse_bucket, init_seconds = request_container_state()
-        span.set_attributes(
-            {
-                "faas.coldstart": cold,
-                "container.reused": not cold,
-                "container.reuse_bucket": reuse_bucket,
-            }
-        )
-        if cold and init_seconds is not None:
-            self._record_init_span(tracer, span, init_seconds)
+            cold, reuse_bucket = request_container_state()
+            span.set_attributes(
+                {
+                    "faas.coldstart": cold,
+                    "container.reused": not cold,
+                    "container.reuse_bucket": reuse_bucket,
+                }
+            )
+            token = _current_span.set(span)
+        except Exception:  # noqa: BLE001 -- telemetry setup must be fully fail-open
+            await self.app(scope, receive, send)
+            return
 
         status_code = 500
-        token = _current_span.set(span)
+        response_started = False
 
         async def send_wrapper(message: MutableMapping[str, Any]) -> None:
-            nonlocal status_code
+            nonlocal response_started, status_code
             if message.get("type") == "http.response.start":
+                response_started = True
                 status_code = int(message.get("status", 500))
             await send(message)
 
@@ -825,7 +858,10 @@ class TracingMiddleware:
             span.record_exception(exc)
             span.set_status(STATUS_ERROR)
             span.set_attributes(
-                {"http.response.status_code": 500, "request.outcome": "internal_error"}
+                {
+                    "http.response.status_code": status_code if response_started else 500,
+                    "request.outcome": "internal_error",
+                }
             )
             raise
         else:
@@ -840,23 +876,27 @@ class TracingMiddleware:
                 span.set_status(STATUS_ERROR)
                 span.set_attribute("error.type", str(status_code))
         finally:
-            _current_span.reset(token)
+            try:
+                _current_span.reset(token)
+            except Exception:  # noqa: BLE001 -- context cleanup must remain fail-open
+                pass
             span.end()
 
-    @staticmethod
-    def _record_init_span(tracer: Tracer, request_span: Span, init_seconds: float) -> None:
-        """Emit the container's init window as a child of the first request.
+    async def _lifespan(self, scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
+        """Flush before acknowledging ASGI shutdown, within a bounded budget."""
 
-        The init span deliberately *starts before its parent*: it covers image
-        import and interpreter startup, which finished just before this request
-        arrived. Attaching it to the first request is what makes a cold start
-        visible in the same waterfall as the user-visible latency it caused.
-        """
-        started_at = request_span.start_time_ns - int(init_seconds * 1_000_000_000)
-        init_span = tracer.start_span(
-            "container.init",
-            parent=request_span.context,
-            start_time_ns=started_at,
-            attributes={"faas.coldstart": True, "faas.instance": instance_id()},
-        )
-        init_span.end(end_time_ns=request_span.start_time_ns)
+        async def send_wrapper(message: MutableMapping[str, Any]) -> None:
+            if message.get("type") == "lifespan.shutdown.complete":
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(
+                            get_tracer().flush,
+                            _SHUTDOWN_FLUSH_TIMEOUT_S,
+                        ),
+                        timeout=_SHUTDOWN_FLUSH_TIMEOUT_S + 0.5,
+                    )
+                except Exception:  # noqa: BLE001 -- shutdown must still complete
+                    pass
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)

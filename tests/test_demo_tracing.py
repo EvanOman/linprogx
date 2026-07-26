@@ -123,6 +123,7 @@ def _make_app(
     *,
     status: int = 200,
     exc: BaseException | None = None,
+    exc_after_start: BaseException | None = None,
     inner_span: str | None = None,
 ) -> Any:
     """A stand-in for the FastAPI app: the middleware only sees the protocol."""
@@ -142,6 +143,8 @@ def _make_app(
                 "headers": [(b"content-type", b"application/json")],
             }
         )
+        if exc_after_start is not None:
+            raise exc_after_start
         await send({"type": "http.response.body", "body": b'{"status":"ok"}'})
 
     return app
@@ -215,13 +218,6 @@ def test_parse_traceparent_accepts_a_valid_header() -> None:
     assert context.sampled is True
 
 
-def test_parse_traceparent_is_case_insensitive() -> None:
-    context = tracing.parse_traceparent(VALID_TRACEPARENT.upper())
-
-    assert context is not None
-    assert context.trace_id == VALID_TRACE_ID
-
-
 def test_parse_traceparent_reads_the_unsampled_flag() -> None:
     context = tracing.parse_traceparent(f"00-{VALID_TRACE_ID}-{VALID_SPAN_ID}-00")
 
@@ -251,6 +247,9 @@ def test_span_context_round_trips_to_a_traceparent() -> None:
         ("non-hex trace id", f"00-{'z' * 32}-{VALID_SPAN_ID}-01"),
         ("short span id", f"00-{VALID_TRACE_ID}-{'a' * 15}-01"),
         ("non-hex flags", f"00-{VALID_TRACE_ID}-{VALID_SPAN_ID}-zz"),
+        ("uppercase", VALID_TRACEPARENT.upper()),
+        ("leading whitespace", f" {VALID_TRACEPARENT}"),
+        ("future version", f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01"),
         ("forbidden version ff", f"ff-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01"),
         ("v00 with extra field", f"00-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01-extra"),
         ("future version, empty field", f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01-"),
@@ -261,12 +260,12 @@ def test_parse_traceparent_rejects_invalid_headers(label: str, value: str | None
     assert tracing.parse_traceparent(value) is None, label
 
 
-def test_parse_traceparent_accepts_a_future_version_with_extra_fields() -> None:
-    """Forward compatibility: a later version may append non-empty fields."""
-    context = tracing.parse_traceparent(f"01-{VALID_TRACE_ID}-{VALID_SPAN_ID}-01-xyz")
+@pytest.mark.parametrize(("flags", "expected"), [("03", "01"), ("02", "00"), ("ff", "01")])
+def test_parse_traceparent_masks_reserved_flag_bits(flags: str, expected: str) -> None:
+    context = tracing.parse_traceparent(f"00-{VALID_TRACE_ID}-{VALID_SPAN_ID}-{flags}")
 
     assert context is not None
-    assert context.trace_id == VALID_TRACE_ID
+    assert context.trace_flags == expected
 
 
 # --- Trace continuation ------------------------------------------------------
@@ -406,6 +405,28 @@ def test_non_http_endpoint_is_refused(
     assert collector.payloads == []
 
 
+def test_authenticated_plain_http_endpoint_is_refused(
+    monkeypatch: pytest.MonkeyPatch, collector: _Collector, traced: Any
+) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector.example/otlp")
+
+    _request(traced, headers={"traceparent": VALID_TRACEPARENT})
+
+    collector.settle()
+    assert collector.payloads == []
+
+
+def test_unauthenticated_plain_http_endpoint_is_allowed_for_local_collectors(
+    monkeypatch: pytest.MonkeyPatch, collector: _Collector, traced: Any
+) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_AUTHORIZATION")
+
+    _request(traced, headers={"traceparent": VALID_TRACEPARENT})
+
+    collector.await_named("GET /api/health")
+
+
 def test_an_explicit_traces_endpoint_overrides_the_base(
     monkeypatch: pytest.MonkeyPatch, collector: _Collector, traced: Any
 ) -> None:
@@ -447,6 +468,87 @@ def test_flush_waits_for_an_in_flight_export(collector: _Collector) -> None:
     tracer.exporter.flush(timeout=1.0)
 
     assert collector.named("flush.probe") is not None
+
+
+def test_lifespan_shutdown_flushes_an_in_flight_export(collector: _Collector) -> None:
+    collector.delay = 0.2
+    tracer = tracing.configure("linprogx")
+    span = tracer.start_span("shutdown.probe")
+    span.end()
+
+    async def lifespan(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        await send({"type": "lifespan.shutdown.complete"})
+
+    middleware = tracing.TracingMiddleware(lifespan, routes=ROUTES)
+    sent = _request(middleware, scope_type="lifespan")
+
+    assert sent == [{"type": "lifespan.shutdown.complete"}]
+    assert collector.named("shutdown.probe") is not None
+
+
+def test_id_generation_failure_never_reaches_the_user(
+    monkeypatch: pytest.MonkeyPatch, collector: _Collector, traced: Any
+) -> None:
+    def unavailable(*_: object) -> str:
+        raise OSError
+
+    monkeypatch.setattr(tracing.secrets, "token_hex", unavailable)
+
+    sent = _request(traced)
+
+    assert sent[0]["status"] == 200
+
+
+def test_exporter_thread_start_failure_never_reaches_the_user(
+    monkeypatch: pytest.MonkeyPatch, collector: _Collector, traced: Any
+) -> None:
+    exporter = tracing.SpanExporter("linprogx")
+    monkeypatch.setattr(tracing, "_TRACER", tracing.Tracer("linprogx", exporter))
+
+    def unavailable(*_: object) -> None:
+        raise RuntimeError("threads unavailable")
+
+    monkeypatch.setattr(tracing.threading.Thread, "start", unavailable)
+
+    sent = _request(traced, headers={"traceparent": VALID_TRACEPARENT})
+
+    assert sent[0]["status"] == 200
+
+
+def test_span_submission_failure_never_reaches_the_user(
+    monkeypatch: pytest.MonkeyPatch, collector: _Collector, traced: Any
+) -> None:
+    exporter = tracing.SpanExporter("linprogx")
+    monkeypatch.setattr(tracing, "_TRACER", tracing.Tracer("linprogx", exporter))
+
+    def unavailable(*_: object) -> None:
+        raise RuntimeError("queue unavailable")
+
+    monkeypatch.setattr(exporter, "submit", unavailable)
+
+    sent = _request(traced, headers={"traceparent": VALID_TRACEPARENT})
+
+    assert sent[0]["status"] == 200
+
+
+def test_queue_drop_logging_failure_never_reaches_the_user(
+    monkeypatch: pytest.MonkeyPatch, collector: _Collector, traced: Any
+) -> None:
+    exporter = tracing.SpanExporter("linprogx")
+    exporter._queue = tracing.queue.Queue(maxsize=1)
+    exporter._queue.put_nowait({"already": "full"})
+    exporter._last_failure_log = -float("inf")
+    monkeypatch.setattr(exporter, "_ensure_worker", lambda: None)
+    monkeypatch.setattr(tracing, "_TRACER", tracing.Tracer("linprogx", exporter))
+
+    def unavailable(*_: object) -> None:
+        raise RuntimeError("logging unavailable")
+
+    monkeypatch.setattr(tracing.logger, "warning", unavailable)
+
+    sent = _request(traced, headers={"traceparent": VALID_TRACEPARENT})
+
+    assert sent[0]["status"] == 200
 
 
 # --- Request span content ----------------------------------------------------
@@ -523,24 +625,17 @@ def test_warmup_requests_are_labelled(collector: _Collector, traced: Any) -> Non
     assert _attrs(collector.await_named("GET /api/health"))["request.purpose"] == "warmup"
 
 
-def test_a_valid_correlation_id_is_kept_and_a_forged_one_is_dropped(
+def test_caller_provided_correlation_ids_are_never_recorded(
     collector: _Collector, traced: Any
 ) -> None:
-    correlation_id = "0af7651916cd43dd8448eb211c80319c"
     _request(
         traced,
-        headers={"traceparent": VALID_TRACEPARENT, "x-correlation-id": correlation_id},
-    )
-    assert (
-        _attrs(collector.await_named("GET /api/health"))["request.correlation_id"] == correlation_id
+        headers={
+            "traceparent": VALID_TRACEPARENT,
+            "x-correlation-id": "0af7651916cd43dd8448eb211c80319c",
+        },
     )
 
-    collector.payloads.clear()
-    tracing.reset_cold_start_for_tests()
-    _request(
-        traced,
-        headers={"traceparent": VALID_TRACEPARENT, "x-correlation-id": "note-to-self: leak me"},
-    )
     assert "request.correlation_id" not in _attrs(collector.await_named("GET /api/health"))
 
 
@@ -561,6 +656,24 @@ def test_an_unhandled_exception_is_recorded_by_type_and_re_raised(
     assert attributes["request.outcome"] == "internal_error"
     # The exception is recorded by type only -- never its message.
     assert "secret detail" not in json.dumps(span)
+
+
+def test_late_stream_error_preserves_the_status_already_sent(
+    collector: _Collector,
+) -> None:
+    middleware = tracing.TracingMiddleware(
+        _make_app(exc_after_start=RuntimeError("late stream failure")),
+        routes=ROUTES,
+    )
+
+    with pytest.raises(RuntimeError):
+        _request(middleware, headers={"traceparent": VALID_TRACEPARENT})
+
+    span = collector.await_named("GET /api/health")
+    attributes = _attrs(span)
+    assert attributes["http.response.status_code"] == 200
+    assert attributes["request.outcome"] == "internal_error"
+    assert span["status"]["code"] == tracing.STATUS_ERROR
 
 
 def test_resource_identifies_the_service_and_container(collector: _Collector, traced: Any) -> None:
@@ -620,29 +733,19 @@ def test_an_explicit_parent_crosses_a_thread_boundary(collector: _Collector) -> 
 # --- Cold start --------------------------------------------------------------
 
 
-def test_first_request_reports_a_cold_start_with_an_init_span(
-    collector: _Collector, traced: Any
-) -> None:
+def test_first_request_reports_a_cold_container(collector: _Collector, traced: Any) -> None:
     _request(traced, headers={"traceparent": VALID_TRACEPARENT})
 
     server = collector.await_named("GET /api/health")
-    init = collector.await_named("container.init")
 
     assert _attrs(server)["faas.coldstart"] is True
     assert _attrs(server)["container.reused"] is False
     assert _attrs(server)["container.reuse_bucket"] == "first"
-    assert init["traceId"] == VALID_TRACE_ID
-    assert init["parentSpanId"] == server["spanId"]
-    # The init window ends exactly where the request begins.
-    assert init["endTimeUnixNano"] == server["startTimeUnixNano"]
-    assert int(init["startTimeUnixNano"]) <= int(init["endTimeUnixNano"])
+    assert all(span["name"] != "container.init" for span in collector.spans)
 
 
 def test_later_requests_report_a_warm_container(collector: _Collector, traced: Any) -> None:
     _request(traced, headers={"traceparent": VALID_TRACEPARENT})
-    # Both spans of the first request must land before the collector is cleared:
-    # they are submitted separately and can arrive in different batches.
-    collector.await_named("container.init")
     collector.await_named("GET /api/health")
     collector.payloads.clear()
 
@@ -658,13 +761,11 @@ def test_later_requests_report_a_warm_container(collector: _Collector, traced: A
 def test_cold_start_marker_is_claimed_exactly_once() -> None:
     tracing.reset_cold_start_for_tests()
 
-    first, first_bucket, elapsed = tracing.request_container_state()
-    second, second_bucket, no_elapsed = tracing.request_container_state()
+    first, first_bucket = tracing.request_container_state()
+    second, second_bucket = tracing.request_container_state()
 
     assert (first, second) == (True, False)
     assert (first_bucket, second_bucket) == ("first", "2-5")
-    assert elapsed is not None
-    assert no_elapsed is None
 
 
 def test_instance_id_changes_after_a_snapshot_restore_identity_change(
@@ -695,29 +796,36 @@ def test_instance_id_is_fail_open_when_runtime_identity_sources_fail(
     int(identifier, 16)
 
 
-def test_process_start_clock_is_plausible() -> None:
-    started = tracing._process_start_monotonic()
-
-    assert 0.0 <= started <= time.monotonic()
-
-
 # --- The real app ------------------------------------------------------------
-#
-# The solver repo deliberately does not carry a web test stack, so these run only
-# where FastAPI happens to be installed (the Modal image, or a dev environment
-# that has it). Everything above covers the tracing contract without it.
+
+
+def _real_request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    headers: dict[str, str],
+    json_body: dict[str, Any] | None = None,
+) -> Any:
+    """Drive the real FastAPI stack without Starlette's deprecated sync client."""
+    import httpx
+
+    async def run() -> Any:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.request(method, path, headers=headers, json=json_body)
+
+    return asyncio.run(run())
 
 
 def test_real_app_traces_a_network_flow_solve(collector: _Collector) -> None:
-    pytest.importorskip("fastapi", reason="demo API stack is not a solver test dependency")
-    from fastapi.testclient import TestClient  # ty: ignore[unresolved-import]
-
     from demo.api.main import app
 
-    client = TestClient(app)
-    response = client.post(
+    response = _real_request(
+        app,
+        "POST",
         "/api/solve/network-flow",
-        json={
+        json_body={
             "nodes": [
                 {"id": "Warehouse Denver", "type": "supply", "value": 10},
                 {"id": "Store Tulsa", "type": "demand", "value": 10},
@@ -742,6 +850,61 @@ def test_real_app_traces_a_network_flow_solve(collector: _Collector) -> None:
     exported = json.dumps(collector.payloads)
     assert "Denver" not in exported
     assert "Tulsa" not in exported
+
+
+def test_real_app_traces_validation_failures(collector: _Collector) -> None:
+    from demo.api.main import app
+
+    response = _real_request(
+        app,
+        "POST",
+        "/api/solve/network-flow",
+        json_body={},
+        headers={"traceparent": VALID_TRACEPARENT},
+    )
+
+    assert response.status_code == 422
+    span = collector.await_named("POST /api/solve/network-flow")
+    assert _attrs(span)["http.response.status_code"] == 422
+    assert _attrs(span)["request.outcome"] == "invalid_request"
+
+
+def test_real_app_traces_auth_short_circuit(
+    monkeypatch: pytest.MonkeyPatch, collector: _Collector
+) -> None:
+    from demo.api import main
+
+    monkeypatch.setattr(main, "_DEMO_SECRET", "expected")
+    response = _real_request(
+        main.app,
+        "GET",
+        "/api/info",
+        headers={"traceparent": VALID_TRACEPARENT, "x-demo-secret": "wrong"},
+    )
+
+    assert response.status_code == 401
+    span = collector.await_named("GET /api/info")
+    assert _attrs(span)["http.response.status_code"] == 401
+    assert _attrs(span)["request.outcome"] == "client_error"
+
+
+def test_real_app_traces_rate_limit_short_circuit(
+    monkeypatch: pytest.MonkeyPatch, collector: _Collector
+) -> None:
+    from demo.api import main
+
+    monkeypatch.setattr(main, "_check_rate_limit", lambda client_ip: False)
+    response = _real_request(
+        main.app,
+        "GET",
+        "/api/health",
+        headers={"traceparent": VALID_TRACEPARENT},
+    )
+
+    assert response.status_code == 429
+    span = collector.await_named("GET /api/health")
+    assert _attrs(span)["http.response.status_code"] == 429
+    assert _attrs(span)["request.outcome"] == "rate_limited"
 
 
 def test_a_client_disconnect_is_an_outcome_not_an_error(collector: _Collector) -> None:

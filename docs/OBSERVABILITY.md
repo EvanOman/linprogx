@@ -16,11 +16,11 @@ not use the OpenTelemetry SDK:
 
 - this repo's contract keeps the runtime dependency-light, and the demo image is
   intentionally tiny so Modal cold starts stay fast; the SDK plus its FastAPI
-  instrumentation adds hundreds of milliseconds of import time to every cold
-  start — the exact number this instrumentation exists to measure;
+  instrumentation adds import work to every cold start;
 - the edge exporter (`functions/_observability.ts` in the site repo) is already
   a hand-rolled OTLP/HTTP JSON client, so matching it keeps one contract;
-- it adds no dependency, no lockfile churn, and no package release-age exposure.
+- it adds no runtime dependency. The existing `dev` extra includes the pinned
+  FastAPI demo stack so CI always exercises the real middleware composition.
 
 The wire format is standard OTLP/HTTP with a JSON payload, and attributes follow
 OTel semantic conventions, so Grafana Cloud ingests it with no special handling.
@@ -38,8 +38,8 @@ infrastructure, and the solver itself stays dependency-free and untouched.
 | `OTEL_SDK_DISABLED` | no | `true` turns export off without a redeploy path change. |
 | `DEPLOY_ENVIRONMENT` | no | Sets `deployment.environment.name` on the resource. |
 
-Only `http://` and `https://` endpoints are accepted; anything else is treated
-as unconfigured.
+Authenticated export requires `https://`. Unauthenticated `http://` remains
+available for a local collector; anything else is treated as unconfigured.
 
 ### Modal secret
 
@@ -71,7 +71,6 @@ anything about the caller or cloning an import-time id across restored workers.
 | Span | Kind | When |
 | --- | --- | --- |
 | `{METHOD} {route}` | server | Every HTTP request. Route is one of `/api/health`, `/api/info`, `/api/solve/network-flow`, or `/*`. |
-| `container.init` | internal | First request in a process only; covers interpreter/import time. |
 | `solve.network_flow` | internal | The min-cost-flow LP run. |
 
 Notable attributes:
@@ -80,7 +79,6 @@ Notable attributes:
   `request.outcome` (`success` / `not_found` / `invalid_request` /
   `rate_limited` / `timeout` / `client_error` / `internal_error` /
   `cancelled`),
-  `request.correlation_id` (only if it matches a UUID/trace-id shape),
   `request.purpose=warmup`, `faas.coldstart`, `faas.instance`,
   `container.reused`, and bounded `container.reuse_bucket`
   (`first` / `2-5` / `6-20` / `21+`).
@@ -98,18 +96,15 @@ not incidents — they are the API working correctly.
 
 ### Cold starts
 
-`container.init` deliberately starts *before* its parent request span: on Modal's
-Linux runtime it uses the process start clock to cover interpreter startup,
-imports, and the short pre-request interval. Attaching it to the first request is
-what makes a cold start visible in the same waterfall as the latency it caused.
-Non-Linux local development falls back to the tracing module's import time.
+The first request in each restored process reports `faas.coldstart=true`;
+subsequent requests report `false`, `container.reused=true`, and a bounded reuse
+bucket. No synthetic initialization duration is emitted: Modal snapshots module
+globals, so an import-time clock can measure snapshot age rather than
+serving-container startup. The request span and the upstream edge span provide
+the real user-visible latency.
 
-Modal memory-snapshot restores resume a process whose monotonic clock predates
-the snapshot, which would make the measured init window meaningless. When the
-measurement exceeds 120 s it is discarded and only `faas.coldstart=true` is
-reported. Container identity is likewise minted lazily from runtime process
-identity rather than at import, so one snapshotted id is not cloned into every
-restored container.
+Container identity is minted lazily from runtime process identity rather than at
+import, so one snapshotted id is not cloned into every restored container.
 
 ## Privacy
 
@@ -130,6 +125,8 @@ No telemetry path can fail a user request:
 - export runs on a bounded queue drained by a daemon thread, so a request never
   waits on the collector;
 - a full queue drops spans;
+- identifier generation, span encoding/end, thread creation, and logging-handler
+  failures all degrade to inert telemetry;
 - connection failures, timeouts, and non-2xx responses are swallowed and counted,
   logged at most once a minute, and never include the URL, credentials, or the
   exception;
@@ -137,14 +134,18 @@ No telemetry path can fail a user request:
 
 The exporter thread starts on first use rather than at import, keeping it out of
 Modal's memory snapshot; a pid/liveness check restarts it after a snapshot
-restore or fork.
+restore or fork. ASGI lifespan shutdown flushes pending exports before
+acknowledging shutdown, with a bounded six-second budget that exceeds the
+five-second HTTP export timeout. `atexit` uses the same budget as a fallback.
 
 `tests/test_demo_tracing.py` covers all of this — valid, invalid, and missing
 trace context, unsampled upstream decisions, collector connection failure,
 collector 500, a hanging collector, unconfigured and disabled exporters, and the
 privacy assertions. It drives the middleware through the raw ASGI protocol, so
-the tracing contract is tested without adding a web test stack to a solver repo.
-The two tests that exercise the real FastAPI app skip where FastAPI is absent.
+fault injection and streaming behavior are isolated from the framework. The
+pinned development dependencies also make real FastAPI tests mandatory in
+`just ci`; they cover a successful solve and child span, validation, auth and
+rate-limit short-circuits, and middleware ordering.
 
 ## Live smoke query
 
@@ -161,8 +162,8 @@ After deploying with the secret attached:
      https://evan058--linprogx-demo-fastapi-app.modal.run/api/health
    ```
 
-2. Wait a few seconds (the exporter batches on a 250 ms tick; Grafana ingestion
-   adds a little more), then look the trace up. From the site repo:
+2. Wait a few seconds for the background exporter and Grafana ingestion, then
+   look the trace up. From the site repo:
 
    ```bash
    site-traces trace "$TRACE_ID" --json

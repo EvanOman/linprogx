@@ -15,7 +15,7 @@ COPY src/ src/
 RUN pip install --no-cache-dir .
 
 # Install API dependencies
-RUN pip install --no-cache-dir fastapi==0.115.12 uvicorn==0.34.2 pydantic==2.11.3
+RUN pip install --no-cache-dir fastapi==0.139.0 uvicorn==0.34.2 pydantic==2.13.4
 
 # Copy the demo API code
 COPY demo/api/ /app/demo/api/
