@@ -10266,6 +10266,24 @@ static void lu_refresh_lt_skip(void) {
 }
 static int lu_lt_skip_on(void) { return g_lt_skip; }
 
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). Logical-form gate: carry the RHS in the
+ * artificial (logical) column bounds instead of a separate RHS vector -- the
+ * prerequisite for doing dual Phase 1 as an in-place bound swap. */
+static int g_logical_form = 0;
+static void ds_refresh_logical_form(void) {
+    const char *e = getenv("LINPROGX_DS_LOGICAL_FORM");
+    g_logical_form = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_logical_form_on(void) { return g_logical_form; }
+
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). In-place dual Phase 1 gate. */
+static int g_ds_phase1 = 0;
+static void ds_refresh_phase1(void) {
+    const char *e = getenv("LINPROGX_DS_PHASE1");
+    g_ds_phase1 = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_phase1_on(void) { return g_ds_phase1; }
+
 /* Rebuild the compacted live entries of U column j (FTRAN static path).
  * Scans the ORIGINAL list in index order and copies only live entries, so the
  * traversal order -- and therefore every floating-point accumulation order --
@@ -13166,6 +13184,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     lu_refresh_force_gp();
     lu_refresh_rcost_fuse();
     lu_refresh_lt_skip();
+    ds_refresh_logical_form();
+    ds_refresh_phase1();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -13217,6 +13237,8 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *y   = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *x_B = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *rhs = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *b_zero_rhs = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *lo_true_all = NULL, *hi_true_all = NULL;  /* phase-1 bound save */
     double *rho = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *alpha_col = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *e_i = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
@@ -13611,11 +13633,39 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         }
     }
 
-    /* Set up artificial columns: indices n..n+m-1, cost 0, bounds [0,0] (fixed) */
+    /* PROVENANCE: SOURCE-INFORMED (HiGHS).
+     * LOGICAL FORM (env LINPROGX_DS_LOGICAL_FORM=1).
+     *
+     * HiGHS carries the right-hand side in its ROW LOGICAL variables rather
+     * than in a separate RHS vector: rows read `Ax - s = 0` with `l_r <= s <=
+     * u_r`, so for an equality row the logical is fixed at b_i.  That is what
+     * makes dual Phase 1 an O(n) BOUND SWAP -- under the Phase-1 bound map an
+     * equality row's logical becomes [0,0] and Phase 1 solves `Ax = 0`, which
+     * is exactly the b-invariance this campaign proved from the outside.
+     *
+     * linprogx's artificial columns n..n+m-1 ARE those logicals: each is a
+     * single +1 in its row.  Row i reads `sum_j A[i,j] x_j + x_{n+i} = rhs_i`,
+     * so putting the RHS into the artificial bound means
+     *     rhs_i = 0  and  x_{n+i} fixed at -b_i.
+     * The basis matrix, the crash, the LU and every kernel are untouched; only
+     * the bound arrays and the x_B recompute source change.  This is a pure
+     * reformulation and must be RESULT-IDENTICAL. */
+    const int logical_form = ds_logical_form_on();
     for (int32_t i = 0; i < m; i++) {
         c_ext[n + i] = 0.0;
-        lo_ext[n + i] = 0.0;
-        hi_ext[n + i] = 0.0;
+        if (logical_form) {
+            lo_ext[n + i] = -b[i];
+            hi_ext[n + i] = -b[i];
+        } else {
+            lo_ext[n + i] = 0.0;
+            hi_ext[n + i] = 0.0;
+        }
+    }
+    /* RHS actually used by the x_B recomputes: zero under the logical form. */
+    double *b_solve = b;
+    if (logical_form) {
+        b_solve = b_zero_rhs;
+        for (int32_t i = 0; i < m; i++) b_solve[i] = 0.0;
     }
 
     /* Initialize Devex weights to 1. Exact DSE weights are initialized from
@@ -14191,6 +14241,61 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         int x_B_fresh = 0; /* set when x_B comes from a full solve, cleared
                             * after incremental pivot updates; infeasibility
                             * may only be declared from fresh state */
+        /* PROVENANCE: SOURCE-INFORMED (HiGHS).
+         * DUAL PHASE 1 AS AN IN-PLACE BOUND SWAP.
+         *
+         * Under the logical form the RHS lives in the artificial bounds, so
+         * replacing every bound with the synthetic map below turns the problem
+         * into `Ax = 0` with all variables BOXED.  Boxed bounds are always
+         * dual-placeable, so dual feasibility becomes achievable by
+         * construction and big-M is never needed.  Phase 1 runs the SAME loop
+         * on the SAME basis and factorization; Phase 2 restores the true
+         * bounds and continues from the identical basis. */
+        int ds_phase = 1;
+        if (logical_form && ds_phase1_on()) {
+            lo_true_all = malloc((size_t)n_total * sizeof(double));
+            hi_true_all = malloc((size_t)n_total * sizeof(double));
+            if (lo_true_all == NULL || hi_true_all == NULL) {
+                free(lo_true_all); free(hi_true_all);
+                PyErr_NoMemory(); goto done;
+            }
+            memcpy(lo_true_all, lo_ext, (size_t)n_total * sizeof(double));
+            memcpy(hi_true_all, hi_ext, (size_t)n_total * sizeof(double));
+            /* The map MUST be built from the TRUE bounds.  By this point the
+             * big-M pass has already replaced every infinite bound with a
+             * finite artificial one, so reading lo_ext/hi_ext here would see
+             * "boxed" everywhere, emit [0,0] for all columns, and give Phase 1
+             * nothing to do.  Structural true bounds are saved in
+             * lo_true/hi_true; artificials are genuinely boxed at -b_i. */
+            for (int32_t j = 0; j < n_total; j++) {
+                double tlo = (j < n) ? lo_true[j] : lo_true_all[j];
+                double thi = (j < n) ? hi_true[j] : hi_true_all[j];
+                lo_true_all[j] = tlo;
+                hi_true_all[j] = thi;
+                int lo_fin = isfinite(tlo);
+                int hi_fin = isfinite(thi);
+                if (!lo_fin && !hi_fin)      { lo_ext[j] = -1000.0; hi_ext[j] = 1000.0; }
+                else if (!lo_fin)            { lo_ext[j] = -1.0;    hi_ext[j] = 0.0;    }
+                else if (!hi_fin)            { lo_ext[j] = 0.0;     hi_ext[j] = 1.0;    }
+                else                         { lo_ext[j] = 0.0;     hi_ext[j] = 0.0;    }
+            }
+            /* Every bound is finite now, so place each nonbasic on the side
+             * its reduced cost wants -- always possible, no big-M. */
+            for (int32_t j = 0; j < n_total; j++) {
+                if (basis_pos[j] >= 0) { bound_status[j] = DS_BOUND_BASIC; continue; }
+                if (lo_ext[j] == hi_ext[j]) {
+                    bound_status[j] = DS_BOUND_FIXED; x_ext[j] = lo_ext[j];
+                } else if (r_ext[j] >= 0.0) {
+                    bound_status[j] = DS_BOUND_LO;    x_ext[j] = lo_ext[j];
+                } else {
+                    bound_status[j] = DS_BOUND_HI;    x_ext[j] = hi_ext[j];
+                }
+            }
+            x_B_needs_recompute = 1;
+        } else {
+            ds_phase = 2;
+        }
+
         for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
             iterations = iter;
             int32_t rate_hist_cur_rho_nnz = 0;
@@ -14215,7 +14320,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             /* With incremental x_B maintenance, recompute from scratch only
              * when the flag is set (first iteration, after refactorization). */
             if (x_B_needs_recompute) {
-            memcpy(rhs, b, (size_t)m * sizeof(double));
+            memcpy(rhs, b_solve, (size_t)m * sizeof(double));
             for (int32_t j = 0; j < n_total; j++) {
                 if (basis_pos[j] >= 0) continue;
                 if (x_ext[j] == 0.0) continue;
@@ -14454,10 +14559,47 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
             }
             if (leaving_basis_pos < 0) {
-                /* No bound violation: check for basic artificials with |value| > tol */
+                /* PHASE 1 -> PHASE 2: primal feasibility w.r.t. the Phase-1
+                 * bounds means the true problem is now dual feasible.  Restore
+                 * the true bounds and continue on the SAME basis and LU. */
+                if (ds_phase == 1) {
+                    memcpy(lo_ext, lo_true_all, (size_t)n_total * sizeof(double));
+                    memcpy(hi_ext, hi_true_all, (size_t)n_total * sizeof(double));
+                    for (int32_t j = 0; j < n_total; j++) {
+                        if (basis_pos[j] >= 0) { bound_status[j] = DS_BOUND_BASIC; continue; }
+                        int lo_fin = isfinite(lo_ext[j]);
+                        int hi_fin = isfinite(hi_ext[j]);
+                        if (lo_fin && hi_fin && lo_ext[j] == hi_ext[j]) {
+                            bound_status[j] = DS_BOUND_FIXED; x_ext[j] = lo_ext[j];
+                        } else if (r_ext[j] >= 0.0 && lo_fin) {
+                            bound_status[j] = DS_BOUND_LO;    x_ext[j] = lo_ext[j];
+                        } else if (r_ext[j] < 0.0 && hi_fin) {
+                            bound_status[j] = DS_BOUND_HI;    x_ext[j] = hi_ext[j];
+                        } else if (lo_fin) {
+                            bound_status[j] = DS_BOUND_LO;    x_ext[j] = lo_ext[j];
+                        } else {
+                            bound_status[j] = DS_BOUND_HI;    x_ext[j] = hi_ext[j];
+                        }
+                    }
+                    ds_phase = 2;
+                    if (getenv("LINPROGX_DS_PHASE_REPORT") != NULL) {
+                        fprintf(stderr, "[phase] DuPh1 = %lld pivots\n",
+                                (long long)(iter + 1));
+                        fflush(stderr);
+                    }
+                    x_B_needs_recompute = 1;
+                    iterations = iter + 1;
+                    DS_TICK(1);
+                    continue;
+                }
+                /* No bound violation: check for basic artificials away from
+                 * their own bound.  Under the logical form an artificial's
+                 * bound is -b_i, not 0. */
                 int has_artificial_basic = 0;
                 for (int32_t k = 0; k < m; k++) {
-                    if (basis[k] >= n && fabs(x_B[k]) > tol) {
+                    if (basis[k] < n) continue;
+                    double target = logical_form ? lo_ext[basis[k]] : 0.0;
+                    if (fabs(x_B[k] - target) > tol) {
                         has_artificial_basic = 1;
                         break;
                     }
@@ -14468,6 +14610,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     status = "optimal";
                 }
                 iterations = iter;
+                if (getenv("LINPROGX_DS_PHASE_REPORT") != NULL) {
+                    fprintf(stderr, "[phase] TOTAL = %lld pivots (status %s)\n",
+                            (long long)iter, status);
+                    fflush(stderr);
+                }
                 break;
             }
 
@@ -15688,7 +15835,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             status = "numerical_error";
         } else {
             /* Recompute x_B from scratch */
-            memcpy(rhs, b, (size_t)m * sizeof(double));
+            memcpy(rhs, b_solve, (size_t)m * sizeof(double));
             for (int32_t j = 0; j < n_total; j++) {
                 if (basis_pos[j] >= 0) continue;
                 if (x_ext[j] == 0.0) continue;
@@ -16201,6 +16348,9 @@ done:
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched); free(alpha_pattern);
     free(csr_idx32);
+    free(b_zero_rhs);
+    free(lo_true_all);
+    free(hi_true_all);
     free(cand_j); free(cand_alpha);
     free(flip_delta_xB); free(flip_cand); free(infeas_stamp); free(bfrt_cands);
     free(ft_ent_idx); free(ft_ent_val);
