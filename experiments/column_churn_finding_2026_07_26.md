@@ -121,3 +121,51 @@ disqualifying on its own.
 
 **This does not change the board.** greenbea is unaffected or worse under every
 variant; the board of record remains **23W-0P-1L**.
+
+---
+
+## KILL: the anti-cycling window (my own proposed direction) is worse on every axis
+
+The section above concluded that the direction was "memory of *why* a column was
+selected — an anti-cycling window ... not a divisor on raw entry count".
+**I built the window and it fails.**
+
+Implementation (`LINPROGX_DS_TABU=<pivots>`, 0 = off): record the pivot index at
+which each column last entered; in CHUZR skip any row whose basic variable
+entered within the last `T` pivots; fail open — if every violated row is inside
+the window, relax and retry so a pivot is never lost.
+
+| tabu window | 25fv47 | greenbeb | greenbea | degen2 | agg2 | total | churn (25fv47/gbeb/gbea) |
+|---|---:|---:|---:|---:|---:|---:|---|
+| **0 (baseline)** | 8,300 | 8,919 | **4,399** | 1,447 | 274 | **23,339** | [226, 76, 14] |
+| 2 | 9,106 | 9,543 | 4,754 | 1,444 | 273 | 25,120 | [**281**, 101, 13] |
+| 5 | **FAIL** | 9,695 | 4,763 | 1,510 | 270 | — | [266, 80, 13] |
+| 10 | 8,843 | 10,297 | 4,736 | 1,507 | 271 | 25,654 | [252, 103, 11] |
+| 25 | 8,783 | 10,937 | 4,988 | 1,340 | 292 | 26,340 | [237, 105, 14] |
+| 50 | 9,492 | 11,417 | 5,655 | 1,651 | 299 | 28,514 | [284, 127, 12] |
+
+**Worse at every window length, and — the informative part — it does not even
+reduce churn. It increases it** (226 → 281 at T=2, still 252 at T=10).
+
+### What that teaches
+
+Rule 4 and the tabu window have the same intent — discourage ejecting a variable
+that keeps coming back — but opposite effects:
+
+- **Rule 4's penalty is PERSISTENT**, proportional to total entry count over the
+  whole run. It drove 25fv47's churn 226 → **0**.
+- **The window is RECENCY-based.** It makes churn *worse*.
+
+So the churn is **not a short cycle** that a recency window can break. It is a
+small set of columns that churn heavily *across the entire trajectory*, and only
+a penalty with long memory of total participation suppresses them.
+
+That is a genuinely useful constraint on DS2's pricing design, and it narrows the
+space considerably: recency-based anti-cycling is measured dead here; whatever
+replaces rule 4 must retain **long-run memory** while not destabilising greenbea
+the way an unbounded divisor does.
+
+**Three anti-churn mechanisms have now been measured on this class**: the
+persistent divisor (big class win, breaks greenbea), its bounded/damped variants
+(no configuration wins without a regression or failure), and the recency window
+(worse everywhere). Board unchanged: **23W-0P-1L**.
