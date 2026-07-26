@@ -10840,6 +10840,129 @@ static int lu_uprime_census_on(void) {
     return g_up_census;
 }
 
+/* ---------------------------------------------------------------------- *
+ * DS2 CHUZC HARVEST (env LINPROGX_DS2_DUMP=<path>).  Observation only.
+ *
+ * The DS2 CHUZC component (src/linprogx/_ds2_chuzc.c) has to be validated
+ * against the shipped ratio test on REAL pivot rows, not synthetic ones.
+ * This writes the ratio test's complete input state plus the decision the
+ * shipped test made, for a strided sample of pivots, into a binary file the
+ * validation harness replays.
+ *
+ * It changes NOTHING on the solve path: every hook is behind a pointer that
+ * is NULL unless the env var is set, and no solver state is read or written
+ * outside the dump.  Proven by the trace-hash oracle
+ * (LINPROGX_DS_TRACE_HASH=1) reproducing greenbea's pre-change digest; see
+ * experiments/ds2_chuzc_2026_07_26.md.
+ * ---------------------------------------------------------------------- */
+typedef struct {
+    FILE *fp;
+    int64_t stride;
+    int64_t max_cases;
+    int64_t seen;
+    int64_t written;
+    unsigned char *buf; /* staged input record, flushed with its outcome */
+    size_t buf_len;
+    size_t buf_cap;
+    int staged;
+} DS2DumpCtx;
+
+static DS2DumpCtx *g_ds2_dump = NULL;
+
+static void ds2_dump_open(void) {
+    const char *path = getenv("LINPROGX_DS2_DUMP");
+    if (path == NULL || path[0] == '\0') return;
+    DS2DumpCtx *d = (DS2DumpCtx *)calloc(1, sizeof(DS2DumpCtx));
+    if (d == NULL) return;
+    d->fp = fopen(path, "wb");
+    if (d->fp == NULL) {
+        free(d);
+        return;
+    }
+    const char *s = getenv("LINPROGX_DS2_DUMP_STRIDE");
+    d->stride = (s != NULL && atoll(s) > 0) ? atoll(s) : 1;
+    const char *mx = getenv("LINPROGX_DS2_DUMP_MAX");
+    d->max_cases = (mx != NULL && atoll(mx) > 0) ? atoll(mx) : 200;
+    g_ds2_dump = d;
+}
+
+static void ds2_dump_close(void) {
+    if (g_ds2_dump == NULL) return;
+    fclose(g_ds2_dump->fp);
+    free(g_ds2_dump->buf);
+    free(g_ds2_dump);
+    g_ds2_dump = NULL;
+}
+
+static void ds2_dump_put(DS2DumpCtx *d, const void *p, size_t nbytes) {
+    if (d->buf_len + nbytes > d->buf_cap) {
+        size_t cap = d->buf_cap ? d->buf_cap * 2 : 65536;
+        while (cap < d->buf_len + nbytes) cap *= 2;
+        unsigned char *nb = (unsigned char *)realloc(d->buf, cap);
+        if (nb == NULL) return;
+        d->buf = nb;
+        d->buf_cap = cap;
+    }
+    memcpy(d->buf + d->buf_len, p, nbytes);
+    d->buf_len += nbytes;
+}
+
+/* Stage the ratio test's inputs.  Returns 1 when this pivot is being
+ * sampled, so the caller can skip the (cheap) outcome hook otherwise. */
+static int ds2_dump_inputs(int64_t iter, int32_t n, int32_t n_total,
+                           int32_t sigma, double delta, double expand_tau,
+                           int32_t update_count, const double *alpha_scratch,
+                           const int32_t *alpha_pattern, int32_t alpha_nnz,
+                           const double *r_ext, const int8_t *bound_status,
+                           const double *lo_ext, const double *hi_ext,
+                           const int8_t *has_art_bound) {
+    DS2DumpCtx *d = g_ds2_dump;
+    if (d == NULL) return 0;
+    d->staged = 0;
+    if (d->written >= d->max_cases) return 0;
+    if ((d->seen++ % d->stride) != 0) return 0;
+
+    d->buf_len = 0;
+    const int32_t magic = 0x44533243; /* "DS2C" */
+    ds2_dump_put(d, &magic, 4);
+    const int32_t it32 = (int32_t)iter;
+    ds2_dump_put(d, &it32, 4);
+    ds2_dump_put(d, &n, 4);
+    ds2_dump_put(d, &n_total, 4);
+    ds2_dump_put(d, &sigma, 4);
+    ds2_dump_put(d, &update_count, 4);
+    ds2_dump_put(d, &alpha_nnz, 4);
+    ds2_dump_put(d, &delta, 8);
+    ds2_dump_put(d, &expand_tau, 8);
+    ds2_dump_put(d, alpha_pattern, (size_t)alpha_nnz * 4);
+    for (int32_t i = 0; i < alpha_nnz; i++) {
+        const double a = alpha_scratch[alpha_pattern[i]];
+        ds2_dump_put(d, &a, 8);
+    }
+    ds2_dump_put(d, r_ext, (size_t)n_total * 8);
+    ds2_dump_put(d, bound_status, (size_t)n_total);
+    ds2_dump_put(d, lo_ext, (size_t)n_total * 8);
+    ds2_dump_put(d, hi_ext, (size_t)n_total * 8);
+    ds2_dump_put(d, has_art_bound, (size_t)n);
+    d->staged = 1;
+    return 1;
+}
+
+static void ds2_dump_outcome(int32_t entering, double alpha_pivot,
+                             double theta_d, int32_t n_flips,
+                             const int32_t *flip_cand) {
+    DS2DumpCtx *d = g_ds2_dump;
+    if (d == NULL || !d->staged) return;
+    d->staged = 0;
+    ds2_dump_put(d, &entering, 4);
+    ds2_dump_put(d, &n_flips, 4);
+    ds2_dump_put(d, &alpha_pivot, 8);
+    ds2_dump_put(d, &theta_d, 8);
+    ds2_dump_put(d, flip_cand, (size_t)n_flips * 4);
+    fwrite(d->buf, 1, d->buf_len, d->fp);
+    d->written++;
+}
+
 static int g_branchless_scan = 0;  /* KILLED 2026-07-25: measurably slower */
 static void lu_refresh_branchless_scan(void) {
     const char *e = getenv("LINPROGX_DS_BRANCHLESS_SCAN");
@@ -13243,6 +13366,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     ds_refresh_rot_start();
     ds_refresh_perturb_rows();
     ds_refresh_logical_basis();
+    ds2_dump_open();
     if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
@@ -14882,6 +15006,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
             DS_TICK(3);
 
+            /* DS2 CHUZC harvest (off unless LINPROGX_DS2_DUMP is set). */
+            int ds2_dump_this = 0;
+            if (g_ds2_dump != NULL) {
+                const int32_t lv = basis[leaving_basis_pos];
+                const double lb = (leaving_sigma == 1) ? lo_ext[lv] : hi_ext[lv];
+                ds2_dump_this = ds2_dump_inputs(
+                    iter, n, n_total, (int32_t)leaving_sigma,
+                    fabs(x_B[leaving_basis_pos] - lb),
+                    (expand == 1) ? expand_tau : 0.0,
+                    (lu != NULL) ? lu->n_updates : 0, alpha_scratch,
+                    alpha_pattern, alpha_nnz, r_ext, bound_status, lo_ext,
+                    hi_ext, has_art_bound);
+            }
+
             /* ---- 4d'. Harris two-pass ratio test with bound flips ---- */
             int32_t entering_col = -1;
             double entering_alpha_row = 0.0;
@@ -15341,6 +15479,10 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
 
                 /* Compute theta_d for the chosen entering variable */
                 theta_d = -r_ext[entering_col] / ((double)leaving_sigma * entering_alpha_row);
+                if (ds2_dump_this) {
+                    ds2_dump_outcome(entering_col, entering_alpha_row, theta_d,
+                                     n_flips, flip_cand);
+                }
                 if (cost_shift_on && theta_d < 1e-12) {
                     /* Dynamic anti-degeneracy cost shift (Koberstein-style):
                      * a zero dual step makes no progress and re-forms the
@@ -16509,6 +16651,7 @@ done:
     free(rate_hist_ratio_candidates); free(rate_hist_support_overlap_prev);
     free(rate_hist_prev_alpha_support); free(rate_hist_prev_alpha_pattern);
     free(warm_bound_input);
+    ds2_dump_close();
     return result;
 }
 
