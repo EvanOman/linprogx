@@ -714,7 +714,7 @@ static double ds2_core_env_double(const char *name, double fallback) {
 }
 
 void *ds2_pricing_state_new(int32_t m, int32_t n_total) {
-    int rule = ds2_core_env_int("LINPROGX_DS2_RULE", DS2_RULE_DANTZIG);
+    int rule = ds2_core_env_int("LINPROGX_DS2_RULE", DS2_RULE_DSE);
     if (rule != DS2_RULE_DSE) rule = DS2_RULE_DANTZIG;
     DS2Pricing *st = ds2_pricing_new(m, rule);
     if (st == NULL) return NULL;

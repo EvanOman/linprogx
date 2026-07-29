@@ -18539,8 +18539,9 @@ static PyObject *csparse_presolve_impl(
     int max_fill = 5;
     Py_ssize_t fill_budget = -1;  /* agg-only: cumulative-fill early-abort cap */
     Py_ssize_t orig_nnz = -1;     /* agg-only: base nnz for the fill-gate       */
+    int agg_max_fill_arg = 30;    /* agg-only: Markowitz fill admission cap     */
 
-    if (!PyArg_ParseTuple(args, "Oy#y#y#y#|inn",
+    if (!PyArg_ParseTuple(args, "Oy#y#y#y#|inni",
                           &matrix_obj,
                           &b_buf, &b_len,
                           &c_buf, &c_len,
@@ -18548,7 +18549,8 @@ static PyObject *csparse_presolve_impl(
                           &hi_buf, &hi_len,
                           &max_fill,
                           &fill_budget,
-                          &orig_nnz))
+                          &orig_nnz,
+                          &agg_max_fill_arg))
         return NULL;
 
     if (!PyObject_TypeCheck(matrix_obj, &CSRMatrixType)) {
@@ -18732,7 +18734,7 @@ static PyObject *csparse_presolve_impl(
     }
 
     /* ---- agg-only working storage + parameters ------------------------- */
-    int agg_max_fill = 30;
+    int agg_max_fill = agg_max_fill_arg;
     double agg_pivot_tol = 0.01;
     Py_ssize_t agg_fill_delta = 0;
     int agg_aborted = 0;
