@@ -92,6 +92,7 @@ struct DS2Pricing {
     int      edge_update;
     int      edge_period;
     int64_t  edge_count;
+    int      sparse_tau;
     double  *w_keep;
     double  *tau;
     int32_t *pat;
@@ -723,6 +724,8 @@ void *ds2_pricing_state_new(int32_t m, int32_t n_total) {
     st->edge_period =
         ds2_core_env_int("LINPROGX_DS2_EDGE_PERIOD", 1);
     if (st->edge_period < 1) st->edge_period = 1;
+    st->sparse_tau =
+        ds2_core_env_int("LINPROGX_DS2_DSE_SPARSE", 0) != 0;
     st->weight_floor = 1e-12;
     st->w_keep = (double *)calloc((size_t)m, sizeof(double));
     st->tau = (double *)calloc((size_t)m, sizeof(double));
@@ -825,7 +828,8 @@ void ds2_pricing_update(
         weights[leaving_pos] = gamma_r;
         return;
     }
-    if (la == NULL || la->ftran == NULL) return;
+    if (la == NULL ||
+        (la->ftran_sparse == NULL && la->ftran == NULL)) return;
 
     double gamma_r = 0.0;
     for (int32_t i = 0; i < rho_nnz; i++) {
@@ -835,7 +839,13 @@ void ds2_pricing_update(
     if (gamma_r < 1e-12) gamma_r = 1e-12;
     st->w_keep[leaving_pos] = gamma_r;
 
-    la->ftran(la->ctx, rho, st->tau);
+    int32_t tau_nnz = -1;
+    if (st->sparse_tau && la->ftran_sparse != NULL) {
+        tau_nnz = la->ftran_sparse(
+            la->ctx, rho, rho_pattern, rho_nnz, st->tau, st->pat);
+    } else {
+        la->ftran(la->ctx, rho, st->tau);
+    }
     for (int32_t i = 0; i < ftran_nnz; i++) {
         const int32_t k = ftran_pattern[i];
         if (k == leaving_pos) continue;
@@ -850,5 +860,9 @@ void ds2_pricing_update(
     if (new_gamma_r < 1e-12) new_gamma_r = 1e-12;
     st->w_keep[leaving_pos] = new_gamma_r;
     weights[leaving_pos] = new_gamma_r;
+    if (tau_nnz >= 0) {
+        for (int32_t i = 0; i < tau_nnz; i++)
+            st->tau[st->pat[i]] = 0.0;
+    }
 }
 #endif

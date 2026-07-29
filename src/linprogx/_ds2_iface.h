@@ -182,6 +182,10 @@ void ds2_ratio_bounds_changed(void *state, const double *lo_ext,
 typedef struct {
     void *ctx;
     void (*ftran)(void *ctx, const double *rhs, double *out);
+    int32_t (*ftran_sparse)(
+        void *ctx, const double *rhs,
+        const int32_t *rhs_pattern, int32_t rhs_nnz,
+        double *out, int32_t *out_pattern);
     int32_t (*btran_unit)(void *ctx, int32_t pos, double *out,
                           int32_t *pattern);
 } DS2LinAlg;

@@ -106,6 +106,19 @@ static void ds2_la_ftran(void *ctx, const double *rhs, double *out)
     lu_ftran((const LUContext *)ctx, rhs, out);
 }
 
+static int32_t ds2_la_ftran_sparse(
+    void *ctx, const double *rhs,
+    const int32_t *rhs_pattern, int32_t rhs_nnz,
+    double *out, int32_t *out_pattern)
+{
+    LUContext *lu = (LUContext *)ctx;
+    double *rhs_values = lu->ws_w;
+    for (int32_t k = 0; k < rhs_nnz; k++)
+        rhs_values[k] = rhs[rhs_pattern[k]];
+    return lu_ftran_sparse(
+        lu, rhs_nnz, rhs_pattern, rhs_values, out, out_pattern);
+}
+
 static int32_t ds2_la_btran_unit(void *ctx, int32_t pos, double *out,
                                  int32_t *pattern)
 {
@@ -529,7 +542,8 @@ static PyObject *ds2_solve(
         PyErr_NoMemory();
         goto done;
     }
-    DS2LinAlg la = {lu, ds2_la_ftran, ds2_la_btran_unit};
+    DS2LinAlg la = {
+        lu, ds2_la_ftran, ds2_la_ftran_sparse, ds2_la_btran_unit};
     for (int32_t k = 0; k < m; k++) weights[k] = 1.0;
     ds2_pricing_reset(pricing_state, weights, m, basis_is_logical, &la);
 
