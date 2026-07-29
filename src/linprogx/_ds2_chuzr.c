@@ -829,7 +829,8 @@ void ds2_pricing_update(
         return;
     }
     if (la == NULL ||
-        (la->ftran_sparse == NULL && la->ftran == NULL)) return;
+        (la->tau_precomputed == NULL &&
+         la->ftran_sparse == NULL && la->ftran == NULL)) return;
 
     double gamma_r = 0.0;
     for (int32_t i = 0; i < rho_nnz; i++) {
@@ -840,7 +841,10 @@ void ds2_pricing_update(
     st->w_keep[leaving_pos] = gamma_r;
 
     int32_t tau_nnz = -1;
-    if (st->sparse_tau && la->ftran_sparse != NULL) {
+    const double *tau = st->tau;
+    if (la->tau_precomputed != NULL) {
+        tau = la->tau_precomputed;
+    } else if (st->sparse_tau && la->ftran_sparse != NULL) {
         tau_nnz = la->ftran_sparse(
             la->ctx, rho, rho_pattern, rho_nnz, st->tau, st->pat);
     } else {
@@ -850,7 +854,7 @@ void ds2_pricing_update(
         const int32_t k = ftran_pattern[i];
         if (k == leaving_pos) continue;
         const double ratio = alpha_col[k] * inv_pivot;
-        double gamma = st->w_keep[k] - 2.0 * ratio * st->tau[k]
+        double gamma = st->w_keep[k] - 2.0 * ratio * tau[k]
                      + ratio * ratio * gamma_r;
         if (gamma < 1e-12) gamma = 1e-12;
         st->w_keep[k] = gamma;

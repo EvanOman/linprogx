@@ -181,6 +181,7 @@ void ds2_ratio_bounds_changed(void *state, const double *lo_ext,
  */
 typedef struct {
     void *ctx;
+    const double *tau_precomputed;
     void (*ftran)(void *ctx, const double *rhs, double *out);
     int32_t (*ftran_sparse)(
         void *ctx, const double *rhs,

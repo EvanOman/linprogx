@@ -12218,6 +12218,149 @@ record_dense_ftran:
 }
 
 /*
+ * Solve two FTRAN right-hand sides in one traversal of L, the update etas,
+ * and U.  DS2 uses this for the entering column and the exact-DSE tau vector.
+ * Each arithmetic stream is identical to lu_ftran; only the sparse-structure
+ * loads and loop control are shared.
+ */
+static void lu_ftran_pair(
+    LUContext *ctx,
+    const double *b1, const double *b2,
+    double *x1, double *x2)
+{
+    const double solve_t0 =
+        ctx->solve_slice_on ? linprogx_monotonic_seconds() : 0.0;
+    const int32_t m = ctx->m;
+    double *z1 = ctx->ws_z;
+    double *z2 = ctx->ws_w;
+
+    for (int32_t k = 0; k < m; k++) {
+        const int32_t row = ctx->perm_row[k];
+        z1[k] = b1[row];
+        z2[k] = b2[row];
+    }
+
+    for (int32_t j = 0; j < m; j++) {
+        const double v1 = z1[j];
+        const double v2 = z2[j];
+        if (v1 == 0.0 && v2 == 0.0) continue;
+        for (int32_t p = ctx->l_indptr[j];
+             p < ctx->l_indptr[j + 1]; p++) {
+            const int32_t row = ctx->l_indices[p];
+            const double value = ctx->l_values[p];
+            z1[row] -= value * v1;
+            z2[row] -= value * v2;
+        }
+    }
+
+    if (ctx->ft_active && ctx->ft_n_upd > 0) {
+        for (int32_t k = 0; k < ctx->ft_n_upd; k++) {
+            double dot1 = 0.0;
+            double dot2 = 0.0;
+            for (int32_t p = ctx->ft_eta_start[k];
+                 p < ctx->ft_eta_start[k + 1]; p++) {
+                const int32_t row = ctx->ft_eta_idx[p];
+                const double value = ctx->ft_eta_val[p];
+                dot1 += value * z1[row];
+                dot2 += value * z2[row];
+            }
+            const int32_t slot = ctx->ft_eta_slot[k];
+            z1[slot] -= dot1;
+            z2[slot] -= dot2;
+        }
+
+        for (int32_t k = m - 1; k >= 0; k--) {
+            const int32_t j = ctx->ft_order[k];
+            double v1 = z1[j];
+            double v2 = z2[j];
+            if (v1 == 0.0 && v2 == 0.0) continue;
+            const double inv_diag = 1.0 / ctx->u_diag[j];
+            v1 *= inv_diag;
+            v2 *= inv_diag;
+            z1[j] = v1;
+            z2[j] = v2;
+
+            const int32_t sid = ctx->ft_col_spike[j];
+            if (sid >= 0) {
+                const int32_t created = ctx->ft_spk_created[sid];
+                for (int32_t p = ctx->ft_spk_start[sid];
+                     p < ctx->ft_spk_start[sid + 1]; p++) {
+                    const int32_t row = ctx->ft_spk_idx[p];
+                    if (!lu_ft_row_live(ctx, row, created)) continue;
+                    const double value = ctx->ft_spk_val[p];
+                    z1[row] -= value * v1;
+                    z2[row] -= value * v2;
+                }
+            } else if (ctx->uc_active) {
+                const int32_t end = ctx->uc_end[j];
+                for (int32_t p = ctx->u_indptr[j]; p < end; p++) {
+                    const int32_t row = ctx->uc_idx[p];
+                    const double value = ctx->uc_val[p];
+                    z1[row] -= value * v1;
+                    z2[row] -= value * v2;
+                }
+            } else {
+                for (int32_t p = ctx->u_indptr[j];
+                     p < ctx->u_indptr[j + 1]; p++) {
+                    const int32_t row = ctx->u_indices[p];
+                    if (row == j || ctx->ft_del_stamp[row] >= 0) continue;
+                    const double value = ctx->u_values[p];
+                    z1[row] -= value * v1;
+                    z2[row] -= value * v2;
+                }
+            }
+        }
+    } else {
+        for (int32_t j = m - 1; j >= 0; j--) {
+            const double diag = ctx->u_diag[j];
+            if (diag != 0.0) {
+                z1[j] /= diag;
+                z2[j] /= diag;
+            }
+            const double v1 = z1[j];
+            const double v2 = z2[j];
+            if (v1 == 0.0 && v2 == 0.0) continue;
+            for (int32_t p = ctx->u_indptr[j];
+                 p < ctx->u_indptr[j + 1]; p++) {
+                const int32_t row = ctx->u_indices[p];
+                if (row >= j) continue;
+                const double value = ctx->u_values[p];
+                z1[row] -= value * v1;
+                z2[row] -= value * v2;
+            }
+        }
+    }
+
+    for (int32_t k = 0; k < m; k++) {
+        const int32_t col = ctx->perm_col[k];
+        x1[col] = z1[k];
+        x2[col] = z2[k];
+    }
+
+    if (!(ctx->ft_active && ctx->ft_n_upd > 0)) {
+        for (int32_t upd = 0; upd < ctx->n_updates; upd++) {
+            const int32_t pos = ctx->eta_positions[upd];
+            const double temp1 = x1[pos] / ctx->eta_pivot[upd];
+            const double temp2 = x2[pos] / ctx->eta_pivot[upd];
+            for (int32_t p = ctx->eta_sp_start[upd];
+                 p < ctx->eta_sp_start[upd + 1]; p++) {
+                const int32_t row = ctx->eta_sp_idx[p];
+                const double value = ctx->eta_sp_val[p];
+                x1[row] -= value * temp1;
+                x2[row] -= value * temp2;
+            }
+            x1[pos] = temp1;
+            x2[pos] = temp2;
+        }
+    }
+
+    ctx->ftran_dense_count += 2;
+    if (ctx->solve_slice_on) {
+        ctx->ftran_dense_s += linprogx_monotonic_seconds() - solve_t0;
+    }
+}
+
+/*
  * lu_btran: solve B^T x = b where PAQ = LU.
  *
  * B^T = Q^{-T} U^T L^T P^T, so B^T x = b  =>
