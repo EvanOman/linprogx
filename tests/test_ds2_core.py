@@ -121,6 +121,34 @@ def test_composed_dse_bfrt_pow2_is_oracle_correct(monkeypatch) -> None:
     assert first["max_primal_residual"] < 1e-6
 
 
+def test_paired_dse_ftran_matches_separate_solves(monkeypatch) -> None:
+    """The fused two-RHS traversal must preserve the exact DS2 trajectory."""
+    monkeypatch.setenv("LINPROGX_DS2_LOGICAL_BASIS", "1")
+    monkeypatch.setenv("LINPROGX_DS2_RULE", "1")
+    monkeypatch.setenv("LINPROGX_DS2_BFRT", "1")
+    monkeypatch.setenv("LINPROGX_DS2_SCALE", "2")
+    monkeypatch.setenv("LINPROGX_DS2_REFAC", "125")
+
+    rng = np.random.RandomState(20260729)
+    c, A, b, lo, hi = _random_feasible_lp(48, 144, rng, lo_min=-3.0, hi_max=6.0)
+    A[:, ::4] *= 1e3
+    x_feasible = np.minimum(np.maximum(rng.randn(A.shape[1]), lo), hi)
+    b = A @ x_feasible
+    ref = _solve_highs(c, A, b, lo, hi)
+    assert ref.status == 0
+
+    matrix = _make_csr(A)
+    separate = matrix.solve_eq_box_ds2(c, b, lo, hi, max_iter=50_000)
+    monkeypatch.setenv("LINPROGX_DS2_DSE_PAIR", "1")
+    paired = matrix.solve_eq_box_ds2(c, b, lo, hi, max_iter=50_000)
+
+    assert separate["status"] == paired["status"] == "optimal"
+    assert paired["iterations"] == separate["iterations"]
+    assert paired["objective"] == separate["objective"]
+    assert paired["max_primal_residual"] == separate["max_primal_residual"]
+    assert abs(paired["objective"] - ref.fun) / (1.0 + abs(ref.fun)) < 1e-6
+
+
 # ---------------------------------------------------------------------------
 # The structures DS2 changes: one-sided and free columns have NO big-M bound,
 # so dual feasibility has to come from the phase-1 bound substitution.

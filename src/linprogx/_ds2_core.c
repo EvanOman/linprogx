@@ -151,6 +151,7 @@ static PyObject *ds2_solve(
     const int opt_report = ds2_env_int("LINPROGX_DS2_REPORT", 0);
     const int opt_perturb = ds2_env_int("LINPROGX_DS2_PERTURB", 0);
     const int opt_scale = ds2_env_int("LINPROGX_DS2_SCALE", 0);
+    const int opt_dse_pair = ds2_env_int("LINPROGX_DS2_DSE_PAIR", 0);
     uint64_t perturb_rng = UINT64_C(0x9E3779B97F4A7C15);
     int32_t refac_interval = (int32_t)ds2_env_int("LINPROGX_DS2_REFAC", 500);
     if (refac_interval < 1) refac_interval = 1;
@@ -196,6 +197,7 @@ static PyObject *ds2_solve(
     double *rhs = DS2_CALLOC_D(m);
     double *rho = DS2_CALLOC_D(m);
     double *alpha_col = DS2_CALLOC_D(m);
+    double *dse_tau = DS2_CALLOC_D(m);
     double *e_i = DS2_CALLOC_D(m);
     double *c_B = DS2_CALLOC_D(m);
     double *weights = DS2_CALLOC_D(m);
@@ -227,7 +229,8 @@ static PyObject *ds2_solve(
         hi_ext == NULL || lo_true == NULL || hi_true == NULL || x_ext == NULL ||
         r_ext == NULL || bound_status == NULL || basis_pos == NULL ||
         b == NULL || y == NULL || x_B == NULL || rhs == NULL || rho == NULL ||
-        alpha_col == NULL || e_i == NULL || c_B == NULL || weights == NULL ||
+        alpha_col == NULL || dse_tau == NULL || e_i == NULL ||
+        c_B == NULL || weights == NULL ||
         flip_rhs == NULL || basis == NULL || rho_pat == NULL ||
         ftran_pat == NULL || alpha_scratch == NULL || alpha_pattern == NULL ||
         alpha_touched == NULL || b_indptr == NULL || b_indices == NULL ||
@@ -543,7 +546,7 @@ static PyObject *ds2_solve(
         goto done;
     }
     DS2LinAlg la = {
-        lu, ds2_la_ftran, ds2_la_ftran_sparse, ds2_la_btran_unit};
+        lu, NULL, ds2_la_ftran, ds2_la_ftran_sparse, ds2_la_btran_unit};
     for (int32_t k = 0; k < m; k++) weights[k] = 1.0;
     ds2_pricing_reset(pricing_state, weights, m, basis_is_logical, &la);
 
@@ -984,7 +987,23 @@ static PyObject *ds2_solve(
             /* ---- 4e. alpha_col = B^{-1} a_entering ---- */
             int32_t ftran_nnz;
             {
-                if (entering_col < n) {
+                if (opt_dse_pair) {
+                    memset(rhs, 0, (size_t)m * sizeof(double));
+                    if (entering_col < n) {
+                        Py_ssize_t col_start = self->csc_indptr[entering_col];
+                        Py_ssize_t col_end = self->csc_indptr[entering_col + 1];
+                        for (Py_ssize_t p = col_start; p < col_end; p++)
+                            rhs[(int32_t)self->csc_rows[p]] = a_data[p];
+                    } else {
+                        rhs[entering_col - n] = 1.0;
+                    }
+                    lu_ftran_pair(lu, rhs, rho, alpha_col, dse_tau);
+                    ftran_nnz = 0;
+                    for (int32_t k = 0; k < m; k++) {
+                        if (alpha_col[k] != 0.0)
+                            ftran_pat[ftran_nnz++] = k;
+                    }
+                } else if (entering_col < n) {
                     Py_ssize_t col_start = self->csc_indptr[entering_col];
                     Py_ssize_t col_end = self->csc_indptr[entering_col + 1];
                     int32_t col_nnz = (int32_t)(col_end - col_start);
@@ -1064,10 +1083,12 @@ static PyObject *ds2_solve(
 
             /* ---- 4h. pricing weights, BEFORE the basis changes ---- */
             la.ctx = lu;
+            la.tau_precomputed = opt_dse_pair ? dse_tau : NULL;
             ds2_pricing_update(pricing_state, leaving_pos, entering_col,
                                rho, rho_pat, rho_nnz,
                                alpha_col, ftran_pat, ftran_nnz,
                                pivot, weights, m, &la);
+            la.tau_precomputed = NULL;
 
             /* ---- 4i. basis bookkeeping ---- */
             int32_t leaving_col = basis[leaving_pos];
@@ -1378,6 +1399,7 @@ done:
     free(lo_ext); free(hi_ext); free(lo_true); free(hi_true);
     free(x_ext); free(r_ext); free(bound_status); free(basis_pos);
     free(b); free(y); free(x_B); free(rhs); free(rho); free(alpha_col);
+    free(dse_tau);
     free(e_i); free(c_B); free(weights); free(flip_rhs);
     free(basis); free(rho_pat); free(ftran_pat);
     free(alpha_scratch); free(alpha_pattern); free(alpha_touched);
