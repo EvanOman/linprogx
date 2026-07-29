@@ -26,6 +26,12 @@
       "candidate_pair_wins": 21,
       "total_pairs": 21,
       "run": "https://modal.com/apps/evan058/main/ap-aInbt9GCL3giDJp11lb8Ia"
+    },
+    "route_gate_v3": {
+      "ratio_median_of_hosts": 0.6977805255130155,
+      "candidate_pair_wins": 21,
+      "total_pairs": 21,
+      "run": "https://modal.com/apps/evan058/main/ap-OScunRF8x3QlCpTDuGY1wP"
     }
   },
   "greenbeb_control": {
@@ -39,6 +45,31 @@
       "candidate_pair_wins": 21,
       "total_pairs": 21
     }
+  },
+  "route_gate_null_controls_v3": {
+    "hosts": 3,
+    "pairs_per_host": 7,
+    "run": "https://modal.com/apps/evan058/main/ap-OScunRF8x3QlCpTDuGY1wP",
+    "candidate_over_shipped_median_of_hosts": {
+      "80bau3b": 0.9965400713189084,
+      "cre_a": 0.9998604597662583,
+      "cre_b": 0.9739945057602971,
+      "degen3": 0.9843325406227769,
+      "osa_14": 0.9513955448324223,
+      "stocfor3": 1.009714440792272
+    }
+  },
+  "validation": {
+    "command": "just ci",
+    "passed": true,
+    "tests_passed": 554,
+    "tests_skipped": 7,
+    "coverage_percent": 89.19,
+    "lint": "passed",
+    "format": "passed",
+    "type": "passed",
+    "bandit": "passed",
+    "dependency_audit": "passed"
   },
   "kills": {
     "initial_ds2_composition": {

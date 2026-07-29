@@ -14,6 +14,7 @@ LPnetlib sample together with each instance's structural signature.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import time
 from pathlib import Path
@@ -39,7 +40,7 @@ def load(path: Path) -> dict[str, Any]:
     }
 
 
-def sig(d):
+def sig(d: dict[str, Any]) -> dict[str, Any]:
     lo, hi = d["lo"], d["hi"]
     m, n = d["A"].shape
     li, hj = lo == -INF, hi == INF
@@ -52,7 +53,7 @@ def sig(d):
     }
 
 
-def lx_iters(d):
+def lx_iters(d: dict[str, Any]) -> dict[str, Any]:
     from linprogx.sparse import SparseLPProblem, SparseSolver, from_scipy_sparse
 
     bounds = [
@@ -80,8 +81,8 @@ def lx_iters(d):
     }
 
 
-def hx_iters(d):
-    import highspy
+def hx_iters(d: dict[str, Any]) -> dict[str, Any]:
+    highspy = importlib.import_module("highspy")
 
     m, n = d["A"].shape
     inf = highspy.kHighsInf
@@ -112,7 +113,7 @@ def hx_iters(d):
     }
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--instances", default="")
     ap.add_argument("--out", default="/tmp/category_iters.jsonl")
@@ -139,7 +140,7 @@ def main():
             print(f"{nm:15s} SKIP (unreadable fixture: {type(e).__name__})")
             continue
         try:
-            L = lx_iters(d)
+            L: dict[str, Any] = lx_iters(d)
         except Exception as e:
             L = {
                 "iters": -1,
@@ -149,7 +150,7 @@ def main():
                 "ms": float("nan"),
             }
         try:
-            H = hx_iters(d)
+            H: dict[str, Any] = hx_iters(d)
         except Exception as e:
             H = {"iters": -1, "status": f"ERR:{type(e).__name__}", "obj": None, "ms": float("nan")}
         ratio = (L["iters"] / H["iters"]) if (L["iters"] > 0 and H["iters"] > 0) else float("nan")
