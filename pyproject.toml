@@ -72,6 +72,12 @@ extra-compile-args = ["-O3", "-pthread", "-DLINPROGX_HAVE_BLAS"]
 extra-link-args = ["-pthread"]
 libraries = ["openblas"]
 
+# DS2 component A (CHUZC).  Self-contained; the _py file is test-harness glue.
+[[tool.setuptools.ext-modules]]
+name = "linprogx._ds2_chuzc"
+sources = ["src/linprogx/_ds2_chuzc.c", "src/linprogx/_ds2_chuzc_py.c"]
+extra-compile-args = ["-O3"]
+
 [tool.cibuildwheel]
 build = "cp312-manylinux_x86_64 cp313-manylinux_x86_64"
 before-all = "yum install -y openblas-devel || (apt-get update && apt-get install -y libopenblas-dev)"
