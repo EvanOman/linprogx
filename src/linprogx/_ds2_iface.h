@@ -174,6 +174,19 @@ void ds2_ratio_bounds_changed(void *state, const double *lo_ext,
                               const double *hi_ext);
 
 /*
+ * Scoped access to the core's current factorization for pricing rules that
+ * need more than the pivot vectors.  Exact Forrest-Goldfarb DSE needs
+ * tau = B^{-1}rho on every pivot and exact ||B^{-T}e_i||^2 weights on a
+ * non-logical starting basis.  The handle is valid only during the hook call.
+ */
+typedef struct {
+    void *ctx;
+    void (*ftran)(void *ctx, const double *rhs, double *out);
+    int32_t (*btran_unit)(void *ctx, int32_t pos, double *out,
+                          int32_t *pattern);
+} DS2LinAlg;
+
+/*
  * Called once per accepted pivot, AFTER the pivot row and entering column
  * are known and BEFORE the basis changes.
  *   leaving_pos : basis position being vacated
@@ -188,7 +201,8 @@ void ds2_pricing_update(
     int32_t leaving_pos, int32_t entering,
     const double *rho, const int32_t *rho_pattern, int32_t rho_nnz,
     const double *alpha_col, const int32_t *ftran_pattern, int32_t ftran_nnz,
-    double alpha_pivot, double *weights, int32_t m);
+    double alpha_pivot, double *weights, int32_t m,
+    const DS2LinAlg *la);
 
 /*
  * Called after every (re)factorization, with the basis freshly inverted.
@@ -197,6 +211,6 @@ void ds2_pricing_update(
  * nonzero when B == I, for which unit weights are already exact.
  */
 void ds2_pricing_reset(void *state, double *weights, int32_t m,
-                       int logical_basis);
+                       int logical_basis, const DS2LinAlg *la);
 
 #endif /* LINPROGX_DS2_IFACE_H */

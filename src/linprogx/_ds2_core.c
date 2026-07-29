@@ -90,6 +90,28 @@ static int ds2_env_int(const char *name, int fallback)
 
 static int ds2_enabled(void) { return ds2_env_int("LINPROGX_DS2", 0) != 0; }
 
+static double ds2_perturb_fraction(uint64_t *state)
+{
+    uint64_t x = *state;
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    *state = x;
+    x *= UINT64_C(0x2545F4914F6CDD1D);
+    return (double)(x >> 11) * 0x1.0p-53;
+}
+
+static void ds2_la_ftran(void *ctx, const double *rhs, double *out)
+{
+    lu_ftran((const LUContext *)ctx, rhs, out);
+}
+
+static int32_t ds2_la_btran_unit(void *ctx, int32_t pos, double *out,
+                                 int32_t *pattern)
+{
+    return lu_btran_sparse((LUContext *)ctx, pos, out, pattern);
+}
+
 /* ------------------------------------------------------------------------ *
  * The solver.
  * ------------------------------------------------------------------------ */
@@ -114,6 +136,9 @@ static PyObject *ds2_solve(
     const int opt_logical_basis = ds2_env_int("LINPROGX_DS2_LOGICAL_BASIS", 0);
     const int opt_phase1 = ds2_env_int("LINPROGX_DS2_PHASE1", 1);
     const int opt_report = ds2_env_int("LINPROGX_DS2_REPORT", 0);
+    const int opt_perturb = ds2_env_int("LINPROGX_DS2_PERTURB", 0);
+    const int opt_scale = ds2_env_int("LINPROGX_DS2_SCALE", 0);
+    uint64_t perturb_rng = UINT64_C(0x9E3779B97F4A7C15);
     int32_t refac_interval = (int32_t)ds2_env_int("LINPROGX_DS2_REFAC", 500);
     if (refac_interval < 1) refac_interval = 1;
 
@@ -238,50 +263,120 @@ static PyObject *ds2_solve(
                 if (row_norms[i] > max_rn) max_rn = row_norms[i];
             }
         }
-        if (min_rn > 0.0 && max_rn / min_rn >= 100.0) ruiz_active = 1;
+        if (opt_scale != 1 &&
+            ((min_rn > 0.0 && max_rn / min_rn >= 100.0) ||
+             opt_scale == 2 || opt_scale == 3)) {
+            ruiz_active = 1;
+        }
 
         if (ruiz_active) {
-            for (int pass = 0; pass < 10; pass++) {
+            if (opt_scale == 3) {
+                double *row_mins = x_B;  /* borrowed, overwritten by solve */
+                double *col_mins = x_ext;
+                for (int pass = 0; pass < 6; pass++) {
+                    for (int32_t i = 0; i < m; i++) {
+                        row_norms[i] = 0.0;
+                        row_mins[i] = 1e300;
+                    }
+                    for (int32_t j = 0; j < n; j++) {
+                        for (Py_ssize_t p = self->csc_indptr[j];
+                             p < self->csc_indptr[j + 1]; p++) {
+                            const int32_t row =
+                                (int32_t)self->csc_rows[p];
+                            const double value = fabs(
+                                self->csc_data[p] * row_scale[row] *
+                                col_scale[j]);
+                            if (value == 0.0) continue;
+                            if (value > row_norms[row])
+                                row_norms[row] = value;
+                            if (value < row_mins[row])
+                                row_mins[row] = value;
+                        }
+                    }
+                    for (int32_t i = 0; i < m; i++) {
+                        if (row_norms[i] > 0.0 &&
+                            row_mins[i] < 1e300) {
+                            row_scale[i] /=
+                                sqrt(row_mins[i] * row_norms[i]);
+                        }
+                    }
+
+                    for (int32_t j = 0; j < n; j++) {
+                        col_norms[j] = 0.0;
+                        col_mins[j] = 1e300;
+                        for (Py_ssize_t p = self->csc_indptr[j];
+                             p < self->csc_indptr[j + 1]; p++) {
+                            const int32_t row =
+                                (int32_t)self->csc_rows[p];
+                            const double value = fabs(
+                                self->csc_data[p] * row_scale[row] *
+                                col_scale[j]);
+                            if (value == 0.0) continue;
+                            if (value > col_norms[j])
+                                col_norms[j] = value;
+                            if (value < col_mins[j])
+                                col_mins[j] = value;
+                        }
+                        if (col_norms[j] > 0.0 &&
+                            col_mins[j] < 1e300) {
+                            col_scale[j] /=
+                                sqrt(col_mins[j] * col_norms[j]);
+                        }
+                    }
+                }
+            } else {
+                for (int pass = 0; pass < 10; pass++) {
+                    for (int32_t i = 0; i < m; i++) row_norms[i] = 0.0;
+                    for (int32_t j = 0; j < n; j++) col_norms[j] = 0.0;
+                    for (int32_t j = 0; j < n; j++) {
+                        for (Py_ssize_t p = self->csc_indptr[j];
+                             p < self->csc_indptr[j + 1]; p++) {
+                            int32_t row = (int32_t)self->csc_rows[p];
+                            double v = fabs(self->csc_data[p] *
+                                            row_scale[row] * col_scale[j]);
+                            if (v > row_norms[row]) row_norms[row] = v;
+                            if (v > col_norms[j]) col_norms[j] = v;
+                        }
+                    }
+                    for (int32_t i = 0; i < m; i++)
+                        if (row_norms[i] > 0.0)
+                            row_scale[i] /= sqrt(row_norms[i]);
+                    for (int32_t j = 0; j < n; j++)
+                        if (col_norms[j] > 0.0)
+                            col_scale[j] /= sqrt(col_norms[j]);
+                }
+                /* one l2 balancing pass */
                 for (int32_t i = 0; i < m; i++) row_norms[i] = 0.0;
                 for (int32_t j = 0; j < n; j++) col_norms[j] = 0.0;
                 for (int32_t j = 0; j < n; j++) {
                     for (Py_ssize_t p = self->csc_indptr[j];
                          p < self->csc_indptr[j + 1]; p++) {
                         int32_t row = (int32_t)self->csc_rows[p];
-                        double v = fabs(self->csc_data[p] * row_scale[row] * col_scale[j]);
-                        if (v > row_norms[row]) row_norms[row] = v;
-                        if (v > col_norms[j]) col_norms[j] = v;
+                        double v = self->csc_data[p] * row_scale[row] *
+                                   col_scale[j];
+                        row_norms[row] += v * v;
+                        col_norms[j] += v * v;
                     }
                 }
                 for (int32_t i = 0; i < m; i++)
-                    if (row_norms[i] > 0.0) row_scale[i] /= sqrt(row_norms[i]);
+                    if (row_norms[i] > 0.0)
+                        row_scale[i] /= sqrt(sqrt(row_norms[i]));
                 for (int32_t j = 0; j < n; j++)
-                    if (col_norms[j] > 0.0) col_scale[j] /= sqrt(col_norms[j]);
+                    if (col_norms[j] > 0.0)
+                        col_scale[j] /= sqrt(sqrt(col_norms[j]));
             }
-            /* one l2 balancing pass */
-            for (int32_t i = 0; i < m; i++) row_norms[i] = 0.0;
-            for (int32_t j = 0; j < n; j++) col_norms[j] = 0.0;
-            for (int32_t j = 0; j < n; j++) {
-                for (Py_ssize_t p = self->csc_indptr[j];
-                     p < self->csc_indptr[j + 1]; p++) {
-                    int32_t row = (int32_t)self->csc_rows[p];
-                    double v = self->csc_data[p] * row_scale[row] * col_scale[j];
-                    row_norms[row] += v * v;
-                    col_norms[j] += v * v;
-                }
-            }
-            for (int32_t i = 0; i < m; i++)
-                if (row_norms[i] > 0.0) row_scale[i] /= sqrt(sqrt(row_norms[i]));
-            for (int32_t j = 0; j < n; j++)
-                if (col_norms[j] > 0.0) col_scale[j] /= sqrt(sqrt(col_norms[j]));
 
             for (int32_t i = 0; i < m; i++) {
                 if (row_scale[i] < 1e-8) row_scale[i] = 1e-8;
                 else if (row_scale[i] > 1e8) row_scale[i] = 1e8;
+                if (opt_scale == 2)
+                    row_scale[i] = exp2(round(log2(row_scale[i])));
             }
             for (int32_t j = 0; j < n; j++) {
                 if (col_scale[j] < 1e-8) col_scale[j] = 1e-8;
                 else if (col_scale[j] > 1e8) col_scale[j] = 1e8;
+                if (opt_scale == 2)
+                    col_scale[j] = exp2(round(log2(col_scale[j])));
             }
             for (int32_t j = 0; j < n; j++) {
                 for (Py_ssize_t p = self->csc_indptr[j];
@@ -434,8 +529,9 @@ static PyObject *ds2_solve(
         PyErr_NoMemory();
         goto done;
     }
+    DS2LinAlg la = {lu, ds2_la_ftran, ds2_la_btran_unit};
     for (int32_t k = 0; k < m; k++) weights[k] = 1.0;
-    ds2_pricing_reset(pricing_state, weights, m, basis_is_logical);
+    ds2_pricing_reset(pricing_state, weights, m, basis_is_logical, &la);
 
     /* ---- 3. duals, phase decision, nonbasic placement -------------------- */
     for (int32_t k = 0; k < m; k++) c_B[k] = c_ext[basis[k]];
@@ -578,7 +674,8 @@ static PyObject *ds2_solve(
                     iters_since_refac = 0;
                     n_banned = 0;
                     for (int32_t k = 0; k < m; k++) weights[k] = 1.0;
-                    ds2_pricing_reset(pricing_state, weights, m, 0);
+                    la.ctx = lu;
+                    ds2_pricing_reset(pricing_state, weights, m, 0, &la);
                     x_B_needs_recompute = 1;
                     x_B_fresh = 0;
                     continue;
@@ -635,7 +732,8 @@ static PyObject *ds2_solve(
                     }
                     ds_phase = 2;
                     for (int32_t k = 0; k < m; k++) weights[k] = 1.0;
-                    ds2_pricing_reset(pricing_state, weights, m, 0);
+                    la.ctx = lu;
+                    ds2_pricing_reset(pricing_state, weights, m, 0, &la);
                     n_banned = 0;
                     x_B_needs_recompute = 1;
                     x_B_fresh = 0;
@@ -760,7 +858,8 @@ static PyObject *ds2_solve(
                         ds2_ratio_bounds_changed(ratio_state, lo_ext, hi_ext);
                         ds_phase = 1;
                         for (int32_t k = 0; k < m; k++) weights[k] = 1.0;
-                        ds2_pricing_reset(pricing_state, weights, m, 0);
+                        la.ctx = lu;
+                        ds2_pricing_reset(pricing_state, weights, m, 0, &la);
                         n_banned = 0;
                         x_B_needs_recompute = 1;
                         x_B_fresh = 0;
@@ -950,10 +1049,11 @@ static PyObject *ds2_solve(
             r_ext[entering_col] = 0.0;
 
             /* ---- 4h. pricing weights, BEFORE the basis changes ---- */
+            la.ctx = lu;
             ds2_pricing_update(pricing_state, leaving_pos, entering_col,
                                rho, rho_pat, rho_nnz,
                                alpha_col, ftran_pat, ftran_nnz,
-                               pivot, weights, m);
+                               pivot, weights, m, &la);
 
             /* ---- 4i. basis bookkeeping ---- */
             int32_t leaving_col = basis[leaving_pos];
@@ -1055,9 +1155,18 @@ static PyObject *ds2_solve(
                         } else if ((bs == DS2_AT_LO && rj < -DS2_DRIFT_TOL) ||
                                    (bs == DS2_AT_HI && rj > DS2_DRIFT_TOL) ||
                                    (bs == DS2_FREE && fabs(rj) > DS2_DRIFT_TOL)) {
-                            double target = (bs == DS2_AT_LO) ? DS2_DRIFT_TOL
-                                          : (bs == DS2_AT_HI) ? -DS2_DRIFT_TOL
-                                                              : 0.0;
+                            double target;
+                            if (bs == DS2_FREE) {
+                                target = 0.0;
+                            } else {
+                                double magnitude = DS2_DRIFT_TOL;
+                                if (opt_perturb) {
+                                    magnitude *=
+                                        1.0 + ds2_perturb_fraction(&perturb_rng);
+                                }
+                                target =
+                                    (bs == DS2_AT_LO) ? magnitude : -magnitude;
+                            }
                             double shift = target - rj;
                             c_ext[j] += shift;
                             c_shift[j] += shift;
@@ -1068,7 +1177,8 @@ static PyObject *ds2_solve(
                     }
                     n_banned = 0;
                     for (int32_t k = 0; k < m; k++) weights[k] = 1.0;
-                    ds2_pricing_reset(pricing_state, weights, m, 0);
+                    la.ctx = lu;
+                    ds2_pricing_reset(pricing_state, weights, m, 0, &la);
                     x_B_needs_recompute = 1;
                     x_B_fresh = 0;
                 }

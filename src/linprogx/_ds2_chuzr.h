@@ -62,6 +62,7 @@ typedef struct {
     int     sigma;       /* +1 if x_B below lower, -1 if above upper       */
     double  violation;   /* the bound violation that selected it           */
 } DS2Leaving;
+#define DS2_WEIGHT_BANNED 1e30
 #endif
 
 /* Opaque pricing state; component B (this one) owns it. */

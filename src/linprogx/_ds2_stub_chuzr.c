@@ -60,16 +60,17 @@ void ds2_pricing_update(
     int32_t leaving_pos, int32_t entering,
     const double *rho, const int32_t *rho_pattern, int32_t rho_nnz,
     const double *alpha_col, const int32_t *ftran_pattern, int32_t ftran_nnz,
-    double alpha_pivot, double *weights, int32_t m)
+    double alpha_pivot, double *weights, int32_t m,
+    const DS2LinAlg *la)
 {
     (void)state; (void)leaving_pos; (void)entering;
     (void)rho; (void)rho_pattern; (void)rho_nnz;
     (void)alpha_col; (void)ftran_pattern; (void)ftran_nnz;
-    (void)alpha_pivot; (void)weights; (void)m;
+    (void)alpha_pivot; (void)weights; (void)m; (void)la;
 }
 
 void ds2_pricing_reset(void *state, double *weights, int32_t m,
-                       int logical_basis)
+                       int logical_basis, const DS2LinAlg *la)
 {
-    (void)state; (void)weights; (void)m; (void)logical_basis;
+    (void)state; (void)weights; (void)m; (void)logical_basis; (void)la;
 }

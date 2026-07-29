@@ -3,13 +3,14 @@ public route predicates exactly (presolve first, since the predicate runs on the
 PRESOLVED model)."""
 
 import sys
+from pathlib import Path
 
 sys.path.insert(0, ".")
-import numpy as np
-from pathlib import Path
+
 from scipy.io import loadmat
+
 from linprogx.presolve import presolve_matrix
-from linprogx.sparse import from_scipy_sparse, _ipm_stall_risk
+from linprogx.sparse import _ipm_stall_risk, from_scipy_sparse
 
 SUITE = Path("/tmp/lpsuite")
 INF = float("inf")
