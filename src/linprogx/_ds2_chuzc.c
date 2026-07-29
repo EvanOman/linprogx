@@ -103,6 +103,14 @@ typedef struct {
     int32_t move; /* +1 at lower bound, -1 at upper bound                  */
 } DS2Cand;
 
+static uint64_t ds2_chuzc_tie_rank(const DS2ChuzcState *st, int32_t col) {
+    uint64_t x = (uint64_t)(uint32_t)col +
+                 st->tie_seed * UINT64_C(0x9E3779B97F4A7C15);
+    x = (x ^ (x >> 30)) * UINT64_C(0xBF58476D1CE4E5B9);
+    x = (x ^ (x >> 27)) * UINT64_C(0x94D049BB133111EB);
+    return x ^ (x >> 31);
+}
+
 DS2ChuzcState *ds2_chuzc_state_new(int32_t n_total) {
     if (n_total < 1) n_total = 1;
     DS2ChuzcState *st = (DS2ChuzcState *)calloc(1, sizeof(DS2ChuzcState));
@@ -134,7 +142,11 @@ void ds2_chuzc_state_free(DS2ChuzcState *st) {
 #ifdef LINPROGX_DS2_IFACE_H
 void *ds2_ratio_state_new(int32_t m, int32_t n_total) {
     (void)m;
-    return ds2_chuzc_state_new(n_total);
+    DS2ChuzcState *st = ds2_chuzc_state_new(n_total);
+    const char *seed = getenv("LINPROGX_DS2_BFRT_SEED");
+    if (st != NULL && seed != NULL && *seed != '\0')
+        st->tie_seed = strtoull(seed, NULL, 10);
+    return st;
 }
 
 void ds2_ratio_state_free(void *state) {
@@ -404,8 +416,11 @@ DS2Entering ds2_chuzc(const double *alpha_row, const int32_t *alpha_pattern,
                 best = cand[i].alpha;
                 bi = i;
             } else if (bi >= 0 && cand[i].alpha == best &&
-                       cand[i].col < cand[bi].col) {
-                bi = i; /* deterministic tie-break: lowest column index */
+                       ((st->tie_seed == 0 && cand[i].col < cand[bi].col) ||
+                        (st->tie_seed != 0 &&
+                         ds2_chuzc_tie_rank(st, cand[i].col) <
+                             ds2_chuzc_tie_rank(st, cand[bi].col)))) {
+                bi = i;
             }
         }
         if (bi >= 0 && best > final_compare) {
@@ -425,7 +440,12 @@ DS2Entering ds2_chuzc(const double *alpha_row, const int32_t *alpha_pattern,
                 best = cand[i].alpha;
                 break_index = i;
             } else if (break_index >= 0 && cand[i].alpha == best &&
-                       cand[i].col < cand[break_index].col) {
+                       ((st->tie_seed == 0 &&
+                         cand[i].col < cand[break_index].col) ||
+                        (st->tie_seed != 0 &&
+                         ds2_chuzc_tie_rank(st, cand[i].col) <
+                             ds2_chuzc_tie_rank(
+                                 st, cand[break_index].col)))) {
                 break_index = i;
             }
         }
