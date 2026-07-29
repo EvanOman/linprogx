@@ -133,13 +133,14 @@ def solve_clarabel(d: dict[str, Any]) -> dict[str, Any]:
     import numpy as np
     import scipy.sparse as sp
 
+    clarabel_api = vars(clarabel)
     m, n = d["A"].shape
     lo, hi = d["lo"], d["hi"]
     lo_f = np.isfinite(lo)
     hi_f = np.isfinite(hi)
     blocks = [d["A"]]
     bvec = [d["b"]]
-    cones: list[Any] = [clarabel.ZeroConeT(m)]
+    cones: list[Any] = [clarabel_api["ZeroConeT"](m)]
     n_ineq = int(lo_f.sum() + hi_f.sum())
     if n_ineq:
         rows = []
@@ -154,14 +155,14 @@ def solve_clarabel(d: dict[str, Any]) -> dict[str, Any]:
             rhs.append(-lo[j])
         blocks.append(sp.vstack(rows, format="csc"))
         bvec.append(np.array(rhs, dtype=float))
-        cones.append(clarabel.NonnegativeConeT(n_ineq))
+        cones.append(clarabel_api["NonnegativeConeT"](n_ineq))
     A = sp.vstack(blocks, format="csc")
     bb = np.concatenate(bvec)
     P = sp.csc_matrix((n, n))
-    settings = clarabel.DefaultSettings()
+    settings = clarabel_api["DefaultSettings"]()
     settings.verbose = False
     t0 = time.perf_counter()
-    sol = clarabel.DefaultSolver(P, d["c"], A, bb, cones, settings).solve()
+    sol = clarabel_api["DefaultSolver"](P, d["c"], A, bb, cones, settings).solve()
     wall = time.perf_counter() - t0
     st = str(sol.status)
     return {

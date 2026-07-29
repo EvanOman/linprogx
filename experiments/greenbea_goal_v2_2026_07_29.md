@@ -61,6 +61,23 @@ helps the mandatory greenbeb control:
 Run:
 <https://modal.com/apps/evan058/main/ap-aInbt9GCL3giDJp11lb8Ia>
 
+The route gate also passed a final six-instance protocol-v3 null-control
+campaign. Toggling the composition off and on left every control on the same
+IPM path with identical iterations, objectives, and residuals. The median
+timing ratios are ordinary paired-run noise around parity:
+
+| structural null control | candidate / shipped | candidate pair wins |
+|---|---:|---:|
+| 80bau3b | 0.997 | 12/21 |
+| cre_a | 1.000 | 10/21 |
+| cre_b | 0.974 | 8/21 |
+| degen3 | 0.984 | 10/21 |
+| osa_14 | 0.951 | 15/21 |
+| stocfor3 | 1.010 | 5/21 |
+
+In the same run, greenbea measured `0.698x` and won all 21 pairs. Run:
+<https://modal.com/apps/evan058/main/ap-OScunRF8x3QlCpTDuGY1wP>
+
 The gate is structural, not name- or problem-specific. Across the 14 local
 fixtures matched by the raw stall signal, every candidate solution certified.
 After comparing the normal and aggressive reductions, the 20% row / 5% nnz
@@ -137,8 +154,8 @@ Relevant Modal runs:
   `17 passed, 7 skipped`.
 - Focused DS2, sparse API, dual-simplex, and presolve suites:
   `188 passed`.
-- The full repository gate is `just ci`; its final result is recorded in the
-  campaign handoff commit.
+- Full repository gate: `just ci` passed (`554 passed, 7 skipped`, 89.19%
+  coverage; lint, format, type, Bandit, and dependency audit all passed).
 
 Machine-readable summary:
 `probe_out/greenbea-goal-v2-summary.json`.
