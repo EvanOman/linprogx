@@ -430,6 +430,10 @@ static PyObject *ds2_solve(
     pricing_state = ds2_pricing_state_new(m, n_total);
     ratio_state = ds2_ratio_state_new(m, n_total);
     states_created = 1;
+    if (ratio_state == NULL) {
+        PyErr_NoMemory();
+        goto done;
+    }
     for (int32_t k = 0; k < m; k++) weights[k] = 1.0;
     ds2_pricing_reset(pricing_state, weights, m, basis_is_logical);
 
@@ -499,6 +503,7 @@ static PyObject *ds2_solve(
             bound_status[j] = DS2_FREE; x_ext[j] = 0.0;
         }
     }
+    ds2_ratio_bounds_changed(ratio_state, lo_ext, hi_ext);
 
     /* ---- 4. the loop ----------------------------------------------------- */
     {
@@ -592,6 +597,7 @@ static PyObject *ds2_solve(
 
                     memcpy(lo_ext, lo_true, (size_t)n_total * sizeof(double));
                     memcpy(hi_ext, hi_true, (size_t)n_total * sizeof(double));
+                    ds2_ratio_bounds_changed(ratio_state, lo_ext, hi_ext);
 
                     /* Re-place every nonbasic against the TRUE bounds.  A
                      * column whose reduced cost still points at an infinite
@@ -751,6 +757,7 @@ static PyObject *ds2_solve(
                                 bound_status[j] = DS2_AT_HI; x_ext[j] = hi_ext[j];
                             }
                         }
+                        ds2_ratio_bounds_changed(ratio_state, lo_ext, hi_ext);
                         ds_phase = 1;
                         for (int32_t k = 0; k < m; k++) weights[k] = 1.0;
                         ds2_pricing_reset(pricing_state, weights, m, 0);
@@ -808,7 +815,9 @@ static PyObject *ds2_solve(
             }
 
             /* ---- 4d'. CHUZC ---- */
-            DS2Entering entering = ds2_chuzc(
+            ds2_ratio_prepare(ratio_state, leaving.violation,
+                              iters_since_refac);
+            DS2Entering entering = ds2_chuzc_core(
                 alpha_scratch, alpha_pattern, alpha_nnz, r_ext, bound_status,
                 lo_ext, hi_ext, leaving_sigma, DS2_DUAL_TOL, ratio_state);
 

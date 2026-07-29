@@ -47,6 +47,19 @@ void *ds2_ratio_state_new(int32_t m, int32_t n_total) {
 
 void ds2_ratio_state_free(void *state) { free(state); }
 
+void ds2_ratio_prepare(void *state, double delta, int32_t update_count) {
+    (void)state;
+    (void)delta;
+    (void)update_count;
+}
+
+void ds2_ratio_bounds_changed(void *state, const double *lo_ext,
+                              const double *hi_ext) {
+    (void)state;
+    (void)lo_ext;
+    (void)hi_ext;
+}
+
 DS2Entering ds2_chuzc(
     const double *alpha_row,
     const int32_t *alpha_pattern, int32_t alpha_nnz,
@@ -132,4 +145,16 @@ DS2Entering ds2_chuzc(
     out.theta_dual = -sigma * theta_eff;
     out.alpha_pivot = alpha_row[out.entering];
     return out;
+}
+
+DS2Entering ds2_chuzc_core(
+    const double *alpha_row,
+    const int32_t *alpha_pattern, int32_t alpha_nnz,
+    const double *r_ext, const int8_t *bound_status,
+    const double *lo_ext, const double *hi_ext,
+    int leaving_sigma, double dual_tol,
+    void *ratio_state) {
+    return ds2_chuzc(alpha_row, alpha_pattern, alpha_nnz, r_ext,
+                     bound_status, lo_ext, hi_ext, leaving_sigma, dual_tol,
+                     ratio_state);
 }

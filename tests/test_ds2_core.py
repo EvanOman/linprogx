@@ -73,6 +73,29 @@ class TestDs2RandomLPs:
 
 
 # ---------------------------------------------------------------------------
+# Component-A integration: BFRT changes bounds as well as the entering column,
+# so a standalone ratio-test replay is not enough to pin the core seam.
+# ---------------------------------------------------------------------------
+
+
+def test_bfrt_integrates_with_signed_reduced_cost_updates(monkeypatch) -> None:
+    monkeypatch.setenv("LINPROGX_DS2_BFRT", "1")
+    rng = np.random.RandomState(11037)
+    for trial in range(10):
+        m = rng.randint(5, 18)
+        n = m + rng.randint(3, 2 * m)
+        c, A, b, lo, hi = _random_feasible_lp(
+            m, n, rng, lo_min=-2.0, hi_max=4.0
+        )
+        ref = _solve_highs(c, A, b, lo, hi)
+        assert ref.status == 0, f"trial {trial}: HiGHS failed"
+        res = _make_csr(A).solve_eq_box_ds2(c, b, lo, hi, max_iter=20_000)
+        assert res["status"] == "optimal", f"trial {trial}: {res['status']}"
+        assert abs(res["objective"] - ref.fun) / (1.0 + abs(ref.fun)) < 1e-6
+        assert res["max_primal_residual"] < 1e-7
+
+
+# ---------------------------------------------------------------------------
 # The structures DS2 changes: one-sided and free columns have NO big-M bound,
 # so dual feasibility has to come from the phase-1 bound substitution.
 # ---------------------------------------------------------------------------

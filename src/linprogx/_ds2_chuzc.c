@@ -110,6 +110,7 @@ DS2ChuzcState *ds2_chuzc_state_new(int32_t n_total) {
     st->n_total = n_total;
     st->capacity = n_total;
     st->harris_delta = 1e-7;
+    st->expand_tau = 5e-10;
     st->group_cap = n_total + 2;
     st->cand = calloc((size_t)n_total, sizeof(DS2Cand));
     st->group = (int32_t *)calloc((size_t)st->group_cap, sizeof(int32_t));
@@ -129,6 +130,29 @@ void ds2_chuzc_state_free(DS2ChuzcState *st) {
     free(st->range);
     free(st);
 }
+
+#ifdef LINPROGX_DS2_IFACE_H
+void *ds2_ratio_state_new(int32_t m, int32_t n_total) {
+    (void)m;
+    return ds2_chuzc_state_new(n_total);
+}
+
+void ds2_ratio_state_free(void *state) {
+    ds2_chuzc_state_free((DS2ChuzcState *)state);
+}
+
+void ds2_ratio_prepare(void *state, double delta, int32_t update_count) {
+    DS2ChuzcState *st = (DS2ChuzcState *)state;
+    if (st == NULL) return;
+    st->delta = delta;
+    st->update_count = update_count;
+}
+
+void ds2_ratio_bounds_changed(void *state, const double *lo_ext,
+                              const double *hi_ext) {
+    ds2_chuzc_build_range((DS2ChuzcState *)state, lo_ext, hi_ext);
+}
+#endif
 
 void ds2_chuzc_invalidate_range(DS2ChuzcState *st) {
     if (st != NULL) st->range_valid = 0;
@@ -561,3 +585,99 @@ DS2Entering ds2_chuzc_harris_pattern(const double *alpha_row,
     return ds2_harris_finish(cand, cnt, r_ext, theta_min, st->harris_delta,
                              leaving_sigma, st);
 }
+
+#ifdef LINPROGX_DS2_IFACE_H
+static DS2Entering ds2_chuzc_core_harris(
+    const double *alpha_row,
+    const int32_t *alpha_pattern, int32_t alpha_nnz,
+    const double *r_ext, const int8_t *bound_status,
+    int leaving_sigma, void *ratio_state) {
+    DS2ChuzcState *st = (DS2ChuzcState *)ratio_state;
+    DS2Entering out = {-1, 0.0, 0.0, 0, st->flip_cols};
+    const double sigma = (double)leaving_sigma;
+    const double tau = st->expand_tau;
+    const double dtau = 5e-11;
+    st->expand_tau += dtau;
+    if (st->expand_tau > 1e-8) st->expand_tau = 5e-10;
+    st->n_call++;
+
+    double theta_max = HUGE_VAL;
+    for (int32_t t = 0; t < alpha_nnz; t++) {
+        const int32_t j = alpha_pattern[t];
+        const int8_t bs = bound_status[j];
+        if (bs == DS2_BOUND_BASIC || bs == DS2_BOUND_FIXED) continue;
+        const double a = sigma * alpha_row[j];
+        if (bs == DS2_BOUND_LO) {
+            if (a > -1e-9) continue;
+        } else if (bs == DS2_BOUND_HI) {
+            if (a < 1e-9) continue;
+        } else if (fabs(a) < 1e-9) {
+            continue;
+        }
+        const double bound = (fabs(r_ext[j]) + tau) / fabs(a);
+        if (bound < theta_max) theta_max = bound;
+    }
+    if (theta_max == HUGE_VAL) return out;
+
+    double best_alpha = 0.0;
+    double best_ratio = 0.0;
+    for (int32_t t = 0; t < alpha_nnz; t++) {
+        const int32_t j = alpha_pattern[t];
+        const int8_t bs = bound_status[j];
+        if (bs == DS2_BOUND_BASIC || bs == DS2_BOUND_FIXED) continue;
+        const double a = sigma * alpha_row[j];
+        if (bs == DS2_BOUND_LO) {
+            if (a > -1e-9) continue;
+        } else if (bs == DS2_BOUND_HI) {
+            if (a < 1e-9) continue;
+        } else if (fabs(a) < 1e-9) {
+            continue;
+        }
+        double ratio = -r_ext[j] / a;
+        if (ratio < 0.0) ratio = 0.0;
+        if (ratio > theta_max) continue;
+        const double abs_a = fabs(a);
+        if (abs_a > best_alpha ||
+            (abs_a == best_alpha && out.entering >= 0 && j < out.entering)) {
+            best_alpha = abs_a;
+            best_ratio = ratio;
+            out.entering = j;
+        }
+    }
+    if (out.entering < 0) return out;
+
+    const double floor_step = dtau / best_alpha;
+    if (best_ratio < floor_step) best_ratio = floor_step;
+    out.theta_dual = -sigma * best_ratio;
+    out.alpha_pivot = alpha_row[out.entering];
+    return out;
+}
+
+DS2Entering ds2_chuzc_core(
+    const double *alpha_row,
+    const int32_t *alpha_pattern, int32_t alpha_nnz,
+    const double *r_ext, const int8_t *bound_status,
+    const double *lo_ext, const double *hi_ext,
+    int leaving_sigma, double dual_tol,
+    void *ratio_state) {
+    const char *gate = getenv("LINPROGX_DS2_BFRT");
+    if (gate != NULL && atoi(gate) != 0) {
+        DS2Entering out =
+            ds2_chuzc(alpha_row, alpha_pattern, alpha_nnz, r_ext,
+                      bound_status, lo_ext, hi_ext, leaving_sigma, dual_tol,
+                      ratio_state);
+        /*
+         * Component A reports the nonnegative oriented breakpoint step
+         * -r/(sigma*alpha).  The core contract carries the signed reduced-cost
+         * update r/alpha, so convert at this integration boundary.
+         */
+        out.theta_dual *= -(double)leaving_sigma;
+        return out;
+    }
+    (void)lo_ext;
+    (void)hi_ext;
+    (void)dual_tol;
+    return ds2_chuzc_core_harris(alpha_row, alpha_pattern, alpha_nnz, r_ext,
+                                 bound_status, leaving_sigma, ratio_state);
+}
+#endif

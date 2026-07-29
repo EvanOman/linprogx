@@ -25,14 +25,23 @@ extern "C" {
 
 /* Bound-status codes.  These MUST agree with DS_BOUND_* in _csparse.c so
  * ds2_core can hand its own bound_status array straight through. */
+#ifdef LINPROGX_DS2_IFACE_H
+#define DS2_BOUND_LO DS2_AT_LO
+#define DS2_BOUND_HI DS2_AT_HI
+#define DS2_BOUND_FREE DS2_FREE
+#define DS2_BOUND_FIXED DS2_FIXED
+#define DS2_BOUND_BASIC DS2_BASIC
+#else
 #define DS2_BOUND_LO 0    /* nonbasic at lower bound   */
 #define DS2_BOUND_HI 1    /* nonbasic at upper bound   */
 #define DS2_BOUND_FREE 2  /* nonbasic free at zero     */
 #define DS2_BOUND_FIXED 3 /* lo == hi                  */
 #define DS2_BOUND_BASIC 4 /* in the basis              */
+#endif
 
 /* ---- the fixed contract (docs/DS2-REWRITE.md) ------------------------- */
 
+#ifndef LINPROGX_DS2_IFACE_H
 typedef struct {
     int32_t entering;         /* entering column, -1 if dual unbounded      */
     double theta_dual;        /* dual step                                  */
@@ -40,6 +49,7 @@ typedef struct {
     int32_t n_flip;           /* number of bound flips to apply             */
     const int32_t *flip_cols; /* columns to flip (owned by callee)          */
 } DS2Entering;
+#endif
 
 /* ---- component-A state ------------------------------------------------
  *
