@@ -146,14 +146,14 @@ static PyObject *ds2_solve(
     const int32_t n = (int32_t)n_s;
     const int32_t n_total = n + m;
 
-    const int opt_logical_basis = ds2_env_int("LINPROGX_DS2_LOGICAL_BASIS", 0);
+    const int opt_logical_basis = ds2_env_int("LINPROGX_DS2_LOGICAL_BASIS", 1);
     const int opt_phase1 = ds2_env_int("LINPROGX_DS2_PHASE1", 1);
     const int opt_report = ds2_env_int("LINPROGX_DS2_REPORT", 0);
-    const int opt_perturb = ds2_env_int("LINPROGX_DS2_PERTURB", 0);
-    const int opt_scale = ds2_env_int("LINPROGX_DS2_SCALE", 0);
+    const int opt_perturb = ds2_env_int("LINPROGX_DS2_PERTURB", 1);
+    const int opt_scale = ds2_env_int("LINPROGX_DS2_SCALE", 2);
     const int opt_dse_pair = ds2_env_int("LINPROGX_DS2_DSE_PAIR", 0);
     uint64_t perturb_rng = UINT64_C(0x9E3779B97F4A7C15);
-    int32_t refac_interval = (int32_t)ds2_env_int("LINPROGX_DS2_REFAC", 500);
+    int32_t refac_interval = (int32_t)ds2_env_int("LINPROGX_DS2_REFAC", 125);
     if (refac_interval < 1) refac_interval = 1;
 
     const Py_ssize_t max_iter =

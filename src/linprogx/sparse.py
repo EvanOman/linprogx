@@ -10,7 +10,7 @@ try:
 except ImportError:  # pragma: no cover - source tree before extension build
     CSRMatrix = None  # type: ignore[assignment]
 
-from linprogx.presolve import postsolve_x, presolve_matrix
+from linprogx.presolve import aggressive_aggregate_for_ds2, postsolve_x, presolve_matrix
 from linprogx.types import ObjectiveSense, Solution, Status
 
 SparseSense = Literal["<=", ">=", "="]
@@ -226,20 +226,49 @@ class SparseSolver:
         # normal IPM path unchanged.
         if algorithm == "auto" and chosen == "ipm":
             ps_rows, ps_cols = matrix.shape
-            if (
+            stall_risk = (
                 ps_rows <= 4000
                 and ps_cols <= 30_000
                 and _ipm_stall_risk(solve_c, solve_lo, solve_hi, matrix.nnz, ps_cols)
-            ):
-                ds_early = matrix.solve_eq_box_dual_simplex(
-                    solve_c,
-                    solve_b,
-                    solve_lo,
-                    solve_hi,
-                    max_iter=min(self.max_iterations, 50_000),
-                    leaving_rule=1,
-                    expand=1,
-                )
+            )
+            ds2_composition_route = False
+            if stall_risk and reduction is not None:
+                aggressive = aggressive_aggregate_for_ds2(reduction)
+                if aggressive is not None:
+                    reduction = aggressive
+                    matrix = (
+                        aggressive._matrix
+                        if aggressive._matrix is not None
+                        else csr_matrix(
+                            aggressive.rows,
+                            aggressive.cols,
+                            aggressive.indptr,
+                            aggressive.indices,
+                            aggressive.data,
+                        )
+                    )
+                    solve_c, solve_b = aggressive.c, aggressive.b
+                    solve_lo, solve_hi = aggressive.lo, aggressive.hi
+                    ds2_composition_route = True
+            if stall_risk:
+                if ds2_composition_route:
+                    ds_early = matrix.solve_eq_box_ds2(
+                        solve_c,
+                        solve_b,
+                        solve_lo,
+                        solve_hi,
+                        max_iter=min(self.max_iterations, 50_000),
+                    )
+                else:
+                    ds_early = matrix.solve_eq_box_dual_simplex(
+                        solve_c,
+                        solve_b,
+                        solve_lo,
+                        solve_hi,
+                        max_iter=min(self.max_iterations, 50_000),
+                        leaving_rule=1,
+                        expand=1,
+                    )
                 if ds_early["status"] == "optimal":
                     dx = [float(value) for value in ds_early["x"]]
                     if reduction is not None:

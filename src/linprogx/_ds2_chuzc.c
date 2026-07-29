@@ -681,7 +681,7 @@ DS2Entering ds2_chuzc_core(
     int leaving_sigma, double dual_tol,
     void *ratio_state) {
     const char *gate = getenv("LINPROGX_DS2_BFRT");
-    if (gate != NULL && atoi(gate) != 0) {
+    if (gate == NULL || atoi(gate) != 0) {
         DS2Entering out =
             ds2_chuzc(alpha_row, alpha_pattern, alpha_nnz, r_ext,
                       bound_status, lo_ext, hi_ext, leaving_sigma, dual_tol,
