@@ -565,7 +565,7 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
     # which is what keeps the reject-path pass cost negligible. The previous
     # max(256, nnz//40) cap was far too loose -- cre_a ran ~1026 aggregations before
     # crossing 418, making the reject path expensive.
-    fill_budget = 48
+    fill_budget = int(os.environ.get("LINPROGX_AGG_FILL_BUDGET", "48"))
     # Prefer the native (_csparse) aggregation re-stage: it reproduces the
     # agg_only Python path bit-for-bit (the reduced problem and the record
     # stream) but at ~10-30x lower pass cost, which is what lets the re-stage

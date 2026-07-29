@@ -79,6 +79,7 @@ typedef struct {
      * breakpoint walk terminate on it instead of stepping over it. */
     const uint8_t *no_flip;
     double harris_delta; /* baseline Harris band width (default 1e-7)     */
+    uint64_t tie_seed;   /* nonzero: deterministic hashed tie permutation */
 
     /* Cached u_j - l_j, +inf where the column must not flip.  Bounds change
      * only at a phase switch, so ds2_core builds this once per phase with
