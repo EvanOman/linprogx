@@ -38,50 +38,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef LINPROGX_DS2_IFACE_H
-/*
- * Minimal core adapter.  The standalone component's maintained candidate
- * list needs row-change notifications that the original shared contract
- * does not provide, so integration starts from its stateless dense reference
- * path.  Exact DSE is layered at this seam separately.
- */
-void *ds2_pricing_state_new(int32_t m, int32_t n_total) {
-    (void)m;
-    (void)n_total;
-    return NULL;
-}
-
-void ds2_pricing_state_free(void *state) { (void)state; }
-
-void ds2_pricing_update(
-    void *state,
-    int32_t leaving_pos, int32_t entering,
-    const double *rho, const int32_t *rho_pattern, int32_t rho_nnz,
-    const double *alpha_col, const int32_t *ftran_pattern, int32_t ftran_nnz,
-    double alpha_pivot, double *weights, int32_t m) {
-    (void)state;
-    (void)leaving_pos;
-    (void)entering;
-    (void)rho;
-    (void)rho_pattern;
-    (void)rho_nnz;
-    (void)alpha_col;
-    (void)ftran_pattern;
-    (void)ftran_nnz;
-    (void)alpha_pivot;
-    (void)weights;
-    (void)m;
-}
-
-void ds2_pricing_reset(void *state, double *weights, int32_t m,
-                       int logical_basis) {
-    (void)state;
-    (void)weights;
-    (void)m;
-    (void)logical_basis;
-}
-#endif
-
 /* A merit cutoff is only built for lists longer than this fraction of m, and
  * only when the pivot column is sparser than DS2_CUTOFF_MAX_DENSITY.
  *
@@ -129,6 +85,22 @@ struct DS2Pricing {
     int      valid;         /* 0 => recompute everything on next ds2_chuzr  */
 
     double  *scratch;       /* merits, for the cutoff selection             */
+
+    /* Core integration: exact Forrest-Goldfarb dual steepest-edge state. */
+    int      core_direct;
+    int      have_weights;
+    int      edge_update;
+    int      edge_period;
+    int64_t  edge_count;
+    double  *w_keep;
+    double  *tau;
+    int32_t *pat;
+    int32_t  n_total;
+    int32_t *enter_count;
+    int      churn_on;
+    double   churn_alpha;
+    int32_t  churn_cap;
+    int32_t  churn_dead;
 
     uint64_t rng;
     DS2ChuzrStats stats;
@@ -228,6 +200,10 @@ void ds2_pricing_free(DS2Pricing *st)
     free(st->ban);
     free(st->list);
     free(st->scratch);
+    free(st->w_keep);
+    free(st->tau);
+    free(st->pat);
+    free(st->enter_count);
     free(st);
 }
 
@@ -565,6 +541,7 @@ DS2Leaving ds2_chuzr_dense_reference(
     DS2Leaving out = {-1, 0, 0.0};
     double best = 0.0;
     for (int32_t k = 0; k < m; k++) {
+        if (weights != NULL && weights[k] >= DS2_WEIGHT_BANNED) continue;
         int32_t j = basis[k];
         double viol = 0.0;
         int sigma = 0;
@@ -609,6 +586,48 @@ DS2Leaving ds2_chuzr(
     }
     DS2Leaving out = {-1, 0, 0.0};
     if (st->m != m) return out;
+
+    if (st->core_direct) {
+        st->stats.calls++;
+        st->stats.dense_calls++;
+        st->stats.dense_scanned += m;
+        DS2Leaving direct = {-1, 0, 0.0};
+        double best = 0.0;
+        for (int32_t k = 0; k < m; k++) {
+            if (weights != NULL &&
+                weights[k] >= DS2_WEIGHT_BANNED) continue;
+            int sigma;
+            const double violation = ds2_violation_at(
+                basis, x_B, lo_ext, hi_ext, k, feas_tol, &sigma);
+            if (violation <= 0.0) continue;
+            double merit = violation * violation;
+            if (st->rule != DS2_RULE_DANTZIG && weights != NULL) {
+                double weight = weights[k];
+                if (weight < st->weight_floor)
+                    weight = st->weight_floor;
+                merit /= weight;
+            }
+            if (st->churn_on) {
+                const int32_t col = basis[k];
+                int32_t count =
+                    (col >= 0 && col < st->n_total)
+                        ? st->enter_count[col] : 0;
+                if (count > st->churn_cap) count = st->churn_cap;
+                if (count > st->churn_dead) {
+                    merit /=
+                        1.0 + st->churn_alpha *
+                                  (double)(count - st->churn_dead);
+                }
+            }
+            if (merit > best) {
+                best = merit;
+                direct.basis_pos = k;
+                direct.sigma = sigma;
+                direct.violation = violation;
+            }
+        }
+        return direct;
+    }
 
     st->stats.calls++;
     if (st->have_tol && feas_tol != st->feas_tol) st->valid = 0;
@@ -679,3 +698,157 @@ int32_t ds2_chuzr_audit(
     }
     return bad;
 }
+
+#ifdef LINPROGX_DS2_IFACE_H
+static int ds2_core_env_int(const char *name, int fallback) {
+    const char *value = getenv(name);
+    if (value == NULL || *value == '\0') return fallback;
+    return atoi(value);
+}
+
+static double ds2_core_env_double(const char *name, double fallback) {
+    const char *value = getenv(name);
+    if (value == NULL || *value == '\0') return fallback;
+    return atof(value);
+}
+
+void *ds2_pricing_state_new(int32_t m, int32_t n_total) {
+    int rule = ds2_core_env_int("LINPROGX_DS2_RULE", DS2_RULE_DANTZIG);
+    if (rule != DS2_RULE_DSE) rule = DS2_RULE_DANTZIG;
+    DS2Pricing *st = ds2_pricing_new(m, rule);
+    if (st == NULL) return NULL;
+    st->core_direct = 1;
+    st->edge_update =
+        ds2_core_env_int("LINPROGX_DS2_EDGE_UPDATE", 0);
+    st->edge_period =
+        ds2_core_env_int("LINPROGX_DS2_EDGE_PERIOD", 1);
+    if (st->edge_period < 1) st->edge_period = 1;
+    st->weight_floor = 1e-12;
+    st->w_keep = (double *)calloc((size_t)m, sizeof(double));
+    st->tau = (double *)calloc((size_t)m, sizeof(double));
+    st->pat = (int32_t *)calloc((size_t)m, sizeof(int32_t));
+    st->n_total = n_total;
+    st->churn_on =
+        ds2_core_env_int("LINPROGX_DS2_CHURN", 0) != 0;
+    st->churn_alpha =
+        ds2_core_env_double("LINPROGX_DS_CHURN_ALPHA", 1.0);
+    st->churn_cap = (int32_t)ds2_core_env_int(
+        "LINPROGX_DS_CHURN_CAP", INT32_MAX);
+    st->churn_dead = (int32_t)ds2_core_env_int(
+        "LINPROGX_DS_CHURN_DEADBAND", 0);
+    if (st->churn_on) {
+        st->enter_count = (int32_t *)calloc(
+            (size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
+    }
+    if (st->w_keep == NULL || st->tau == NULL || st->pat == NULL) {
+        ds2_pricing_free(st);
+        return NULL;
+    }
+    if (st->churn_on && st->enter_count == NULL) {
+        ds2_pricing_free(st);
+        return NULL;
+    }
+    return st;
+}
+
+void ds2_pricing_state_free(void *state) {
+    ds2_pricing_free((DS2Pricing *)state);
+}
+
+void ds2_pricing_reset(void *state, double *weights, int32_t m,
+                       int logical_basis, const DS2LinAlg *la) {
+    DS2Pricing *st = (DS2Pricing *)state;
+    if (st == NULL || st->m != m || weights == NULL) return;
+    ds2_chuzr_invalidate(st);
+    ds2_chuzr_clear_bans(st);
+    if (st->rule == DS2_RULE_DANTZIG) return;
+
+    if (!st->have_weights) {
+        if (logical_basis || la == NULL || la->btran_unit == NULL) {
+            for (int32_t k = 0; k < m; k++) st->w_keep[k] = 1.0;
+        } else {
+            memset(st->tau, 0, (size_t)m * sizeof(double));
+            for (int32_t k = 0; k < m; k++) {
+                const int32_t nnz =
+                    la->btran_unit(la->ctx, k, st->tau, st->pat);
+                double gamma = 0.0;
+                for (int32_t i = 0; i < nnz; i++) {
+                    const int32_t row = st->pat[i];
+                    const double value = st->tau[row];
+                    gamma += value * value;
+                    st->tau[row] = 0.0;
+                }
+                st->w_keep[k] = gamma > 1e-12 ? gamma : 1e-12;
+            }
+        }
+        st->have_weights = 1;
+    }
+    memcpy(weights, st->w_keep, (size_t)m * sizeof(double));
+}
+
+void ds2_pricing_update(
+    void *state,
+    int32_t leaving_pos, int32_t entering,
+    const double *rho, const int32_t *rho_pattern, int32_t rho_nnz,
+    const double *alpha_col, const int32_t *ftran_pattern, int32_t ftran_nnz,
+    double alpha_pivot, double *weights, int32_t m,
+    const DS2LinAlg *la) {
+    (void)entering;
+    DS2Pricing *st = (DS2Pricing *)state;
+    if (st != NULL && st->enter_count != NULL &&
+        entering >= 0 && entering < st->n_total) {
+        st->enter_count[entering]++;
+    }
+    if (st == NULL || st->m != m || st->rule == DS2_RULE_DANTZIG ||
+        weights == NULL || alpha_pivot == 0.0) {
+        return;
+    }
+
+    const double inv_pivot = 1.0 / alpha_pivot;
+    st->edge_count++;
+    if (st->edge_update == 1 ||
+        (st->edge_period > 1 &&
+         st->edge_count % st->edge_period != 0)) {
+        for (int32_t i = 0; i < ftran_nnz; i++) {
+            const int32_t k = ftran_pattern[i];
+            if (k == leaving_pos) continue;
+            const double ratio = alpha_col[k] * inv_pivot;
+            const double gamma = ratio * ratio;
+            if (gamma > st->w_keep[k]) {
+                st->w_keep[k] = gamma;
+                weights[k] = gamma;
+            }
+        }
+        double gamma_r = inv_pivot * inv_pivot;
+        if (gamma_r < 1e-12) gamma_r = 1e-12;
+        st->w_keep[leaving_pos] = gamma_r;
+        weights[leaving_pos] = gamma_r;
+        return;
+    }
+    if (la == NULL || la->ftran == NULL) return;
+
+    double gamma_r = 0.0;
+    for (int32_t i = 0; i < rho_nnz; i++) {
+        const double value = rho[rho_pattern[i]];
+        gamma_r += value * value;
+    }
+    if (gamma_r < 1e-12) gamma_r = 1e-12;
+    st->w_keep[leaving_pos] = gamma_r;
+
+    la->ftran(la->ctx, rho, st->tau);
+    for (int32_t i = 0; i < ftran_nnz; i++) {
+        const int32_t k = ftran_pattern[i];
+        if (k == leaving_pos) continue;
+        const double ratio = alpha_col[k] * inv_pivot;
+        double gamma = st->w_keep[k] - 2.0 * ratio * st->tau[k]
+                     + ratio * ratio * gamma_r;
+        if (gamma < 1e-12) gamma = 1e-12;
+        st->w_keep[k] = gamma;
+        weights[k] = gamma;
+    }
+    double new_gamma_r = gamma_r * inv_pivot * inv_pivot;
+    if (new_gamma_r < 1e-12) new_gamma_r = 1e-12;
+    st->w_keep[leaving_pos] = new_gamma_r;
+    weights[leaving_pos] = new_gamma_r;
+}
+#endif

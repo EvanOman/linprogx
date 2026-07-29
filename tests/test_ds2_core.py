@@ -84,15 +84,41 @@ def test_bfrt_integrates_with_signed_reduced_cost_updates(monkeypatch) -> None:
     for trial in range(10):
         m = rng.randint(5, 18)
         n = m + rng.randint(3, 2 * m)
-        c, A, b, lo, hi = _random_feasible_lp(
-            m, n, rng, lo_min=-2.0, hi_max=4.0
-        )
+        c, A, b, lo, hi = _random_feasible_lp(m, n, rng, lo_min=-2.0, hi_max=4.0)
         ref = _solve_highs(c, A, b, lo, hi)
         assert ref.status == 0, f"trial {trial}: HiGHS failed"
         res = _make_csr(A).solve_eq_box_ds2(c, b, lo, hi, max_iter=20_000)
         assert res["status"] == "optimal", f"trial {trial}: {res['status']}"
         assert abs(res["objective"] - ref.fun) / (1.0 + abs(ref.fun)) < 1e-6
         assert res["max_primal_residual"] < 1e-7
+
+
+def test_composed_dse_bfrt_pow2_is_oracle_correct(monkeypatch) -> None:
+    """Pin the source-informed DS2 composition at its Python-facing seam."""
+    monkeypatch.setenv("LINPROGX_DS2_LOGICAL_BASIS", "1")
+    monkeypatch.setenv("LINPROGX_DS2_RULE", "1")
+    monkeypatch.setenv("LINPROGX_DS2_BFRT", "1")
+    monkeypatch.setenv("LINPROGX_DS2_SCALE", "2")
+    monkeypatch.setenv("LINPROGX_DS2_REFAC", "125")
+    monkeypatch.setenv("LINPROGX_DS2_PERTURB", "1")
+
+    rng = np.random.RandomState(20260728)
+    c, A, b, lo, hi = _random_feasible_lp(40, 120, rng, lo_min=-4.0, hi_max=7.0)
+    # Exercise the power-of-two scaling path with a global conditioning range.
+    A[:, ::3] *= 1e3
+    x_feasible = np.minimum(np.maximum(rng.randn(A.shape[1]), lo), hi)
+    b = A @ x_feasible
+    ref = _solve_highs(c, A, b, lo, hi)
+    assert ref.status == 0
+
+    matrix = _make_csr(A)
+    first = matrix.solve_eq_box_ds2(c, b, lo, hi, max_iter=50_000)
+    second = matrix.solve_eq_box_ds2(c, b, lo, hi, max_iter=50_000)
+    assert first["status"] == second["status"] == "optimal"
+    assert first["iterations"] == second["iterations"]
+    assert first["objective"] == second["objective"]
+    assert abs(first["objective"] - ref.fun) / (1.0 + abs(ref.fun)) < 1e-6
+    assert first["max_primal_residual"] < 1e-6
 
 
 # ---------------------------------------------------------------------------
