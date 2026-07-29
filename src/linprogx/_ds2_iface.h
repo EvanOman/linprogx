@@ -134,6 +134,19 @@ DS2Entering ds2_chuzc(
     int leaving_sigma, double dual_tol,
     void *ratio_state);
 
+/*
+ * Core-facing dispatcher.  Component A keeps its fixed entry point as the
+ * standalone BFRT mechanism while this dispatcher makes integration
+ * experiments explicit and preserves the characterized Harris default.
+ */
+DS2Entering ds2_chuzc_core(
+    const double *alpha_row,
+    const int32_t *alpha_pattern, int32_t alpha_nnz,
+    const double *r_ext, const int8_t *bound_status,
+    const double *lo_ext, const double *hi_ext,
+    int leaving_sigma, double dual_tol,
+    void *ratio_state);
+
 /* ---- Component lifecycle and notification (core extensions) ----------
  * The fixed signatures take an opaque state pointer but say nothing about
  * where it comes from, and component B cannot maintain steepest-edge
@@ -145,6 +158,20 @@ void *ds2_pricing_state_new(int32_t m, int32_t n_total);
 void  ds2_pricing_state_free(void *state);
 void *ds2_ratio_state_new(int32_t m, int32_t n_total);
 void  ds2_ratio_state_free(void *state);
+
+/*
+ * Called before each ratio test with the two per-pivot inputs that do not fit
+ * the fixed ds2_chuzc signature.  `delta` is the magnitude of the leaving
+ * row's primal infeasibility and `update_count` is the current LU age.
+ */
+void ds2_ratio_prepare(void *state, double delta, int32_t update_count);
+
+/*
+ * Called after construction and whenever the working bounds change.  A
+ * component may cache column ranges here; the textbook stub is a no-op.
+ */
+void ds2_ratio_bounds_changed(void *state, const double *lo_ext,
+                              const double *hi_ext);
 
 /*
  * Called once per accepted pivot, AFTER the pivot row and entering column

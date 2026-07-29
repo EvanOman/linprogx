@@ -38,6 +38,50 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef LINPROGX_DS2_IFACE_H
+/*
+ * Minimal core adapter.  The standalone component's maintained candidate
+ * list needs row-change notifications that the original shared contract
+ * does not provide, so integration starts from its stateless dense reference
+ * path.  Exact DSE is layered at this seam separately.
+ */
+void *ds2_pricing_state_new(int32_t m, int32_t n_total) {
+    (void)m;
+    (void)n_total;
+    return NULL;
+}
+
+void ds2_pricing_state_free(void *state) { (void)state; }
+
+void ds2_pricing_update(
+    void *state,
+    int32_t leaving_pos, int32_t entering,
+    const double *rho, const int32_t *rho_pattern, int32_t rho_nnz,
+    const double *alpha_col, const int32_t *ftran_pattern, int32_t ftran_nnz,
+    double alpha_pivot, double *weights, int32_t m) {
+    (void)state;
+    (void)leaving_pos;
+    (void)entering;
+    (void)rho;
+    (void)rho_pattern;
+    (void)rho_nnz;
+    (void)alpha_col;
+    (void)ftran_pattern;
+    (void)ftran_nnz;
+    (void)alpha_pivot;
+    (void)weights;
+    (void)m;
+}
+
+void ds2_pricing_reset(void *state, double *weights, int32_t m,
+                       int logical_basis) {
+    (void)state;
+    (void)weights;
+    (void)m;
+    (void)logical_basis;
+}
+#endif
+
 /* A merit cutoff is only built for lists longer than this fraction of m, and
  * only when the pivot column is sparser than DS2_CUTOFF_MAX_DENSITY.
  *

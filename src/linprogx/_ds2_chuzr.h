@@ -56,11 +56,13 @@ extern "C" {
 
 /* ---- The fixed interface from docs/DS2-REWRITE.md --------------------- */
 
+#ifndef LINPROGX_DS2_IFACE_H
 typedef struct {
     int32_t basis_pos;   /* leaving basis position, -1 if none (optimal)   */
     int     sigma;       /* +1 if x_B below lower, -1 if above upper       */
     double  violation;   /* the bound violation that selected it           */
 } DS2Leaving;
+#endif
 
 /* Opaque pricing state; component B (this one) owns it. */
 typedef struct DS2Pricing DS2Pricing;
