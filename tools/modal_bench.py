@@ -522,6 +522,8 @@ def bench(
         out["rows"] = rows
 
     elif mode == "paired":
+        env_a = env_a or {}
+        out["env_a"] = env_a
         paired: dict[str, Any] = {}
         for inst in insts:
             fixture = Path(FIXTURES_DIR) / f"{inst}.mat"
@@ -533,7 +535,7 @@ def bench(
             lx_backend = None
             for pair_index in range(pairs):
                 # interleaved: lx then HiGHS, back to back
-                lx = _run_cell(workdir, fixture, "linprogx")
+                lx = _run_cell(workdir, fixture, "linprogx", env_a)
                 hx = _run_cell(workdir, fixture, "highs")
                 if lx.get("status") == "optimal":
                     lx_secs.append(float(lx["seconds"]))
@@ -750,10 +752,10 @@ def main(
             raise SystemExit("--hosts must be >= 1")
         if hosts > 1 and mode not in {"paired", "envab"}:
             raise SystemExit("--hosts > 1 is only supported for --mode paired")
-        if mode == "envab":
+        if mode in {"paired", "envab"}:
             try:
                 env_a_overrides = _parse_env_overrides(env_a)
-                env_b_overrides = _parse_env_overrides(env_b)
+                env_b_overrides = _parse_env_overrides(env_b) if mode == "envab" else {}
             except ValueError as exc:
                 raise SystemExit(str(exc)) from exc
         else:
@@ -776,7 +778,19 @@ def main(
                     for _ in range(hosts)
                 ]
             else:
-                calls = [(ref, inst_list, pairs, mode, use_snapshot, True) for _ in range(hosts)]
+                calls = [
+                    (
+                        ref,
+                        inst_list,
+                        pairs,
+                        mode,
+                        use_snapshot,
+                        True,
+                        env_a_overrides,
+                        {},
+                    )
+                    for _ in range(hosts)
+                ]
             host_results: list[dict[str, Any]] = []
             for idx, host_result in enumerate(bench.starmap(calls)):
                 host_result["host_index"] = idx
@@ -798,8 +812,9 @@ def main(
                 "host_results": host_results,
                 "v3": v3,
             }
-            if mode == "envab":
+            if mode in {"paired", "envab"}:
                 result["env_a"] = env_a_overrides
+            if mode == "envab":
                 result["env_b"] = env_b_overrides
             blob = json.dumps(result, indent=2, default=str)
             print(blob)
@@ -815,6 +830,8 @@ def main(
             "mode": mode,
             "use_snapshot": use_snapshot,
         }
+        if mode == "paired":
+            bench_kwargs["env_a"] = env_a_overrides
         if mode == "envab":
             bench_kwargs["env_a"] = env_a_overrides
             bench_kwargs["env_b"] = env_b_overrides
