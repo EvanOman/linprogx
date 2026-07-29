@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import time
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -14,6 +15,10 @@ from linprogx.presolve import aggressive_aggregate_for_ds2, postsolve_x, presolv
 from linprogx.types import ObjectiveSense, Solution, Status
 
 SparseSense = Literal["<=", ">=", "="]
+
+
+def _ds2_composition_enabled() -> bool:
+    return os.environ.get("LINPROGX_DS2_COMPOSITION", "1") != "0"
 
 
 def _max_equality_residual(matrix: Any, x: list[float], b: list[float]) -> float:
@@ -232,7 +237,7 @@ class SparseSolver:
                 and _ipm_stall_risk(solve_c, solve_lo, solve_hi, matrix.nnz, ps_cols)
             )
             ds2_composition_route = False
-            if stall_risk and reduction is not None:
+            if stall_risk and reduction is not None and _ds2_composition_enabled():
                 aggressive = aggressive_aggregate_for_ds2(reduction)
                 if aggressive is not None:
                     reduction = aggressive
