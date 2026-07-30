@@ -7,7 +7,10 @@ cd "$dir"
 for p in lp_ken_18 lp_pds_20 lp_ken_13 lp_stocfor3 lp_pds_10 lp_ken_11 lp_osa_60 \
          lp_cre_b lp_cre_d lp_qap15 lp_osa_30 lp_cre_a lp_qap12 lp_maros_r7 \
          lp_fit2p lp_ken_07 lp_greenbea lp_osa_14 lp_80bau3b lp_d2q06c \
-         lp_pilot87 lp_degen3 lp_truss lp_woodw; do
+         lp_pilot87 lp_degen3 lp_truss lp_woodw \
+         lp_25fv47 lp_agg2 lp_agg3 lp_bnl2 lp_cycle lp_degen2 lp_fffff800 \
+         lp_fit1p lp_ganges lp_greenbeb lp_israel lp_pilot lp_sierra \
+         lp_stocfor2 lp_tuff; do
   [ -f "$p.mat" ] || curl -sL -o "$p.mat" "https://sparse.tamu.edu/mat/LPnetlib/$p.mat" &
 done
 wait
