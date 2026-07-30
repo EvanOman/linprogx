@@ -11,20 +11,20 @@ It solves continuous linear programs with maximization or minimization objective
 
 This repo is a compact LP solver built as a benchmarkable artifact: a from-scratch two-phase simplex implementation, a sparse solver portfolio (multi-pass presolve + native interior point method + restarted PDHG + dual simplex with automatic routing), C accelerators with AVX2 kernels and OpenBLAS-backed supernodal Cholesky, Python and CLI interfaces, 16 hand-authored LP examples, 8 standardized Klee-Minty stress cases, and test-time correctness checks against SciPy/HiGHS and Clarabel.
 
-On the 24-instance SuiteSparse LPnetlib suite, linprogx now solves every
-instance and **wins all 24 head-to-head cells against HiGHS**. The board of
-record is **24W-0P-0L**. The final cell, greenbea, measures 0.986x HiGHS across
-three clean cloud hosts, with every host median below parity. Other highlights
-include qap12 at more than 50x faster, fit2p and truss at roughly 13-20x
-faster, osa_60 at roughly 3x faster, and pds_20 at roughly 2x faster.
+On an expanded 39-instance SuiteSparse LPnetlib benchmark, linprogx solves all
+39 problems and is the fastest solver on 33. Its certified board against HiGHS
+is **33W-0P-6L**. In the three-way sweep, linprogx beats Clarabel on 35 of
+Clarabel's 38 completed cases. The portfolio reaches those results through 24
+IPM routes, 11 simplex routes, and 4 PDHG routes.
 
-The benchmark uses seven interleaved pairs on each of three AWS hosts and takes
-the median of the three host-level ratios. Every accepted result is checked in
-the original problem units at the fixed `eps=2e-5` tolerance, with full KKT or
-explicit Lagrangian dual-bound certificates. The solver uses global structural
-rules with no instance names or per-problem parameter tuning. The
-[LPnetlib methodology and results](#linprogx-wins-all-24-lpnetlib-cells) are
-documented below.
+The 15 new cases were selected for structural and route diversity before they
+were timed. Each received seven paired linprogx/HiGHS trials on three
+independent AWS hosts. Every accepted result is checked in the original
+problem units at the fixed `eps=2e-5` tolerance, with KKT or explicit
+Lagrangian dual-bound certificates. The solver uses global structural rules
+with no fixture names or per-problem parameter tuning. The
+[LPnetlib methodology and results](#39-case-lpnetlib-benchmark-33-wins-and-full-coverage)
+are documented below.
 
 ## What It Does
 
@@ -501,55 +501,87 @@ equality-plus-bounds LPs. It runs a three-stage pipeline, all dependency-free:
      route that closes degenerate basis-method instances (greenbea-class)
      where the IPM's dual certificate stalls.
 
-### Generalization check
+### 39-case LPnetlib benchmark: 33 wins and full coverage
 
-The portfolio was validated on four Netlib instances that were never used
-during development (`experiments/generalization_bench.py`): 25FV47, GANGES,
-STOCFOR2, and PDS-06 all solve to optimal with residuals between 1.9e-5 and
-1.7e-12, beating Clarabel on three of four and trading blows with HiGHS.
-
-### linprogx wins all 24 LPnetlib cells
-
-A full sweep over the SuiteSparse LPnetlib collection — the same Netlib
-family used in the Clarabel and HiGHS benchmark papers, including the
-Kennington set — is recorded in [assets/lpnetlib_suite.md](assets/lpnetlib_suite.md),
-with the local harness in `experiments/suite_bench.py` and the scoreboard
-protocol in `tools/modal_bench.py`.
-
-The board of record, updated 2026-07-29, is **24W-0P-0L against HiGHS**:
+The expanded benchmark adds 15 fixtures to the original 24-cell board:
+25FV47, AGG2, AGG3, BNL2, CYCLE, DEGEN2, FFFFF800, FIT1P, GANGES, GREENBEB,
+ISRAEL, PILOT, SIERRA, STOCFOR2, and TUFF. They were chosen before timing to
+broaden the mix of degeneracy, network structure, bounded-variable simplex,
+and interior-point routes. The solver configuration stayed fixed across all
+39 cases.
 
 | Result | Measurement |
 | --- | ---: |
-| Head-to-head cells won | **24 / 24** |
-| linprogx coverage | **24 / 24** |
-| HiGHS coverage | 23 / 24 (qap15 timeout) |
-| Clarabel coverage | 23 / 24 (ken_18 reported `DualInfeasible`) |
-| Final greenbea ratio | **0.986x HiGHS** |
-| greenbea host medians | 0.995x, 0.942x, 0.986x |
-| greenbea pair wins | 15 / 21 |
-| greenbea objective | -72,555,248.12984599 |
-| greenbea max equality residual | 1.46e-8 |
+| Certified board against HiGHS | **33W-0P-6L** |
+| New paired cases | **9W-6L** |
+| New cases won on all 21 pairs | **7 / 15** |
+| linprogx optimal solves | **39 / 39** |
+| HiGHS optimal solves | 38 / 39 (`qap15` timed out) |
+| Clarabel optimal solves | 38 / 39 (`ken_18` reported `DualInfeasible`) |
+| Fastest solver by case | **linprogx 33**, HiGHS 4, Clarabel 2 |
+| linprogx wins vs completed Clarabel cases | **35 / 38** |
+| Routes selected | 24 IPM, 11 simplex, 4 PDHG |
+| New-case max equality residual | 6.85e-7 |
+| New-case max relative objective delta | 2.65e-6 |
 
-The first 23 wins retain their established protocol-v3 measurements. The final
-greenbea cell was measured directly against a fresh HiGHS baseline on the
-shipping implementation. No historical ratio was combined with a later A/B
-gain.
+![LPnetlib benchmark overview](https://raw.githubusercontent.com/EvanOman/linprogx/main/assets/lpnetlib_39_overview.png)
 
-#### The benchmark pairs each solver on three clean hosts
+The speedup chart uses competitor time divided by linprogx time. Points to the
+right of 1.0 favor linprogx; the six cases to the left against HiGHS are the
+six losses on the certified board.
 
-Protocol v3 runs on three clean AWS hosts in `us-west-2`. Each host executes
-seven interleaved linprogx/HiGHS pairs against the same loaded fixture. The
-order alternates within the run so startup effects and machine drift do not
-consistently favor either solver. A host contributes its median runtime ratio,
-then the board takes the median of those three host medians. The greenbea
-certification ran at load average 0.00 on all three hosts, and all three host
-medians favored linprogx.
+![LPnetlib runtime speedups](https://raw.githubusercontent.com/EvanOman/linprogx/main/assets/lpnetlib_39_speedups.png)
+
+The complete per-case table is in
+[assets/lpnetlib_39_results.md](assets/lpnetlib_39_results.md). Compact
+chart data lives in
+[assets/lpnetlib_39_summary.json](assets/lpnetlib_39_summary.json), and the
+raw Modal outputs are preserved as
+[suite data](assets/modal_bench_c984f7fd5a33_suite_hosts3.json) and
+[paired data](assets/modal_bench_c984f7fd5a33_paired_hosts3.json).
+
+#### Two measurements answer two different questions
+
+The three-way suite asks whether each solver finishes and how its wall time
+scales across the full set. Each of three independent Modal hosts runs
+linprogx, HiGHS, and Clarabel once per fixture in isolated worker processes.
+The table and charts use the median of those three host times. This sweep
+contains 351 timed solves and supplies the coverage, fastest-solver, and
+Clarabel comparisons.
+
+The certified HiGHS board uses a stricter paired protocol. For each new
+fixture, each host runs seven back-to-back linprogx/HiGHS pairs. A host
+contributes the ratio of its two median times, then the reported cell is the
+median of the three host ratios. The new campaign contains 315 paired
+comparisons, or 630 timed solves. Seven wins were unanimous at 21/21 pairs:
+AGG2, AGG3, CYCLE, FFFFF800, FIT1P, ISRAEL, and TUFF. STOCFOR2 won 20/21 and
+PILOT won 18/21. GANGES is reported as a loss because its median host ratio
+favored HiGHS by 7.1%, even though one host favored linprogx.
+
+Protocol v3 runs CPU-only on clean AWS hosts in `us-west-2`, with Python 3.12,
+the exact dependency versions in `uv.lock`, and OpenBLAS for linprogx's dense
+tail factorization. Solver setup and fixture loading happen before the timed
+solve. The source snapshot is commit `c984f7fd5a33`.
 
 Timing never decides correctness. Before a result can enter the board, linprogx
 reconstructs the solution through presolve and checks the objective, equality
 residual, bound violation, and optimality certificate in the original problem
 units. The public tolerance remains `eps=2e-5`. Failed certificates remain
-failed solves even when the reported objective looks right.
+failed solves even when the reported objective looks right. Across the 15 new
+fixtures, the largest equality residual is 6.85e-7 and the largest relative
+objective difference from either external solver is 2.65e-6.
+
+Regenerate the table and charts from the raw artifacts:
+
+```bash
+uv run python tools/build_lpnetlib_report.py \
+  assets/modal_bench_c984f7fd5a33_suite_hosts3.json \
+  --paired assets/modal_bench_c984f7fd5a33_paired_hosts3.json
+```
+
+The original 24 wins retain their established protocol-v3 measurements. The
+15 new cases use the same shipping solver and paired protocol. No historical
+ratio was combined with a later A/B gain.
 
 #### The final win uses a global structural gate
 

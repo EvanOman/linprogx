@@ -58,7 +58,7 @@ USAGE
       --ref <sha> --instances lp_woodw --pairs 3
 
   # full expanded suite (39 instances, lx/highs/clarabel) on 3 hosts
-  uvx modal run tools/modal_bench.py --action bench --mode suite --ref <sha>
+  uvx modal run tools/modal_bench.py --action bench --mode suite --ref <sha> \
       --hosts 3
 
   # certified knife-edge paired verdicts
