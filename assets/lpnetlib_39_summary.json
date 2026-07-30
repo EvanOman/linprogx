@@ -1,0 +1,1132 @@
+{
+  "accuracy": {
+    "max_linprogx_residual": 1.9693812646437436e-05,
+    "max_relative_objective_delta": {
+      "clarabel": 0.0012799314948645293,
+      "highs": 2.3791548254580992e-05
+    }
+  },
+  "cases": 39,
+  "coverage": {
+    "clarabel": 38,
+    "highs": 38,
+    "linprogx": 39
+  },
+  "fastest": {
+    "clarabel": 2,
+    "highs": 4,
+    "linprogx": 33
+  },
+  "paired_new_cases": {
+    "cases": 15,
+    "losses": 6,
+    "wins": 9
+  },
+  "protocol": {
+    "paired": "median of three host medians, seven interleaved pairs per host",
+    "suite": "median of one solve on each of three independent Modal hosts"
+  },
+  "routes": {
+    "ipm": 24,
+    "pdhg": 4,
+    "simplex": 11
+  },
+  "rows": [
+    {
+      "instance": "lp_25fv47",
+      "iterations": 6948,
+      "linprogx_residual": 4.547473508864641e-12,
+      "paired_linprogx_over_highs": 3.530948425466534,
+      "paired_trials": 21,
+      "paired_verdict": "highs_faster",
+      "paired_wins": 0,
+      "relative_objective_delta": {
+        "clarabel": 1.1343109387518268e-06,
+        "highs": 3.3061438660403526e-16
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 0.17674895408217856,
+        "highs": 0.2810247049848397
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.14799338199998147,
+        "highs": 0.23530434300005254,
+        "linprogx": 0.8373083889999862
+      }
+    },
+    {
+      "instance": "lp_80bau3b",
+      "iterations": 44,
+      "linprogx_residual": 1.390167497817484e-11,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 7.628191624584847e-08,
+        "highs": 2.15504880513337e-09
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 2.3408489571683075,
+        "highs": 1.3469244870232628
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.4826428860000007,
+        "highs": 0.2777127159999999,
+        "linprogx": 0.2061828400000003
+      }
+    },
+    {
+      "instance": "lp_agg2",
+      "iterations": 274,
+      "linprogx_residual": 2.3283064365386963e-10,
+      "paired_linprogx_over_highs": 0.36438469935294654,
+      "paired_trials": 21,
+      "paired_verdict": "lx_faster",
+      "paired_wins": 21,
+      "relative_objective_delta": {
+        "clarabel": 2.606985048314191e-08,
+        "highs": 5.52187931590529e-16
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 6.193542575949382,
+        "highs": 2.646931087965911
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.06405162299995482,
+        "highs": 0.027373709000016788,
+        "linprogx": 0.010341678000031607
+      }
+    },
+    {
+      "instance": "lp_agg3",
+      "iterations": 272,
+      "linprogx_residual": 2.255546860396862e-10,
+      "paired_linprogx_over_highs": 0.3716808332705507,
+      "paired_trials": 21,
+      "paired_verdict": "lx_faster",
+      "paired_wins": 21,
+      "relative_objective_delta": {
+        "clarabel": 6.60880954159978e-08,
+        "highs": 1.445014901659825e-15
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 5.564819633838659,
+        "highs": 2.5959995249401686
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.05912864600009016,
+        "highs": 0.02758363200007352,
+        "linprogx": 0.010625437999919995
+      }
+    },
+    {
+      "instance": "lp_bnl2",
+      "iterations": 63,
+      "linprogx_residual": 6.601652557947091e-11,
+      "paired_linprogx_over_highs": 2.6774571906185614,
+      "paired_trials": 21,
+      "paired_verdict": "highs_faster",
+      "paired_wins": 0,
+      "relative_objective_delta": {
+        "clarabel": 2.003243623022498e-06,
+        "highs": 1.101511780756794e-08
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 6.242648800098288,
+        "highs": 0.42049665401869246
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 1.755566454000018,
+        "highs": 0.11825265899994974,
+        "linprogx": 0.28122140300001774
+      }
+    },
+    {
+      "instance": "lp_cre_a",
+      "iterations": 34,
+      "linprogx_residual": 4.462208380573429e-12,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 7.522904355664948e-06,
+        "highs": 7.558944536403051e-06
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 1.4855785575518092,
+        "highs": 1.0058534308423734
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.2241799680000014,
+        "highs": 0.15178745599999743,
+        "linprogx": 0.1509041489999987
+      }
+    },
+    {
+      "instance": "lp_cre_b",
+      "iterations": 67,
+      "linprogx_residual": 8.005997914518618e-07,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 5.410212216267837e-07,
+        "highs": 5.604108581019401e-07
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 14.254774786671852,
+        "highs": 1.5432476513740643
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 23.664255032999996,
+        "highs": 2.5619349689999993,
+        "linprogx": 1.6600932240000006
+      }
+    },
+    {
+      "instance": "lp_cre_d",
+      "iterations": 71,
+      "linprogx_residual": 1.4097167877480388e-11,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 1.606036326220992e-08,
+        "highs": 1.7149172000819904e-08
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 14.749990969980418,
+        "highs": 1.0427706339127232
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 21.065244842,
+        "highs": 1.4892360790000012,
+        "linprogx": 1.4281530670000109
+      }
+    },
+    {
+      "instance": "lp_cycle",
+      "iterations": 1046,
+      "linprogx_residual": 3.637978807091713e-12,
+      "paired_linprogx_over_highs": 0.42290787519001655,
+      "paired_trials": 21,
+      "paired_verdict": "lx_faster",
+      "paired_wins": 21,
+      "relative_objective_delta": {
+        "clarabel": 7.3691691712734226e-09,
+        "highs": 0.0
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 2.8554443689598243,
+        "highs": 2.3639641164554774
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.31627145400000245,
+        "highs": 0.2618346819999715,
+        "linprogx": 0.11076085299998795
+      }
+    },
+    {
+      "instance": "lp_d2q06c",
+      "iterations": 47,
+      "linprogx_residual": 3.94094703537462e-08,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 8.364510142614828e-07,
+        "highs": 1.1489159649595164e-10
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 12.676076743759605,
+        "highs": 2.7327315238162986
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 5.430064837000003,
+        "highs": 1.1706231869999897,
+        "linprogx": 0.4283710919999919
+      }
+    },
+    {
+      "instance": "lp_degen2",
+      "iterations": 1453,
+      "linprogx_residual": 4.270195308464508e-15,
+      "paired_linprogx_over_highs": 3.6197111458837306,
+      "paired_trials": 21,
+      "paired_verdict": "highs_faster",
+      "paired_wins": 0,
+      "relative_objective_delta": {
+        "clarabel": 4.422431913466973e-11,
+        "highs": 0.0
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 0.23099303661536963,
+        "highs": 0.26782558155299124
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.025328382999987298,
+        "highs": 0.02936707099991054,
+        "linprogx": 0.10964998500003276
+      }
+    },
+    {
+      "instance": "lp_degen3",
+      "iterations": 17,
+      "linprogx_residual": 1.981270280282388e-06,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 3.610273442604018e-07,
+        "highs": 3.612116690669336e-07
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 4.091977150905269,
+        "highs": 1.04273085229323
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 1.0665995419999916,
+        "highs": 0.27179434499998933,
+        "linprogx": 0.2606562800000063
+      }
+    },
+    {
+      "instance": "lp_fffff800",
+      "iterations": 345,
+      "linprogx_residual": 5.820766091346741e-11,
+      "paired_linprogx_over_highs": 0.5740043858231142,
+      "paired_trials": 21,
+      "paired_verdict": "lx_faster",
+      "paired_wins": 21,
+      "relative_objective_delta": {
+        "clarabel": 1.068451936481297e-06,
+        "highs": 4.190016304276709e-16
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 6.806804401882636,
+        "highs": 1.713469988066884
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.10323303699999542,
+        "highs": 0.025986747999922954,
+        "linprogx": 0.015166152999995575
+      }
+    },
+    {
+      "instance": "lp_fit1p",
+      "iterations": 14,
+      "linprogx_residual": 6.847571611956482e-07,
+      "paired_linprogx_over_highs": 0.25665590115729653,
+      "paired_trials": 21,
+      "paired_verdict": "lx_faster",
+      "paired_wins": 21,
+      "relative_objective_delta": {
+        "clarabel": 2.652368944413495e-06,
+        "highs": 2.6489552764808732e-06
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 2.7188699345636427,
+        "highs": 3.855864847982735
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.04386144599993713,
+        "highs": 0.06220371400002023,
+        "linprogx": 0.01613223399999697
+      }
+    },
+    {
+      "instance": "lp_fit2p",
+      "iterations": 19,
+      "linprogx_residual": 2.904589361927298e-07,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 5.119012488247597e-06,
+        "highs": 5.118548778192667e-06
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 3.5689930914639163,
+        "highs": 11.760514797971341
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.40770928999999967,
+        "highs": 1.3434800840000065,
+        "linprogx": 0.11423650300000077
+      }
+    },
+    {
+      "instance": "lp_ganges",
+      "iterations": 16,
+      "linprogx_residual": 3.82840426027542e-11,
+      "paired_linprogx_over_highs": 1.0709372727275657,
+      "paired_trials": 21,
+      "paired_verdict": "highs_faster",
+      "paired_wins": 7,
+      "relative_objective_delta": {
+        "clarabel": 1.2239881188659092e-06,
+        "highs": 1.1963401732948314e-06
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 2.5383217176638473,
+        "highs": 0.9271186214562457
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.08827923000001192,
+        "highs": 0.032243870999991486,
+        "linprogx": 0.034778581999944436
+      }
+    },
+    {
+      "instance": "lp_greenbea",
+      "iterations": 2424,
+      "linprogx_residual": 1.458272436138941e-08,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 0.0012799314948645293,
+        "highs": 8.215070075802274e-16
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 11.604970520148264,
+        "highs": 1.0034489127102764
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 4.332118285000007,
+        "highs": 0.37458599100000356,
+        "linprogx": 0.37329851699999494
+      }
+    },
+    {
+      "instance": "lp_greenbeb",
+      "iterations": 4320,
+      "linprogx_residual": 1.1327605520250472e-11,
+      "paired_linprogx_over_highs": 1.375663480117323,
+      "paired_trials": 21,
+      "paired_verdict": "highs_faster",
+      "paired_wins": 0,
+      "relative_objective_delta": {
+        "clarabel": 4.140599811663808e-07,
+        "highs": 0.0
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 7.419606524150915,
+        "highs": 0.7252022666557171
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 6.520599207999908,
+        "highs": 0.6373320889999832,
+        "linprogx": 0.8788335590000997
+      }
+    },
+    {
+      "instance": "lp_israel",
+      "iterations": 234,
+      "linprogx_residual": 1.1641532182693481e-10,
+      "paired_linprogx_over_highs": 0.5121701423738219,
+      "paired_trials": 21,
+      "paired_verdict": "lx_faster",
+      "paired_wins": 21,
+      "relative_objective_delta": {
+        "clarabel": 9.665537657082857e-08,
+        "highs": 2.5966875397785134e-16
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 1.6267735935956902,
+        "highs": 1.969927788200748
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.01193072499995651,
+        "highs": 0.014447411000105603,
+        "linprogx": 0.007333979999998519
+      }
+    },
+    {
+      "instance": "lp_ken_07",
+      "iterations": 15,
+      "linprogx_residual": 1.4036163520358969e-07,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 5.6944159690909475e-06,
+        "highs": 5.694348924466137e-06
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 3.11339843241563,
+        "highs": 2.38038792759837
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.09467829999999822,
+        "highs": 0.07238748500000725,
+        "linprogx": 0.030409952999988832
+      }
+    },
+    {
+      "instance": "lp_ken_11",
+      "iterations": 22,
+      "linprogx_residual": 1.9693812646437436e-05,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 6.437320609501145e-06,
+        "highs": 6.437268364836559e-06
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 3.1954003630619012,
+        "highs": 1.5746436283761343
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.9048854320000004,
+        "highs": 0.44591347499999756,
+        "linprogx": 0.2831837419999914
+      }
+    },
+    {
+      "instance": "lp_ken_13",
+      "iterations": 26,
+      "linprogx_residual": 2.58827640209347e-07,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 4.389620072777637e-06,
+        "highs": 4.389437076129703e-06
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 3.445529363596106,
+        "highs": 1.9551524009678387
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 2.299235637999999,
+        "highs": 1.3046924299999887,
+        "linprogx": 0.6673098369999906
+      }
+    },
+    {
+      "instance": "lp_ken_18",
+      "iterations": 34,
+      "linprogx_residual": 1.4835892216069624e-05,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": null,
+        "highs": 9.796732193261165e-06
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": null,
+        "highs": 2.229716536052524
+      },
+      "statuses": {
+        "clarabel": "incomplete",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": null,
+        "highs": 12.892743356000011,
+        "linprogx": 5.782234265
+      }
+    },
+    {
+      "instance": "lp_maros_r7",
+      "iterations": 20,
+      "linprogx_residual": 2.785895958368201e-10,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 1.123517157200936e-08,
+        "highs": 5.966331914251848e-10
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 4.614814344107103,
+        "highs": 1.389896708524584
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 3.3533280080000054,
+        "highs": 1.0099603610000258,
+        "linprogx": 0.7266441849999978
+      }
+    },
+    {
+      "instance": "lp_osa_14",
+      "iterations": 55,
+      "linprogx_residual": 6.492371085187187e-10,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 3.3177921849285194e-08,
+        "highs": 1.5211440831439585e-07
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 2.713344586500764,
+        "highs": 1.257144354429282
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 2.8460462740000025,
+        "highs": 1.3186275799999976,
+        "linprogx": 1.0489070529999935
+      }
+    },
+    {
+      "instance": "lp_osa_30",
+      "iterations": 45,
+      "linprogx_residual": 1.8408172763884068e-09,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 1.6327364873457404e-05,
+        "highs": 1.1292127128979483e-05
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 3.8462828465064867,
+        "highs": 2.6223932671569385
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 6.9483907380000005,
+        "highs": 4.7374085099999945,
+        "linprogx": 1.806521000999993
+      }
+    },
+    {
+      "instance": "lp_osa_60",
+      "iterations": 56,
+      "linprogx_residual": 6.897607818245888e-09,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 1.8633978341794052e-05,
+        "highs": 5.2676863595387305e-06
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 5.22357598723235,
+        "highs": 3.762633196156974
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 29.659333887000003,
+        "highs": 21.364137236999994,
+        "linprogx": 5.677975004000018
+      }
+    },
+    {
+      "instance": "lp_pds_10",
+      "iterations": 6400,
+      "linprogx_residual": 4.690181299338292e-06,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 1.7578676832738337e-09,
+        "highs": 1.909035747511841e-09
+      },
+      "route": "pdhg",
+      "speedup_vs_linprogx": {
+        "clarabel": 20.87869134118689,
+        "highs": 1.0889119406287036
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 34.87381001700004,
+        "highs": 1.8188164919999963,
+        "linprogx": 1.670306316000051
+      }
+    },
+    {
+      "instance": "lp_pds_20",
+      "iterations": 14016,
+      "linprogx_residual": 8.059333872267871e-06,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 1.711202723066917e-09,
+        "highs": 1.685431929610371e-09
+      },
+      "route": "pdhg",
+      "speedup_vs_linprogx": {
+        "clarabel": 19.870826054703922,
+        "highs": 2.0832442995259752
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 126.42133872599999,
+        "highs": 13.253929782,
+        "linprogx": 6.362158190000002
+      }
+    },
+    {
+      "instance": "lp_pilot",
+      "iterations": 65,
+      "linprogx_residual": 1.5459103007606428e-08,
+      "paired_linprogx_over_highs": 0.7213160824460866,
+      "paired_trials": 21,
+      "paired_verdict": "lx_faster",
+      "paired_wins": 18,
+      "relative_objective_delta": {
+        "clarabel": 1.95201390743882e-06,
+        "highs": 1.1292133307257218e-09
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 11.415958018513672,
+        "highs": 1.5060095734577599
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 10.90834027599999,
+        "highs": 1.439043912000102,
+        "linprogx": 0.9555343720001019
+      }
+    },
+    {
+      "instance": "lp_pilot87",
+      "iterations": 128,
+      "linprogx_residual": 5.289280124998186e-11,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 4.72542800653837e-05,
+        "highs": 3.9366108140051386e-07
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 5.362832278193579,
+        "highs": 1.2136202219260583
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 20.848806728,
+        "highs": 4.718128804999992,
+        "linprogx": 3.8876484749999918
+      }
+    },
+    {
+      "instance": "lp_qap12",
+      "iterations": 3392,
+      "linprogx_residual": 1.8567850028277516e-05,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 5.928487244616254e-06,
+        "highs": 5.927095013914971e-06
+      },
+      "route": "pdhg",
+      "speedup_vs_linprogx": {
+        "clarabel": 1.7615649580608828,
+        "highs": 56.80376424741825
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 3.745375084999978,
+        "highs": 120.77408918300006,
+        "linprogx": 2.126163482000038
+      }
+    },
+    {
+      "instance": "lp_qap15",
+      "iterations": 3456,
+      "linprogx_residual": 6.960290616721959e-06,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 5.905735208534818e-06,
+        "highs": null
+      },
+      "route": "pdhg",
+      "speedup_vs_linprogx": {
+        "clarabel": 22.0913457029271,
+        "highs": null
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "incomplete",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 17.232504745999904,
+        "highs": null,
+        "linprogx": 0.7800568140000905
+      }
+    },
+    {
+      "instance": "lp_sierra",
+      "iterations": 725,
+      "linprogx_residual": 1.8189894035458565e-12,
+      "paired_linprogx_over_highs": 2.7373408883120742,
+      "paired_trials": 21,
+      "paired_verdict": "highs_faster",
+      "paired_wins": 0,
+      "relative_objective_delta": {
+        "clarabel": 1.8708665145877911e-10,
+        "highs": 0.0
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 0.6165493298758036,
+        "highs": 0.3772710391530872
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.07031476600002406,
+        "highs": 0.04302611900004649,
+        "linprogx": 0.11404564500003289
+      }
+    },
+    {
+      "instance": "lp_stocfor2",
+      "iterations": 21,
+      "linprogx_residual": 1.4551915228366852e-11,
+      "paired_linprogx_over_highs": 0.7585321503889203,
+      "paired_trials": 21,
+      "paired_verdict": "lx_faster",
+      "paired_wins": 20,
+      "relative_objective_delta": {
+        "clarabel": 5.8994521262088064e-08,
+        "highs": 1.7536936375919224e-09
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 1.4813104306939244,
+        "highs": 1.3215689400970352
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.09975750000000971,
+        "highs": 0.0889998549999973,
+        "linprogx": 0.06734408800002711
+      }
+    },
+    {
+      "instance": "lp_stocfor3",
+      "iterations": 45,
+      "linprogx_residual": 8.549250196665525e-11,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 5.227813285462582e-06,
+        "highs": 2.905937933814054e-08
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 1.8450896657030467,
+        "highs": 1.0602053673229637
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 1.4438389939999752,
+        "highs": 0.8296430679999958,
+        "linprogx": 0.7825305299999172
+      }
+    },
+    {
+      "instance": "lp_truss",
+      "iterations": 20,
+      "linprogx_residual": 2.4024373601605475e-09,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 1.4127349063657364e-05,
+        "highs": 1.4126931200810383e-05
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 1.6034538561822291,
+        "highs": 22.56943858313203
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.25389534599992203,
+        "highs": 3.5737077159999444,
+        "linprogx": 0.1583427829999664
+      }
+    },
+    {
+      "instance": "lp_tuff",
+      "iterations": 159,
+      "linprogx_residual": 1.1368683772161603e-12,
+      "paired_linprogx_over_highs": 0.3717506363352668,
+      "paired_trials": 21,
+      "paired_verdict": "lx_faster",
+      "paired_wins": 21,
+      "relative_objective_delta": {
+        "clarabel": 4.506807860238382e-08,
+        "highs": 1.1102230246251565e-16
+      },
+      "route": "simplex",
+      "speedup_vs_linprogx": {
+        "clarabel": 3.9449200441203627,
+        "highs": 2.6197417567969143
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.027848736999999346,
+        "highs": 0.018493783999929292,
+        "linprogx": 0.007059391999973741
+      }
+    },
+    {
+      "instance": "lp_woodw",
+      "iterations": 32,
+      "linprogx_residual": 3.9835867937654257e-10,
+      "paired_linprogx_over_highs": null,
+      "paired_trials": null,
+      "paired_verdict": null,
+      "paired_wins": null,
+      "relative_objective_delta": {
+        "clarabel": 2.3790531912530332e-05,
+        "highs": 2.3791548254580992e-05
+      },
+      "route": "ipm",
+      "speedup_vs_linprogx": {
+        "clarabel": 2.6189125835212907,
+        "highs": 1.0926681220923036
+      },
+      "statuses": {
+        "clarabel": "optimal",
+        "highs": "optimal",
+        "linprogx": "optimal"
+      },
+      "times": {
+        "clarabel": 0.34588442299991584,
+        "highs": 0.14431061400000544,
+        "linprogx": 0.1320717710000281
+      }
+    }
+  ],
+  "suite_wins": {
+    "clarabel": 35,
+    "highs": 32
+  }
+}

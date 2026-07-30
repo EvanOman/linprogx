@@ -1,3 +1,8 @@
+# Historical 24-case local snapshot
+
+This table predates the three-host 39-case campaign. See
+[`lpnetlib_39_results.md`](lpnetlib_39_results.md) for the current comparison.
+
 | Instance | linprogx | HiGHS | Clarabel | lx delta vs HiGHS | lx residual | lx route |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | lp_80bau3b | 0.31s | 0.20s | 0.34s | 4.06e-03 | 4.7e-11 | ipm |
