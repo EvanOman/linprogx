@@ -26,7 +26,7 @@ test:
     uv run pytest
 
 test-cov:
-    uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=85
+    uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=98
 
 plots:
     uv run python bench_plots.py --repeats 50
