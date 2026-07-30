@@ -112,3 +112,88 @@ def test_protocol_v3_even_hosts_uses_statistics_median(
     assert entry["hosts_observed"] == 4
     assert entry["hosts_with_ratio"] == 4
     assert entry["lx_wins_total"] == 10
+
+
+def _suite_host(
+    host_index: int,
+    *,
+    linprogx: float,
+    highs: float,
+    clarabel: float,
+) -> dict[str, Any]:
+    return {
+        "host_index": host_index,
+        "rows": [
+            {
+                "instance": "lp_agg2",
+                "solver": "linprogx",
+                "status": "optimal",
+                "seconds": linprogx,
+                "objective": -10.0,
+                "residual": 1e-10 * (host_index + 1),
+                "backend": "simplex",
+                "iterations": 274,
+            },
+            {
+                "instance": "lp_agg2",
+                "solver": "highs",
+                "status": "optimal",
+                "seconds": highs,
+                "objective": -10.0,
+            },
+            {
+                "instance": "lp_agg2",
+                "solver": "clarabel",
+                "status": "optimal",
+                "seconds": clarabel,
+                "objective": -10.0,
+                "residual": 2e-10,
+            },
+        ],
+    }
+
+
+def test_suite_v3_uses_host_medians_for_all_three_solvers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modal_bench = _load_modal_bench(monkeypatch)
+
+    aggregate = modal_bench.aggregate_suite_v3_hosts(
+        [
+            _suite_host(0, linprogx=1.0, highs=2.0, clarabel=4.0),
+            _suite_host(1, linprogx=3.0, highs=2.5, clarabel=5.0),
+            _suite_host(2, linprogx=2.0, highs=4.0, clarabel=8.0),
+        ]
+    )
+
+    entry = aggregate["instances"]["lp_agg2"]
+    assert aggregate["protocol"] == "suite-v3"
+    assert aggregate["hosts"] == 3
+    assert entry["solvers"]["linprogx"]["seconds_median_of_hosts"] == pytest.approx(2.0)
+    assert entry["solvers"]["linprogx"]["max_residual"] == pytest.approx(3e-10)
+    assert entry["linprogx_over_highs"] == pytest.approx(0.8)
+    assert entry["linprogx_over_clarabel"] == pytest.approx(0.4)
+
+
+def test_suite_v3_marks_a_solver_incomplete_when_a_host_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modal_bench = _load_modal_bench(monkeypatch)
+    hosts = [
+        _suite_host(0, linprogx=1.0, highs=2.0, clarabel=4.0),
+        _suite_host(1, linprogx=1.5, highs=2.5, clarabel=5.0),
+    ]
+    hosts[1]["rows"][2] = {
+        "instance": "lp_agg2",
+        "solver": "clarabel",
+        "status": "timeout",
+        "seconds": 200.0,
+    }
+
+    aggregate = modal_bench.aggregate_suite_v3_hosts(hosts)
+
+    clarabel = aggregate["instances"]["lp_agg2"]["solvers"]["clarabel"]
+    assert clarabel["status"] == "incomplete"
+    assert clarabel["hosts_observed"] == 2
+    assert clarabel["hosts_optimal"] == 1
+    assert clarabel["seconds_median_of_hosts"] == pytest.approx(4.0)
