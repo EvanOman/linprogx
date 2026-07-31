@@ -1,217 +1,459 @@
-# Next /goal prompt (paste into the successor overmind session)
+# Next /goal prompt: close the six LPnetlib losses
 
-Continue the linprogx campaign. Read
-/home/evan/dev/linprogx-perf-worktree/docs/SESSION-HANDOFF.md FIRST —
-it is your complete inheritance (mission, reference index, protocol,
-science) — then the tail of docs/HANDOFF.md (the dated research
-ledger; everything from "PRESOLVE V2 SHIPPED" onward is the current
-era, ~55 verdicts). Enter /overmind mode: you orchestrate;
-falsifier-first briefs with kill criteria to codex (gpt-5.5 high;
-retry gpt-5.6 periodically — it API-400s on this plan, see memory
-codex-model-choice) and fresh explicit-model Claude subagents — never
-SendMessage-resume a subagent from a Fable session, never run a
-worker on Fable.
+Paste everything below into the successor session.
 
-THE GOAL (standing): beat HiGHS head-to-head on ALL 24 LPnetlib
-instances. Board of record (protocol v3, median-of-hosts, Modal AWS
-us-west-2): **23W-0P-1L**. The sole loss is greenbea at 1.215
-[1.208,1.235] — needs ~-18%.
+---
 
-CONSTRAINTS (inviolable): never read any solver's source code (papers
-fine); no per-problem tuning (global mechanisms only); eps=2e-5 fixed;
-certificate-backed optimality only; honest reporting; workers get NO
-network (audit every log before shipping — grep the event log for
-curl/wget/clone/github; a gate-passing unit was once quarantined for
-this and the clean room beat it).
+You are the mission controller for the next linprogx performance campaign. Use
+the `overmind-v2` skill and its durable broker for every agent wave. Keep
+synthesis, funding decisions, integration, and final judgment in the parent
+session.
 
-KEY REFERENCES (all under the perf worktree; details in the handoff's
-index): docs/SESSION-HANDOFF.md (start here) · docs/HANDOFF.md (the
-ledger) · experiments/greenbea_dossier_2026_07_18.md + corrections
-(closed axes) · dual_phase1_derivation + phase1_predictions (the
-confirmed Fenchel auxiliary + the conservation law) · probe_tomography
-(the dual-Phase-1 identification) · kernel_campaign_dossier + k1
-census (solves at IPC 0.30-0.60 = the hardware floor) + the
-lsa/lsb/k3/k12 floor kills · int_kernel_combined (the shipped SIMD
-unit) · creative_attack_dossier + c1..c6 reports (the six-for-six
-C-wave kills) · pds_mechanism + the netagg/parallel-cols clean-room
-ships (the pds arc) · loss_census_2026_07_16 (the census method that
-produced the biggest wins) · tools/modal_bench.py (v3 certs; upload-src
-after EVERY commit; never lp_qap15 in paired mode).
+## The goal is 39 wins
 
-WHERE MY PATH SUCCEEDED (continue it): the census -> falsifier ->
-staged-ship -> v3-certify pipeline flipped 8 cells in 5 days; the
-integrity/audit protocol; cumulative host-conditional scoring;
-multi-model fan-outs with hypotheses in tension; honest kills recorded
-as first-class results. Maintain the ledger, the backup tag, the
-chronicle (gh-pages + Claude artifact
-https://claude.ai/code/artifact/a1eba80f-2b5d-426f-8527-a2d7f4545d3e),
-and Telegram me (nanobot) at board moves.
+Move the certified LPnetlib board from **33W-0P-6L** to
+**39W-0P-0L against HiGHS** without losing coverage or regressing an existing
+win.
 
-WHERE I FAILED — greenbea, and the door I could not open: its 4,399
-Dantzig pivots are its true trajectory (perturbation/pricing/basis all
-optimal); its per-pivot cost sits on a measured hardware latency floor
-(gathered sparse solves at 1.5k rows, IPC 0.3-0.6, immune to SIMD
-width, flags, pipelining, level scheduling, alternative formats,
-threading — every kill is dated); HiGHS's remaining edge is a refined
-dual Phase-1 I identified behaviorally and derived mathematically
-(exact b-invariance confirmed; native pivot parity achieved at 3,334,
-even 2,399 from the K7 basis) but whose CONSTRUCTION COST no method
-beats (~0.15-0.2s exact; approximate bases are worthless). Do NOT
-re-probe these — every soft angle has a dated verdict.
+The six losses from the protocol-v3 paired campaign are:
 
-YOUR OPEN DOOR (new approaches welcome where mine failed): the
-reopening condition is a fundamentally different factorization/solve
-science or hardware regime. Untouched directions worth YOUR OWN
-fresh-eyes census before any building: batched/vectorized multi-pivot
-linear algebra that changes the ALGORITHM's arithmetic (not its
-schedule); GPU/wide-SIMD offload economics at this size; randomized or
-iterative basis-solve substitutes with certificate-grade correction;
-literature published AFTER my cutoffs on dual phase-1 construction or
-latency-tolerant sparse solves; or an entirely new idea class no
-thread of mine named — run your own multi-model ideation fan-out
-against the dossier before trusting my framing; I corrected my own
-dossier twice, and your fresh eyes may catch what I could not. If
-greenbea stays closed, the board rests honestly at 23W-0P-1L —
-protect it (re-cert only on code changes), keep the chronicle
-current, and spend the campaign's machinery on whatever Evan aims
-it at next.
+| Instance | Route | linprogx / HiGHS | Host range | Pair wins | Current iterations |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `lp_25fv47` | simplex | 3.531 | 3.342-3.541 | 0/21 | 6,948 |
+| `lp_bnl2` | IPM | 2.677 | 2.326-2.771 | 0/21 | 63 |
+| `lp_degen2` | simplex | 3.620 | 3.167-3.774 | 0/21 | 1,453 |
+| `lp_ganges` | IPM | 1.071 | 0.936-1.127 | 7/21 | 16 |
+| `lp_greenbeb` | simplex | 1.376 | 1.352-1.380 | 0/21 | 4,320 |
+| `lp_sierra` | simplex | 2.737 | 2.113-2.756 | 0/21 | 725 |
 
-SUCCESSOR AUDIT ADDENDUM (2026-07-21): a fresh Overmind pass tested
-the strongest surviving claims and corrected two overbroad closures.
-Do not re-probe active-bound sifting (95.5% omniscient live set,
-23.9% projected slowdown), next-pivot BTRAN lookahead (4,398/4,398
-leaving predictions but 15 floating-point Harris-choice mismatches),
-or selected-inverse row caching (16.92% erase-all ceiling, 1.91%
-optimistic charged ceiling). C2 forbids only same-pivot BTRAN/FTRAN
-overlap; exact-real cross-pivot algebra exists but is not numerically
-authoritative. C6 killed the tested dense tableau primal route, not
-every hypothetical sparse revised-primal design. Full evidence and
-the narrowed reopening condition are in SESSION-HANDOFF section 6
-and the three 2026-07-21 falsifier reports.
+Treat
+`assets/modal_bench_c984f7fd5a33_paired_hosts3.json` as the board evidence and
+`assets/modal_bench_c984f7fd5a33_suite_hosts3.json` as the three-solver sweep.
+The paired artifact decides wins and losses. The suite artifact answers
+coverage and broad performance questions but does not replace paired
+certification.
 
-SECOND SUCCESSOR AUDIT ADDENDUM (2026-07-22): three more fallback classes are
-now measured dead; do not re-probe them. Sparse revised primal found a best
-7,427-pivot public trajectory versus cold dual's 4,399; linprogx mandatory
-kernel accounting is 0.643792s, and even an intentionally favorable
-early-sparsity projection is 0.537669s (4.06%), above the 0.461235s board
-target. Integrated exact Phase 1 reaches its best boundary at
-`2050 + 10 + 2183 = 4243` pivots (3.55%); the best fused-core opportunity is
-4.13%, and exact alternation bottoms at 4,328 pivots. Finally, an exact
-changed-endpoint simultaneous rank-k audit established fresh-warm authority
-and tested no-flip plus flip-aware k=2/3/4 faces at four checkpoints. All 12
-flip-aware endpoints made zero flips; the only surviving totals were 4,404,
-4,397, and 4,396 pivots versus the 3,519 funding ceiling, with public state
-mismatches. This closes the tested fixed-policy face exchange—not every
-conceivable rank-k algorithm. Evidence is in SESSION-HANDOFF section 7 and the
-three 2026-07-22 falsifier reports. No production code changed; board remains
-23W-0P-1L without recertification.
+The only successful terminal state is a certified 39-cell win. A killed
+mechanism is useful evidence, but it is not completion. If the named lanes die,
+record the reopening conditions and launch a fresh-eyes wave that proposes
+mechanisms outside those closures.
 
-REMAINING FRONTIER CENSUS ADDENDUM (2026-07-22): do not re-probe ordinary
-sequential suboptimization, the unfunded joint homogeneous-Phase-1 face rule,
-frozen-last-refactor LU Krylov, or the tested matched-Jacobi correction. A
-public-API screen on the exact reduced model took 4,669 PAMI pivots versus
-3,309 serial pivots and was slower at both one and four threads. Cold reaches
-the auxiliary-optimal face at pivot 2,060, but flipping the board still needs
-a 29.44% continuation cut and the 20% gate needs 34.01%, far beyond the 3.55%
-integrated and 1.61% alternating gains. On four actual greenbea bases, exact
-BTRAN rows reproduce 404/404 Harris decisions while true-residual
-matched-Jacobi degrees 1/2/3/4/8/16/32 reproduce 0/404 at every degree; every
-sample requires exact fallback. Accelerator-resident simplex is outside the
-CPU-only v3 protocol. These are scoped funding kills, not impossibility
-theorems. Reopening requires a concrete richer approximate-inverse/recycled
-construction with complete charge and decision authority, a new Phase-1
-invariant with measured 29--34% opportunity, or explicit authority for a new
-head-to-head hardware protocol. Evidence is in SESSION-HANDOFF section 8 and
-the remaining-frontier and Krylov falsifier reports. No production code
-changed; board remains 23W-0P-1L without recertification.
+## Preserve the current truth
 
-POST-FRONTIER FRESH-EYES ADDENDUM (2026-07-22): three concrete extensions of
-the remaining abstract openings are now measured; do not re-probe them under a
-new label. Fixed non-diagonal row transformation is exact and maps dual
-certificates by `y=U^T y'`, but the natural `U=B_512^-1` construction makes
-`UA` 3.906x denser and later sampled LU fill rises 78.48%, 134.26%, and
-156.81%. Oracle top-`K` whole-inverse sparsification reaches 404/404 sampled
-Harris authority only at `K=128`, whose favorable traffic is
-93.280us/equivalent pair; raw-funded `K=16` fails half the decisions and
-models only an 8.46% whole-wall gain after exact fallback. Full-KKT block PDAS
-was genuinely outside the earlier rank-k scope, but after review forced repair
-of a backward-step bug, the fixed greedy-prefix+Bland policy accepted widths
-60/8/2/2, median 5 versus the gate of 18, and stopped uncertified with bound
-violation 62,263.4827. That last result kills only the tested selection policy:
-improving forward-valid edges exist outside its selected prefixes. Evidence is
-in SESSION-HANDOFF section 9 and the global-reformulation, rich-inverse, and
-block-PDAS reports. No production code changed; the board remains 23W-0P-1L
-without recertification. Reopening now needs a different predeclared full-KKT
-selection/globalization invariant, a different concrete approximate-inverse
-representation with full authority/cost evidence, or new factor/hardware
-science.
+Read these before dispatching work:
 
-LOOKAHEAD FULL-KKT ADDENDUM (2026-07-22): the improving edges outside the first
-block-PDAS probe have now been tested rather than left as a generic reopening.
-The successor scores every generated edge by exact algebraic single-exchange
-post-merit, sorts strict improvers, forms a rank-safe matching, tries exact
-power-of-two prefixes, and uses the best predicted scalar fallback. Review
-rejected a first artifact that truncated requested widths; the repaired trace
-was independently replayed `TRUST_KILL`. It accepts 23 exchanges across 39
-fresh factors but has median width 4 versus the gate of 18. At round 24 all 512
-forward-valid generated edges have zero strict improvers, while original bound
-violation remains 21,460.6764. This kills that exact selection policy, not an
-exact simultaneous-block merit model, temporary merit worsening, a wider
-candidate generator, or a different globalization merit. Evidence is in
-SESSION-HANDOFF section 10 and
-`experiments/pdas_lookahead_falsifier_2026_07_22.md`. No production code
-changed; board remains 23W-0P-1L without recertification.
+1. `AGENTS.md`
+2. `experiments/greenbea_goal_v2_2026_07_29.md`
+3. `docs/PROVENANCE.md`
+4. `docs/DS2-REWRITE.md`
+5. `experiments/dse_churn_class_verdict_2026_07_26.md`
+6. `experiments/ds2_chuzr_2026_07_26.md`
+7. `experiments/twophase_rule_matrix_2026_07_26.md`
+8. `experiments/category_verdict_2026_07_26.md`, including its correction
+9. `docs/HANDOFF.md` for the killed-mechanism ledger
+10. `assets/lpnetlib_39_results.md`
+11. `tools/modal_bench.py`
 
-SIMULTANEOUS-BLOCK ADDENDUM (2026-07-22): exact coupled block algebra now
-closes the strongest bounded successor to the round-24 zero-single-improver
-state. Independent replay returned `TRUST_KILL`. In the fixed first-64
-scalar-merit pool, all 2,016 pairs were classified: 1,548 were rank-safe and
-jointly direction-valid, and zero strictly improved the old merit. The
-lex-best valid pair worsened L1 KKT by 24,937.299. A deterministic exact
-greedy augmentation path reached width 8 and then had no legal compatible
-addition, so no width-32/64 authority candidate existed. The rescue alone
-took 0.789946s versus the complete 0.448351702s gate. A separate fixed
-squared-KKT-potential ordering produced a width-32 rank-safe block, but 15 of
-32 entering motions reversed direction and its potential worsened 155.067x.
-This kills those bounded pool/path and potential-ordering policies, not every
-higher-order subset, wider generator, or temporary-worsening trajectory.
-Evidence is in SESSION-HANDOFF section 11 and
-`experiments/pdas_block_merit_falsifier_2026_07_22.md`. No production code
-changed; board remains 23W-0P-1L without recertification.
+The latest board overrides stale timing claims in older reports. Old iteration
+counts remain useful when the code path is unchanged. Old local wall times do
+not score a cell.
 
-POST-DOSSIER LITERATURE/STRUCTURE ADDENDUM (2026-07-22): three newly published
-primary directions and seven orthogonal fresh-eyes constructions now have
-quantitative local verdicts. ElasticDivide-style exact stale scheduling cannot
-fund four-vCPU v3: perfect two-core scaling of the entire solve slice saves
-17.31%, below the 17.7013% gap, and live FT factors change every pivot. The new
-bounded-variable dual-support long step is the existing BFRT breakpoint walk;
-all 64 terminal pool edges are lower-only, so it has zero boxed-variable flip
-runway there. Exact inequality-only FME is distinct but only 13 eligible
-greenbea columns survive and touch eight prepared rows; even fantasy cubic
-credit is 1.566%. Dynamic HSS/HODLR inverse maintenance costs a favorable
-25.078us/equivalent pair from top-level generator traffic alone versus the
-20.028us gate. Component/thin-border decomposition, network specialization,
-exact row sketches, lexicographic scalar criss-cross batching, and interior
-globalization also fail their measured opportunity, endpoint, certificate, or
-complete-cost gates. Evidence is in
-`experiments/post_dossier_literature_census_2026_07_22.md` and its two
-standalone diagnostics. Do not re-probe these constructions under new labels.
-No production code changed; board remains 23W-0P-1L without recertification.
+Carry these findings forward:
 
-REOPENED CRASH/OWNER FRONTIER ADDENDUM (2026-07-22): the strongest remaining
-basis-construction and exact-dataflow mechanisms have now been built or bounded;
-do not re-probe them under new labels. A zero-cost degree-minimal crash found a
-deterministic certificate-clean 4,073-pivot continuation, but exact dense rank
-repair cost 2.463s; native repair either fell back and took 7,603 pivots or
-avoided fallback only to take 9,381 pivots and return `dual_infeasible`. A
-lifecycle-safe four-column-owner C prototype preserved every one of 4,399
-pivots and all public/internal trace hashes, yet fresh-process greenbea ratio
-was only 0.928762 against the 0.822987 gate and woodw regressed to 1.121962.
-Fusing two dispatches per pivot saves only 8.457ms of the missing 39.938ms.
-Stable row-owner prepartitioning, even with zero incremental setup charge,
-projects 0.883578 whole-wall ratio and cannot repair the woodw sentinel.
-Evidence is in SESSION-HANDOFF section 13 and
-`experiments/reopened_frontier_falsifier_2026_07_22.md`. No production code
-changed; board remains 23W-0P-1L without recertification. A genuine reopening
-must present a different measured mechanism, not owner-filter rearrangement,
-dispatch fusion, stable row prepartitioning, or zero-cost rank repair.
+- The six losses contain two separate classes. Four use the simplex route;
+  `bnl2` and `ganges` use IPM.
+- Exact DSE has already shown large trajectory gains on `25fv47` and `degen2`.
+  Historical runs reached roughly 2,600-3,000 pivots on `25fv47` and 630-650 on
+  `degen2`. Its extra tau FTRAN and denser trajectory can consume the pivot
+  savings. Measure the composition on current code before claiming a win.
+- `greenbeb` already receives the shipped controlled-aggregation plus DS2
+  composition. It fell from 8,553 to 4,320 pivots and still loses by 1.376x.
+  Repeating the greenbea campaign's winning composition is not a new idea.
+- `sierra` needs only 725 linprogx pivots versus the historical HiGHS count of
+  914, yet its paired wall ratio is 2.737. Its gap is fixed cost or per-pivot
+  cost, not pivot count.
+- `bnl2` and `ganges` finish in 63 and 16 IPM iterations. Their losses are not
+  convergence failures. Profile setup, ordering, symbolic work,
+  refactorization, triangular solves, residual scans, presolve, route glue,
+  and process-level fixed cost.
+- `ganges` is host-sensitive. One host already favors linprogx, while two do
+  not. A local win or one favorable host is insufficient.
+- The greenbea win came from an interaction that earlier component tests had
+  missed: controlled fill-positive aggregation composed with DS2. Continue to
+  test funded cross-products, not only isolated knobs.
+- The shipped aggregation gate is global: at least 20% row reduction with at
+  most 5% realized nnz growth on models already classified as simplex
+  stall-risk. Do not weaken it to admit a named fixture.
+- `greenbea` is now a mandatory simplex regression control. Preserve its
+  0.986x certified win and its original-unit certificate.
+- Coverage is 99.40% with a hard floor of 98%. Do not lower the floor, add
+  exclusions, or manipulate the denominator.
+
+## The constraints are binding
+
+- Keep `eps=2e-5`.
+- Accept certificate-backed optimality only. Reconstruct through presolve and
+  verify objective, equality residual, bound violation, dual information, and
+  status in original units.
+- Use global structural or observed-state rules. Instance names, fixture
+  fingerprints, constants selected to suit one loss, and equivalent disguised
+  predicates are disqualifying.
+- Preserve deterministic behavior where promised and all documented status
+  semantics.
+- Do not change Modal hardware, timeout, solver pins, warmup policy, or scoring
+  rules to manufacture a win.
+- HiGHS and Clarabel remain external correctness and timing oracles.
+- Do not read new external solver source for these six losses without fresh,
+  explicit authority from Evan. Existing source-informed mechanisms may be
+  used, but their provenance stays attached. Public papers and black-box solver
+  measurements are allowed.
+- Never copy external implementation text. Reimplement understood algorithms
+  independently.
+- Characterize behavior before changing high-risk C paths.
+- Run `just ci` before every integration handoff. The SciPy, Clarabel, and
+  NumPy oracle tests must remain hard gates.
+- Treat the main checkout as read-only during branch work. The mission
+  controller creates one worktree per writer before launch. Workers receive a
+  worktree as `cwd`, do not create nested worktrees, and stage only their files.
+- Never use a metered provider or allow billing-class fallback. Use
+  subscription-native workers only.
+- Record kills with the same specificity as ships. Do not relabel an old kill
+  and run it again unless the brief names the changed mechanism and the old
+  reopening condition it satisfies.
+
+## Fund work with measured arithmetic
+
+For a current paired ratio `R`, a candidate that targets a 0.97 final ratio
+must measure candidate/shipped at or below `0.97 / R`.
+
+| Instance | Current `R` | Candidate/shipped funding gate |
+| --- | ---: | ---: |
+| `25fv47` | 3.531 | 0.275 |
+| `bnl2` | 2.677 | 0.362 |
+| `degen2` | 3.620 | 0.268 |
+| `ganges` | 1.071 | 0.906 |
+| `greenbeb` | 1.376 | 0.705 |
+| `sierra` | 2.737 | 0.354 |
+
+Recompute these gates if a fresh baseline changes materially. A mechanism may
+be funded as one member of a measured composition, but projections, operation
+counts, and isolated microbenchmarks do not substitute for an end-to-end
+candidate/shipped measurement. Require a named causal chain from the changed
+slice to the whole-cell gate.
+
+Use iteration counts and CPU time for cheap local falsification. Use Modal
+`envab` for code effects and Modal `paired` for the final comparison with
+HiGHS. Always pass `--worktree` when uploading a source snapshot. Upload after
+every candidate commit; record the exact SHA and Modal run URL.
+
+## Run Overmind v2 as the control plane
+
+Resolve the Overmind skill root and begin with:
+
+```bash
+/home/evan/dev/claude-skills-public/skills/overmind-v2/scripts/om doctor --json
+```
+
+Use the provider and billing facts returned by `doctor`. At the time this
+prompt was written, both native adapters were installed, but the most recent
+Codex failure reported a subscription usage limit until August 1. Do not infer
+current capacity from that dated message. Check `doctor`, and either use an
+available subscription-native provider or wait. Do not fall back to a metered
+backend.
+
+Launch each wave once with `run-many` and an idempotency key:
+
+```bash
+OVERMIND_BIN=/home/evan/dev/claude-skills-public/skills/overmind-v2/scripts/om
+"$OVERMIND_BIN" run-many --input /tmp/linprogx-close6-wave1.json \
+  --idempotency-key linprogx-close6-wave1-v1 --json
+"$OVERMIND_BIN" await <group-id> --condition all_terminal \
+  --since-cursor <cursor> --timeout 3600 --json
+"$OVERMIND_BIN" collect <group-id> --preview-bytes 4000 --json
+```
+
+Do not poll `jobs` in a reasoning loop. Resume an interrupted `await` with its
+last cursor. Inspect the result artifacts and the files named in each brief.
+Terminal state plus a worker narrative is not proof; run the brief's
+verification yourself.
+
+Use `reply` for a bounded correction when a worker misunderstood its brief.
+Stop obsolete jobs. If a job becomes `unknown`, inspect its requested
+artifacts before deciding whether to continue or rerun it. Reuse the original
+idempotency key on launch retries.
+
+Each worker brief must use this exact shape:
+
+```text
+GOAL:        One observable outcome.
+CONTEXT:     Relevant paths, current measurements, and dependencies.
+CONSTRAINTS: Scope, invariants, billing class, provenance, and forbidden changes.
+DONE WHEN:   Acceptance criteria visible outside the worker's narrative.
+VERIFY:      Exact commands or checks.
+```
+
+Cap a wave at four active jobs. The parent session owns cross-wave synthesis.
+Workers must emit a final report longer than 300 bytes and name every artifact
+they created.
+
+## Wave 0 records the baseline
+
+The mission controller does this work before fan-out:
+
+1. Record `git status`, current branch, HEAD, worktrees, dirty files, active
+   benchmark processes, and available ports.
+2. Run a focused correctness baseline and `just ci`.
+3. Reproduce the six routes, statuses, iterations, objectives, and residuals
+   from current source.
+4. Confirm that the paired and suite artifacts parse through
+   `tools/build_lpnetlib_report.py`.
+5. Create a campaign ledger at
+   `experiments/close_six_campaign_2026_07_31.md`. Record every later job ID,
+   hypothesis, gate, result, commit, and Modal URL there.
+6. Create dedicated worktrees only when a later wave has a funded writer.
+
+Do not launch implementation work if the baseline differs from the board
+without explaining the difference.
+
+## Wave 1 reconciles the evidence
+
+Launch four read-only jobs against the main checkout. Use `dontAsk` for Claude
+read-only workers.
+
+### W1-A owns the board truth table
+
+```text
+GOAL: Produce a source-linked dossier for the six current losses.
+CONTEXT: Read the two c984 Modal artifacts, lpnetlib_39_summary.json, the
+current route code, and the final greenbea report.
+CONSTRAINTS: Read-only. Latest paired measurements override old wall claims.
+No external solver source.
+DONE WHEN: The report gives each loss's current route, dimensions after every
+presolve stage, iterations, timing distribution, residual, objective delta,
+known controls, required speedup, and code paths that can affect it.
+VERIFY: Independently recompute every ratio from raw host results and list the
+JSON paths used.
+```
+
+### W1-B owns the simplex closure map
+
+```text
+GOAL: Reconcile every existing simplex mechanism against 25fv47, degen2,
+greenbeb, and sierra.
+CONTEXT: Read DS2-REWRITE, dse_churn_class_verdict, ds2_chuzr, the two-phase
+matrix, the final greenbea campaign, and relevant HANDOFF kills.
+CONSTRAINTS: Read-only. Separate current production behavior from historical
+gated arms and stale local timing.
+DONE WHEN: The report maps Dantzig, churn, DSE, BFRT, two-phase bounds,
+controlled aggregation, DS2, fused/unfused FTRAN, scaling, perturbation, and
+refactor cadence to SHIPPED, LIVE-UNMEASURED, or KILLED for each loss. Every
+kill includes its reopening condition.
+VERIFY: Cite repository file paths and exact tables or commits for every claim.
+```
+
+### W1-C owns the IPM cost model
+
+```text
+GOAL: Identify which exclusive wall slices can fund bnl2 and ganges.
+CONTEXT: Read ipm_slice_census, ipm_other_profile, presolve, route logic, and
+the current C instrumentation.
+CONSTRAINTS: Read-only. Do not infer wall opportunity from iteration counts.
+No production changes.
+DONE WHEN: The report specifies a measurement plan that attributes at least
+98% of each target's wall and names controls with the same factorization and
+size regimes. It states what slice would have to disappear to meet 0.362 and
+0.906 candidate/shipped.
+VERIFY: Give exact worker commands and expected output fields.
+```
+
+### W1-D attacks the campaign framing
+
+```text
+GOAL: Find omissions, unfair gates, stale assumptions, and genuinely new
+mechanism classes.
+CONTEXT: Read the loss dossiers, provenance boundary, current solver
+architecture, and HANDOFF closure ledger.
+CONSTRAINTS: Read-only. No external solver source. Reject renamed dead ideas.
+DONE WHEN: Return at most eight ranked hypotheses. Each has a causal mechanism,
+target cells, expected affected slice, cheap falsifier, funding invariant,
+controls, and the prior kill it differs from. Include a recommendation to
+stop funding any hypothesis that cannot meet a target gate.
+VERIFY: Cross-reference each proposal against the killed-mechanism ledger.
+```
+
+The parent merges these reports into one canonical six-loss dossier. Resolve
+contradictions before Wave 2.
+
+## Wave 2 runs cheap falsifiers
+
+Create one worktree per writer. Launch at most four experiment owners in
+parallel. Production defaults stay untouched.
+
+### W2-A measures the existing simplex arm matrix
+
+Measure current production, forced Dantzig, exact DSE, two-phase combinations,
+DS2, the controlled aggregation gate, and their funded cross-products on all
+11 simplex-routed cases. Include the four losses and these controls:
+`greenbea`, `agg2`, `agg3`, `cycle`, `fffff800`, `israel`, and `tuff`.
+
+The deliverable is a machine-readable arm matrix with pivots, CPU time, status,
+objective, residual, reduced shape, nnz, and phase timing. Kill any arm that
+cannot certify or that regresses a control without a global, predeclared gate.
+
+### W2-B measures DSE's full cost on current code
+
+Attribute exact DSE's extra tau solve, denser trajectory, refactor behavior,
+and other knock-on costs on `25fv47`, `degen2`, `greenbeb`, and `sierra`.
+Exercise the already-gated fused two-RHS research path without shipping it.
+Test whether any exact sharing preserves decisions and certificates across the
+class. The old greenbea fused-FTRAN result is a regression control, not a
+reason to skip the new targets.
+
+The job is killed unless an end-to-end current-code measurement supports the
+target's funding gate. A faster CHUZR scan alone is not funded; that lane is
+closed.
+
+### W2-C captures exclusive IPM slices
+
+Use `LINPROGX_IPM_SLICE=1` and any additional knob-off instrumentation needed
+to cover at least 98% of wall on `bnl2` and `ganges`. Include controls spanning
+small and medium IPM routes: `fit1p`, `stocfor2`, `80bau3b`, `cre_a`,
+`degen3`, and `woodw`.
+
+Measure direct native IPM, public route, presolve, matrix conversion, setup and
+ordering, symbolic work, numeric refactors, triangular solves,
+matvec/residuals, certificate cleanup, and result marshalling. Instrumentation
+must be absent and bit-identical when its environment flag is off.
+
+### W2-D runs the route and reduction exchange
+
+Force every existing algorithm and presolve mode on all six targets. Cross
+normal and aggressive reductions with each compatible solver composition.
+Measure current greenbea and all route controls. This is a bounded exchange
+matrix, not a tuning sweep.
+
+The report must distinguish:
+
+- a route that cannot certify;
+- a route that certifies but misses the wall gate;
+- a reduction that helps only with a particular solver composition;
+- a structural predicate that generalizes across controls.
+
+After `await all_terminal`, collect bounded results, inspect full artifacts for
+surviving mechanisms, and update the campaign ledger. Do not carry unfunded
+ideas into implementation.
+
+## Wave 3 builds only funded candidates
+
+The parent selects at most three candidates. Each candidate gets a fresh
+worktree, one owner, a characterization test written before behavior changes,
+and a predeclared target/control set.
+
+Candidate briefs must state:
+
+1. the measured Wave 2 slice or interaction that funds the work;
+2. the target candidate/shipped ratio;
+3. the exact global gate, if any;
+4. which source files the worker owns;
+5. the original-unit certificate checks;
+6. the controls that must remain on the same route or improve;
+7. a kill command and rollback boundary.
+
+Good candidates can change trajectory, fixed setup cost, factorization cost, or
+route composition. They cannot claim that a component-level gain will compose
+without an end-to-end measurement.
+
+Every candidate must leave defaults gated until it passes:
+
+- focused characterization tests;
+- external-oracle comparison;
+- all target and control certificates;
+- deterministic repeat;
+- local CPU-time sign test;
+- `just ci`.
+
+Commit each candidate separately. Do not combine two uncertain mechanisms into
+one unreviewable patch.
+
+## Wave 4 reviews and integrates survivors
+
+Create one integration worktree from the current campaign baseline. Launch:
+
+1. one integration owner who may cherry-pick only funded candidate commits;
+2. one read-only numerical reviewer focused on certificates, presolve
+   reconstruction, tolerances, statuses, and C memory ownership;
+3. one read-only performance reviewer who recomputes the whole-wall funding
+   math and searches for measurement leakage;
+4. one read-only provenance and generalization reviewer who checks global
+   gates, controls, source-informed labels, and public claims.
+
+Reviewers do not approve by narrative. They name exact lines, tests, artifacts,
+and failed assumptions. Use `reply` to send bounded corrections to the original
+candidate owner when stateful context matters.
+
+The integration owner runs the 39-case local correctness sweep and `just ci`.
+Any cross-candidate regression returns the relevant candidate to Wave 3.
+
+## Wave 5 certifies code effects on Modal
+
+Only one benchmark operator launches Modal work. This avoids duplicate spend
+and conflicting source snapshots.
+
+For each integrated candidate:
+
+1. Commit the exact source state.
+2. Upload it with an explicit `--worktree`.
+3. Run protocol-v3 `envab`, three hosts by seven pairs, candidate versus
+   shipped baseline.
+4. Include every target the mechanism can affect and the route controls below.
+5. Require original-unit certification in every timed result.
+
+Simplex controls:
+`greenbea`, `agg2`, `agg3`, `cycle`, `fffff800`, `israel`, and `tuff`.
+
+IPM controls:
+`fit1p`, `stocfor2`, `80bau3b`, `cre_a`, `cre_d`, `degen3`, and `woodw`.
+
+Include PDHG smoke controls if shared sparse kernels changed.
+
+A candidate advances only when its median-of-hosts result meets the
+predeclared funding gate and no control has a material regression. Run a fresh
+paired comparison with HiGHS for every target that advances. `ganges` needs
+three-host evidence with margin; one favorable host does not move the board.
+
+Two independent read-only auditors parse the raw Modal JSON and recompute host
+medians, pair wins, statuses, objectives, residuals, and candidate SHA. They
+must agree before the parent records a board move.
+
+## Wave 6 certifies the board and ships
+
+After all six targets pass their paired gates:
+
+1. Run the full 39-case, three-solver, three-host suite on the exact candidate
+   commit.
+2. Re-pair all six former losses against HiGHS.
+3. Re-pair any existing win whose route or kernel changed and every prior
+   knife-edge cell.
+4. Confirm 39/39 linprogx coverage, unchanged `eps`, original-unit
+   certificates, and deterministic routes.
+5. Run `just ci` under the 98% coverage floor.
+6. Regenerate the benchmark table, summary JSON, charts, coverage badge, and
+   README from raw artifacts.
+7. Update the campaign ledger, `docs/HANDOFF.md`, and provenance framing.
+8. Commit in logical units and fast-forward local `main` only after the
+   checkout is clean and every gate passes. Do not push unless Evan asks.
+
+The final report gives:
+
+- the 39W-0P-0L board;
+- per-host ratios and pair wins for the six closed cells;
+- the mechanism and global gate behind each move;
+- controls and regressions tested;
+- every killed lane and its reopening condition;
+- exact commits, Modal URLs, raw artifacts, and CI output;
+- clean-room versus source-informed provenance.
+
+If Wave 6 does not reach 39 wins, return to a new Wave 1 with the accumulated
+evidence. Do not weaken correctness, provenance, or protocol gates to finish.
+
+---
