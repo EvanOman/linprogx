@@ -538,7 +538,14 @@ def _compose_reductions(
     )
 
 
-def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
+def _maybe_aggregate(
+    result: PresolveResult,
+    max_fill: int,
+    *,
+    agg_max_fill: int | None = None,
+    fill_budget: int | None = None,
+    fill_gate: bool | None = None,
+) -> PresolveResult:
     """Re-stage: run a pure-Python aggregation fixpoint on the already-reduced
     problem and compose it onto ``result`` when the extra reduction is
     substantial. The aggregation kernel lives only in the Python reducer (the C
@@ -565,7 +572,12 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
     # which is what keeps the reject-path pass cost negligible. The previous
     # max(256, nnz//40) cap was far too loose -- cre_a ran ~1026 aggregations before
     # crossing 418, making the reject path expensive.
-    fill_budget = 48
+    if fill_budget is None:
+        fill_budget = int(os.environ.get("LINPROGX_AGG_FILL_BUDGET", "48"))
+    if agg_max_fill is None:
+        agg_max_fill = _agg_max_fill()
+    if fill_gate is None:
+        fill_gate = _agg_fillgate_enabled()
     # Prefer the native (_csparse) aggregation re-stage: it reproduces the
     # agg_only Python path bit-for-bit (the reduced problem and the record
     # stream) but at ~10-30x lower pass cost, which is what lets the re-stage
@@ -575,7 +587,7 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
         # Pass ``nnz`` so the native pass can apply the fill-gate internally and
         # return None on a fill-positive reject WITHOUT materializing the reduced
         # matrix/records it would only throw away (unless the gate is disabled).
-        gate_nnz = nnz if _agg_fillgate_enabled() else -1
+        gate_nnz = nnz if fill_gate else -1
         raw = _c_presolve_agg(
             result._matrix,
             _pack_dbls(result.b),
@@ -585,6 +597,7 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
             max_fill,
             fill_budget,
             gate_nnz,
+            agg_max_fill,
         )
         second = None if raw is None else _result_from_c(raw)
     else:
@@ -606,6 +619,7 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
             agg=True,
             agg_fill_budget=fill_budget,
             agg_only=True,
+            agg_max_fill=agg_max_fill,
         )
     if second is None or not _fixpoint_reduction_is_substantial(
         second.removed_rows, second.removed_cols, result.rows, result.cols
@@ -616,9 +630,41 @@ def _maybe_aggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
     # that keeps aggregation where it is fill-non-positive (80bau3b: 21798->21511)
     # and structurally excludes the fill-positive cases (greenbea: 23274->26683).
     second_nnz = second._matrix.nnz if second._matrix is not None else len(second.data)
-    if _agg_fillgate_enabled() and second_nnz > nnz:
+    if fill_gate and second_nnz > nnz:
         return result
     return _compose_reductions(result, second)
+
+
+def aggressive_aggregate_for_ds2(
+    result: PresolveResult, max_fill: int = 5
+) -> PresolveResult | None:
+    """Return a controlled fill-positive aggregation for the DS2 composition.
+
+    The row reduction must be at least 20%, while realized matrix fill may grow
+    by at most 5%.  This global exchange rate admits reductions large enough to
+    change basis geometry without allowing an open-ended sparse-factor cost.
+    """
+    candidate = _maybe_aggregate(
+        result,
+        max_fill,
+        agg_max_fill=20,
+        fill_budget=-1,
+        fill_gate=False,
+    )
+    if candidate is result:
+        return None
+    # EXPERIMENT (close6 W2-B, default OFF): bypass the 20%/5% exchange rate so
+    # the declined aggregation can be measured on 25fv47/degen2.  This is a
+    # measurement hook only -- the shipped gate below is unchanged when unset.
+    if os.environ.get("LINPROGX_W2B_FORCE_AGG", "0") == "1":
+        return candidate
+    base_nnz = result._matrix.nnz if result._matrix is not None else len(result.data)
+    candidate_nnz = candidate._matrix.nnz if candidate._matrix is not None else len(candidate.data)
+    if candidate.rows * 5 > result.rows * 4:
+        return None
+    if candidate_nnz * 20 > base_nnz * 21:
+        return None
+    return candidate
 
 
 def _maybe_netaggregate(result: PresolveResult, max_fill: int) -> PresolveResult:
@@ -889,6 +935,7 @@ def _presolve_eq_box_python(
     agg: bool | None = None,
     agg_fill_budget: int | None = None,
     agg_only: bool = False,
+    agg_max_fill: int | None = None,
 ) -> PresolveResult | None:
     """Pure-Python reference implementation (kept as the fallback).
 
@@ -936,7 +983,8 @@ def _presolve_eq_box_python(
     objective_offset = 0.0
     v2 = _v2_enabled()
     agg = _agg_enabled() if agg is None else agg
-    agg_max_fill = _agg_max_fill()
+    if agg_max_fill is None:
+        agg_max_fill = _agg_max_fill()
     agg_pivot_tol = _agg_pivot_tol()
     reduction_counts = _empty_reduction_counts()
 
