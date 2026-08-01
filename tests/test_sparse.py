@@ -973,3 +973,33 @@ def test_stall_predictor_falls_through_when_ds_fails() -> None:
     # DS was tried first but failed; IPM should have been attempted
     assert matrix.ds_calls >= 1
     assert matrix.ipm_calls >= 1
+
+
+def test_w2b_force_ds2_hook_is_off_by_default_and_reroutes_the_shortcut(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Measurement hook: LINPROGX_W2B_FORCE_DS2 sends the stall shortcut to DS2."""
+    n = 200
+    m = 50
+    c = [0.0] * 120 + [1.0] * 80
+    lo = [0.0] * n
+    hi = [float("inf")] * 120 + [10.0] * 80
+    bounds: list[tuple[float | None, float | None]] = [
+        (lo[j], hi[j] if hi[j] != float("inf") else None) for j in range(n)
+    ]
+    b = [1.0] * m
+
+    def route(matrix: _StallPredictorMatrix) -> None:
+        SparseSolver(algorithm="auto", eps=1e-6, presolve=False).solve(
+            SparseLPProblem(c, A_eq=matrix, b_eq=b, objective="min", bounds=bounds)
+        )
+
+    monkeypatch.delenv("LINPROGX_W2B_FORCE_DS2", raising=False)
+    default = _StallPredictorMatrix()
+    route(default)
+    assert (default.ds_calls, default.ds2_calls) == (1, 0)
+
+    monkeypatch.setenv("LINPROGX_W2B_FORCE_DS2", "1")
+    forced = _StallPredictorMatrix()
+    route(forced)
+    assert (forced.ds_calls, forced.ds2_calls) == (0, 1)

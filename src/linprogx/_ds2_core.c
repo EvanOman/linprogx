@@ -152,6 +152,37 @@ static PyObject *ds2_solve(
     const int opt_perturb = ds2_env_int("LINPROGX_DS2_PERTURB", 1);
     const int opt_scale = ds2_env_int("LINPROGX_DS2_SCALE", 2);
     const int opt_dse_pair = ds2_env_int("LINPROGX_DS2_DSE_PAIR", 0);
+    /* EXPERIMENT (close6 W2-B, default OFF): FNV-1a digest over the realised
+     * pivot sequence (leaving basis position, leaving column, entering column),
+     * mirroring the shipped DS oracle at _csparse.c:16063-16069.  Used to prove
+     * that a sharing variant such as the fused two-RHS FTRAN preserves every
+     * pivot decision rather than merely landing on the same objective. */
+    const int opt_trace_hash = ds2_env_int("LINPROGX_DS2_TRACE_HASH", 0);
+    uint64_t pivot_hash = UINT64_C(1469598103934665603);
+    /* EXPERIMENT (close6 W2-B, default OFF): FTRAN/BTRAN slice for the DS2
+     * route.  The LU counters live on the LUContext and reset at every
+     * refactorization, so they are accumulated before each context is
+     * replaced -- the same discipline as DS_ACCUM_SOLVE_SLICE in _csparse.c.
+     * The underlying per-call timers only run when LINPROGX_DS_SOLVE_SLICE is
+     * also set (lu_factorize reads it into ctx->solve_slice_on). */
+    const int opt_solve_slice = ds2_env_int("LINPROGX_DS2_SOLVE_SLICE", 0);
+    int64_t cum_ftran_dense_count = 0, cum_ftran_sparse_count = 0;
+    int64_t cum_btran_dense_count = 0, cum_btran_sparse_count = 0;
+    double cum_ftran_dense_s = 0.0, cum_ftran_sparse_s = 0.0;
+    double cum_btran_dense_s = 0.0, cum_btran_sparse_s = 0.0;
+#define DS2_ACCUM_SOLVE_SLICE(lu_) do { \
+        LUContext *ds2_lu_ = (lu_); \
+        if (ds2_lu_ != NULL) { \
+            cum_ftran_dense_count  += ds2_lu_->ftran_dense_count; \
+            cum_ftran_sparse_count += ds2_lu_->ftran_sparse_count; \
+            cum_btran_dense_count  += ds2_lu_->btran_dense_count; \
+            cum_btran_sparse_count += ds2_lu_->btran_sparse_count; \
+            cum_ftran_dense_s  += ds2_lu_->ftran_dense_s; \
+            cum_ftran_sparse_s += ds2_lu_->ftran_sparse_s; \
+            cum_btran_dense_s  += ds2_lu_->btran_dense_s; \
+            cum_btran_sparse_s += ds2_lu_->btran_sparse_s; \
+        } \
+    } while (0)
     uint64_t perturb_rng = UINT64_C(0x9E3779B97F4A7C15);
     int32_t refac_interval = (int32_t)ds2_env_int("LINPROGX_DS2_REFAC", 125);
     if (refac_interval < 1) refac_interval = 1;
@@ -519,6 +550,7 @@ static PyObject *ds2_solve(
             if (growth > DS_CRASH_MAX_GROWTH) reject = 1;
         }
         if (reject) {
+            DS2_ACCUM_SOLVE_SLICE(lu);
             lu_context_free(lu);
             lu = NULL;
             for (int32_t i = 0; i < m; i++) basis[i] = n + i;
@@ -671,6 +703,7 @@ static PyObject *ds2_solve(
                         break;
                     }
                     ban_rounds++;
+                    DS2_ACCUM_SOLVE_SLICE(lu);
                     lu_context_free(lu);
                     lu = ds_factorize_basis(m, n, self->csc_indptr,
                                             self->csc_rows, a_data, basis,
@@ -1102,6 +1135,15 @@ static PyObject *ds2_solve(
             r_ext[leaving_col] = r_leaving;
             basis_pos[leaving_col] = -1;
 
+            if (opt_trace_hash) {
+                pivot_hash ^= (uint32_t)leaving_pos;
+                pivot_hash *= UINT64_C(1099511628211);
+                pivot_hash ^= (uint32_t)leaving_col;
+                pivot_hash *= UINT64_C(1099511628211);
+                pivot_hash ^= (uint32_t)entering_col;
+                pivot_hash *= UINT64_C(1099511628211);
+            }
+
             basis[leaving_pos] = entering_col;
             basis_pos[entering_col] = leaving_pos;
             bound_status[entering_col] = DS2_BASIC;
@@ -1139,6 +1181,7 @@ static PyObject *ds2_solve(
                 for (int32_t ri = 0; ri < rho_nnz; ri++) rho[rho_pat[ri]] = 0.0;
 
                 if (need_refac) {
+                    DS2_ACCUM_SOLVE_SLICE(lu);
                     lu_context_free(lu);
                     lu = ds_factorize_basis(m, n, self->csc_indptr,
                                             self->csc_rows, a_data, basis,
@@ -1251,6 +1294,7 @@ static PyObject *ds2_solve(
      * budget and big-M retry have no analogue -- the test below is the whole
      * certificate. */
     if (strcmp(status, "optimal") == 0) {
+        DS2_ACCUM_SOLVE_SLICE(lu);
         lu_context_free(lu);
         lu = ds_factorize_basis(m, n, self->csc_indptr, self->csc_rows, a_data,
                                 basis, b_indptr, b_indices, b_values);
@@ -1387,6 +1431,42 @@ build_result:
             "audit_rounds", (long long)stat_audit_rounds,
             "phase1_iterations", (long long)phase1_iters,
             "phase1_dual_objective", phase1_dual_obj);
+        if (result != NULL && opt_solve_slice) {
+            DS2_ACCUM_SOLVE_SLICE(lu);
+            PyObject *slice = Py_BuildValue(
+                "{s:d,s:d,s:d,s:d,s:d,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:L}",
+                "ftran_dense", cum_ftran_dense_s * 1e6,
+                "ftran_sparse", cum_ftran_sparse_s * 1e6,
+                "ftran_total", (cum_ftran_dense_s + cum_ftran_sparse_s) * 1e6,
+                "btran_dense", cum_btran_dense_s * 1e6,
+                "btran_sparse", cum_btran_sparse_s * 1e6,
+                "btran_total", (cum_btran_dense_s + cum_btran_sparse_s) * 1e6,
+                "solve_total", (cum_ftran_dense_s + cum_ftran_sparse_s +
+                                cum_btran_dense_s + cum_btran_sparse_s) * 1e6,
+                "ftran_dense_count", (long long)cum_ftran_dense_count,
+                "ftran_sparse_count", (long long)cum_ftran_sparse_count,
+                "ftran_count", (long long)(cum_ftran_dense_count + cum_ftran_sparse_count),
+                "btran_dense_count", (long long)cum_btran_dense_count,
+                "btran_sparse_count", (long long)cum_btran_sparse_count,
+                "btran_count", (long long)(cum_btran_dense_count + cum_btran_sparse_count));
+            if (slice != NULL) {
+                PyDict_SetItemString(result, "solve_slice_us", slice);
+                Py_DECREF(slice);
+            } else {
+                PyErr_Clear();
+            }
+        }
+        if (result != NULL && opt_trace_hash) {
+            PyObject *hash_value = PyLong_FromUnsignedLongLong(pivot_hash);
+            if (hash_value == NULL ||
+                PyDict_SetItemString(result, "pivot_trace_hash", hash_value) != 0) {
+                Py_XDECREF(hash_value);
+                Py_DECREF(result);
+                result = NULL;
+                goto done;
+            }
+            Py_DECREF(hash_value);
+        }
     }
 
 done:

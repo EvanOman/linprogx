@@ -284,3 +284,18 @@ def test_duplicate_column_postsolve_clamps_roundoff_below_removed_bound() -> Non
     )
 
     assert P.postsolve_x([5.0], reduction) == [4.0, 1.0]
+
+
+def test_w2b_force_agg_hook_is_off_by_default_and_bypasses_the_exchange_rate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Measurement hook: LINPROGX_W2B_FORCE_AGG admits a gate-declined candidate."""
+    base = _result(rows=10, nnz=100)
+    excessive_fill = _result(rows=8, nnz=106)
+    monkeypatch.setattr(P, "_maybe_aggregate", lambda *_args, **_kwargs: excessive_fill)
+
+    monkeypatch.delenv("LINPROGX_W2B_FORCE_AGG", raising=False)
+    assert P.aggressive_aggregate_for_ds2(base) is None
+
+    monkeypatch.setenv("LINPROGX_W2B_FORCE_AGG", "1")
+    assert P.aggressive_aggregate_for_ds2(base) is excessive_fill
