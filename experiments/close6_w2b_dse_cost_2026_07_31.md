@@ -52,6 +52,15 @@ same host load; arm order rotates with the round index so no arm keeps a
 warm-cache advantage. Verdict statistic = per-arm median CPU seconds + exact
 one-sided paired binomial sign test against the shipped arm (11/11 => p=0.0005).
 
+**Arm coverage note.** There is no fused two-RHS FTRAN on the shipped DS path:
+`lu_ftran_pair` is defined at `_csparse.c:12226` and has exactly one call site
+in the tree, `_ds2_core.c:1033`, gated by `LINPROGX_DS2_DSE_PAIR`
+(`_ds2_core.c:154`). "Exact DSE + fused" is therefore
+reachable for 25fv47/degen2 only through the DS2 route, which is what the
+`ds2_pair` and `ds2_agg_pair` arms measure (DS2's own leaving rule is already
+exact DSE, `_ds2_chuzr.c:717-718`). `dse` + `LINPROGX_DS2_DSE_PAIR=1` on the DS
+path is not a distinct arm — the flag is unread there.
+
 **Instrumentation** is a separate un-timed route-replicating run per arm
 (`presolve_matrix(matrix, b, c, lo, hi, ...)` -> aggregation gate -> DS/DS2, per
 `src/linprogx/sparse.py:171-460`), which returns the raw C result dict:
