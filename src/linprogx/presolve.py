@@ -653,6 +653,11 @@ def aggressive_aggregate_for_ds2(
     )
     if candidate is result:
         return None
+    # EXPERIMENT (close6 W2-B, default OFF): bypass the 20%/5% exchange rate so
+    # the declined aggregation can be measured on 25fv47/degen2.  This is a
+    # measurement hook only -- the shipped gate below is unchanged when unset.
+    if os.environ.get("LINPROGX_W2B_FORCE_AGG", "0") == "1":
+        return candidate
     base_nnz = result._matrix.nnz if result._matrix is not None else len(result.data)
     candidate_nnz = candidate._matrix.nnz if candidate._matrix is not None else len(candidate.data)
     if candidate.rows * 5 > result.rows * 4:

@@ -21,6 +21,26 @@ def _ds2_composition_enabled() -> bool:
     return os.environ.get("LINPROGX_DS2_COMPOSITION", "1") != "0"
 
 
+def _w2b_ds_leaving_rule() -> int:
+    """EXPERIMENT (close6 W2-B, default OFF -> 1).
+
+    Override the leaving rule used by the stall-predictor dual-simplex
+    shortcut so exact DSE (rule 5) can be measured end-to-end on the cells
+    the aggregation gate declines.  Unset leaves the shipped Dantzig rule.
+    """
+    return int(os.environ.get("LINPROGX_W2B_DS_RULE", "1"))
+
+
+def _w2b_force_ds2() -> bool:
+    """EXPERIMENT (close6 W2-B, default OFF).
+
+    Route the stall-predictor shortcut through the DS2 composition even when
+    the controlled-aggregation gate declines, so the DS2 per-pivot economics
+    can be measured on 25fv47/degen2.  Production route unchanged when unset.
+    """
+    return os.environ.get("LINPROGX_W2B_FORCE_DS2", "0") == "1"
+
+
 def _max_equality_residual(matrix: Any, x: list[float], b: list[float]) -> float:
     ax = matrix.matvec(x)
     return max((abs(float(lhs) - rhs) for lhs, rhs in zip(ax, b, strict=True)), default=0.0)
@@ -255,6 +275,8 @@ class SparseSolver:
                     solve_c, solve_b = aggressive.c, aggressive.b
                     solve_lo, solve_hi = aggressive.lo, aggressive.hi
                     ds2_composition_route = True
+            if stall_risk and not ds2_composition_route and _w2b_force_ds2():
+                ds2_composition_route = True
             if stall_risk:
                 if ds2_composition_route:
                     ds_early = matrix.solve_eq_box_ds2(
@@ -271,7 +293,7 @@ class SparseSolver:
                         solve_lo,
                         solve_hi,
                         max_iter=min(self.max_iterations, 50_000),
-                        leaving_rule=1,
+                        leaving_rule=_w2b_ds_leaving_rule(),
                         expand=1,
                     )
                 if ds_early["status"] == "optimal":
