@@ -2683,6 +2683,56 @@ counters, refac phase profile, LU profile, paired-stat protocol.
   diagnostics bank the factor and structural counts. No production code
   changed; no v3 recertification was run. BOARD REMAINS 23W-0P-1L.
 
+- SOURCE-INFORMED WAVE — THE MECHANISM IS UNDERSTOOD; THE GAP IS NOT CLOSED
+  (2026-07-25/26, clean-room rule lifted for greenbea ONLY by explicit owner
+  authorisation; boundary tag clean-room-boundary-2026-07-25, branch
+  greenbea-source-informed, docs/PROVENANCE.md; reports
+  experiments/highs_dual_phase1_finding_2026_07_25.md,
+  highs_study_S{1,2,3}_*_2026_07_25.md, phase1_implementation_wip_2026_07_25.md):
+  (1) THE ANSWER. HiGHS's dual Phase 1 CONSTRUCTS NOTHING. HEkk::initialiseBound
+  runs the same dual simplex on the same matrix, costs, basis and LU with the
+  primal bounds replaced by {free -> [-1000,1000], upper-only -> [-1,0],
+  lower-only -> [0,1], boxed/fixed -> [0,0]}. Every variable becomes BOXED, so
+  dual feasibility is achievable BY CONSTRUCTION and big-M is never needed; cost
+  is an O(n) array rewrite. b never appears -- that is the b-invariance this
+  campaign proved clean-room without being able to explain. THE CONSERVATION LAW
+  WAS AN ARTEFACT of assuming Phase 1 must be BUILT rather than ENTERED: our
+  homogeneous auxiliary min c'x s.t. Ax=0, x in [0,1] was the RIGHT object,
+  solved as a separate LP (0.145-0.215s) instead of entered in place.
+  (2) TWO ASSUMPTIONS CORRECTED by measuring HiGHS directly (highspy 1.14.0):
+  DuPh1 1448 + DuPh2 1376 + PrPh2 12 = **2,836** iterations, not the inferred
+  ~3,334; and linprogx's per-pivot cost is **1.73x BETTER** (85.7us vs 148.4us),
+  so on the dev box linprogx is FASTER in absolute wall (377ms vs 421ms). The
+  board loss lives only in how the two scale on Modal's 4-vCPU containers. Every
+  clean-room wave optimised the slice where we were already ahead.
+  (3) EVERY MECHANISM BUILT OR KILLED, NOTHING BEATS 4,399: logical form (RHS in
+  the artificial/logical bounds) built and RESULT-IDENTICAL at 4,399; in-place
+  dual Phase 1 built and CORRECT (Phase-1 dual objective = exactly 0, HiGHS's own
+  success test) but LOSES at 5,124 (DuPh1 2,921 + DuPh2 2,203 -- ~2x worse than
+  HiGHS in BOTH phases, reproducing a standalone Python simulation of 2,418+2,399
+  from a different code path); BFRT with boxed columns 4,298 pivots but SLOWER
+  wall; DSE weight floor 1e-4 KILLED (exact DSE flat at 4,675 across five orders
+  of magnitude); DSE re-selection KILLED (zero effect -- linprogx ALREADY anchors
+  gamma_r with exact ||rho||^2 every pivot, so weights are never stale enough to
+  reject; we had solved that problem by a more expensive route); rotating CHUZR
+  tie-break KILLED (4,399 in all four SIMD x rotate configurations); row/logical
+  cost perturbation KILLED (greenbea is all-equality so every logical is FIXED --
+  no slack ties exist to break). (4) THE RESIDUAL IS DIFFUSE. HiGHS's
+  1,563-pivot advantage is not attributable to any single mechanism we could
+  isolate, implement and measure. Matching 2,836 would need HiGHS's ENTIRE
+  pivot-selection regime as a coupled system, not pieces grafted onto a
+  Dantzig/big-M core. (5) All six new gates default OFF; default path verified
+  digest 679168a4baad36d6, 4,399 pivots, objective -72555248.12984592, 522 passed
+  / 7 skipped. No production default changed, no v3 recert run. BOARD REMAINS
+  23W-0P-1L, greenbea ~1.156. PROVENANCE: any future greenbea win built on this
+  understanding is SOURCE-INFORMED and must never be reported as a clean-room
+  result -- docs/PROVENANCE.md carries the required public framing.
+
+NOTE ON LEDGER TOPOLOGY: the clean-room endgame entries (harris/idx32 ship, v3
+cert, phase map, parallel-lane closure) live on branch perf-greenbea-endgame in
+/home/evan/dev/linprogx-greenbea-endgame and are NOT on this branch. Both must be
+merged to reconstruct the full ledger.
+
 - REOPENED CRASH + EXACT-DATAFLOW FRONTIER — NO FUNDED SUCCESSOR
   (2026-07-22, native workers + control-plane verification; no network or
   external solver source;
