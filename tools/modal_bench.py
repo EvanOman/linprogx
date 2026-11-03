@@ -42,7 +42,7 @@ Two ways to get linprogx source into the container:
 -----------------------------------------------------------------------------
 FIXTURES
 -----------------------------------------------------------------------------
-The 24 LPnetlib `lp_*.mat` fixtures are stored in the `linprogx-lpsuite`
+The LPnetlib `lp_*.mat` fixtures are stored in the `linprogx-lpsuite`
 Modal Volume (uploaded once from local /tmp/lpsuite via `--upload-fixtures`).
 This is more reliable than re-downloading from sparse.tamu.edu per run.
 
@@ -57,8 +57,9 @@ USAGE
   uvx modal run tools/modal_bench.py --action bench --mode paired \
       --ref <sha> --instances lp_woodw --pairs 3
 
-  # full suite single-shot (all 24, lx/highs/clarabel)
-  uvx modal run tools/modal_bench.py --action bench --mode suite --ref <sha>
+  # full expanded suite (39 instances, lx/highs/clarabel) on 3 hosts
+  uvx modal run tools/modal_bench.py --action bench --mode suite --ref <sha> \
+      --hosts 3
 
   # certified knife-edge paired verdicts
   uvx modal run tools/modal_bench.py --action bench --mode paired --ref <sha> \
@@ -104,8 +105,8 @@ SRC_DIR = "/src"
 
 PUBLIC_REPO = "https://github.com/EvanOman/linprogx"
 
-# The 24 LPnetlib fixtures (stems), used as the default suite set.
-ALL_INSTANCES = [
+# The original 24-cell board, retained so historical artifacts remain legible.
+ORIGINAL_INSTANCES = [
     "lp_80bau3b",
     "lp_cre_a",
     "lp_cre_b",
@@ -131,6 +132,29 @@ ALL_INSTANCES = [
     "lp_truss",
     "lp_woodw",
 ]
+
+# Fifteen additional fixtures selected for route and structural diversity.
+# Eight exercise the dual-simplex class that the original board barely
+# represented; the remaining seven broaden the IPM and degenerate-network mix.
+EXPANDED_INSTANCES = [
+    "lp_25fv47",
+    "lp_agg2",
+    "lp_agg3",
+    "lp_bnl2",
+    "lp_cycle",
+    "lp_degen2",
+    "lp_fffff800",
+    "lp_fit1p",
+    "lp_ganges",
+    "lp_greenbeb",
+    "lp_israel",
+    "lp_pilot",
+    "lp_sierra",
+    "lp_stocfor2",
+    "lp_tuff",
+]
+
+ALL_INSTANCES = ORIGINAL_INSTANCES + EXPANDED_INSTANCES
 
 # Certified knife-edge set for paired verdicts (from docs/HANDOFF.md).
 CERTIFIED_SET = [
@@ -374,6 +398,63 @@ def aggregate_protocol_v3_hosts(host_results: list[dict[str, Any]]) -> dict[str,
     }
 
 
+def aggregate_suite_v3_hosts(host_results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate three-solver suite rows across independent clean hosts."""
+    if not host_results:
+        raise ValueError("host_results must not be empty")
+
+    grouped: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for host_result in host_results:
+        for row in host_result.get("rows", []):
+            grouped.setdefault(row["instance"], {}).setdefault(row["solver"], []).append(row)
+
+    instances: dict[str, Any] = {}
+    for instance, solver_rows in sorted(grouped.items()):
+        solvers: dict[str, Any] = {}
+        for solver in SOLVERS:
+            rows = solver_rows.get(solver, [])
+            optimal_rows = [row for row in rows if row.get("status") == "optimal"]
+            seconds = [float(row["seconds"]) for row in optimal_rows]
+            solvers[solver] = {
+                "hosts_observed": len(rows),
+                "hosts_optimal": len(optimal_rows),
+                "status": "optimal" if len(optimal_rows) == len(host_results) else "incomplete",
+                "seconds_median_of_hosts": statistics.median(seconds) if seconds else None,
+                "seconds_min_host": min(seconds) if seconds else None,
+                "seconds_max_host": max(seconds) if seconds else None,
+                "objective": optimal_rows[0].get("objective") if optimal_rows else None,
+                "max_residual": max(
+                    (
+                        float(row["residual"])
+                        for row in optimal_rows
+                        if row.get("residual") is not None
+                    ),
+                    default=None,
+                ),
+                "backend": optimal_rows[0].get("backend") if optimal_rows else None,
+                "iterations": optimal_rows[0].get("iterations") if optimal_rows else None,
+            }
+
+        lx_seconds = solvers["linprogx"]["seconds_median_of_hosts"]
+        highs_seconds = solvers["highs"]["seconds_median_of_hosts"]
+        clarabel_seconds = solvers["clarabel"]["seconds_median_of_hosts"]
+        instances[instance] = {
+            "solvers": solvers,
+            "linprogx_over_highs": (
+                lx_seconds / highs_seconds if lx_seconds and highs_seconds else None
+            ),
+            "linprogx_over_clarabel": (
+                lx_seconds / clarabel_seconds if lx_seconds and clarabel_seconds else None
+            ),
+        }
+
+    return {
+        "protocol": "suite-v3",
+        "hosts": len(host_results),
+        "instances": instances,
+    }
+
+
 def aggregate_envab_v3_hosts(host_results: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate independent env-A/B host results without changing paired v3."""
     if not host_results:
@@ -522,6 +603,8 @@ def bench(
         out["rows"] = rows
 
     elif mode == "paired":
+        env_a = env_a or {}
+        out["env_a"] = env_a
         paired: dict[str, Any] = {}
         for inst in insts:
             fixture = Path(FIXTURES_DIR) / f"{inst}.mat"
@@ -533,7 +616,7 @@ def bench(
             lx_backend = None
             for pair_index in range(pairs):
                 # interleaved: lx then HiGHS, back to back
-                lx = _run_cell(workdir, fixture, "linprogx")
+                lx = _run_cell(workdir, fixture, "linprogx", env_a)
                 hx = _run_cell(workdir, fixture, "highs")
                 if lx.get("status") == "optimal":
                     lx_secs.append(float(lx["seconds"]))
@@ -748,12 +831,12 @@ def main(
             raise SystemExit("--ref required for bench")
         if hosts < 1:
             raise SystemExit("--hosts must be >= 1")
-        if hosts > 1 and mode not in {"paired", "envab"}:
-            raise SystemExit("--hosts > 1 is only supported for --mode paired")
-        if mode == "envab":
+        if hosts > 1 and mode not in {"suite", "paired", "envab"}:
+            raise SystemExit("--hosts > 1 requires --mode suite, paired, or envab")
+        if mode in {"paired", "envab"}:
             try:
                 env_a_overrides = _parse_env_overrides(env_a)
-                env_b_overrides = _parse_env_overrides(env_b)
+                env_b_overrides = _parse_env_overrides(env_b) if mode == "envab" else {}
             except ValueError as exc:
                 raise SystemExit(str(exc)) from exc
         else:
@@ -776,17 +859,31 @@ def main(
                     for _ in range(hosts)
                 ]
             else:
-                calls = [(ref, inst_list, pairs, mode, use_snapshot, True) for _ in range(hosts)]
+                calls = [
+                    (
+                        ref,
+                        inst_list,
+                        pairs,
+                        mode,
+                        use_snapshot,
+                        True,
+                        env_a_overrides,
+                        {},
+                    )
+                    for _ in range(hosts)
+                ]
             host_results: list[dict[str, Any]] = []
             for idx, host_result in enumerate(bench.starmap(calls)):
                 host_result["host_index"] = idx
                 host_results.append(host_result)
 
-            v3 = (
-                aggregate_envab_v3_hosts(host_results)
-                if mode == "envab"
-                else aggregate_protocol_v3_hosts(host_results)
-            )
+            if mode == "suite":
+                v3 = aggregate_suite_v3_hosts(host_results)
+            elif mode == "envab":
+                v3 = aggregate_envab_v3_hosts(host_results)
+            else:
+                v3 = aggregate_protocol_v3_hosts(host_results)
+            default_instances = ALL_INSTANCES if mode == "suite" else CERTIFIED_SET
             result = {
                 "ref": ref,
                 "mode": mode,
@@ -794,12 +891,13 @@ def main(
                 "hosts": hosts,
                 "pairs": pairs,
                 "use_snapshot": use_snapshot,
-                "instances": [_norm(i) for i in inst_list] if inst_list else CERTIFIED_SET,
+                "instances": [_norm(i) for i in inst_list] if inst_list else default_instances,
                 "host_results": host_results,
                 "v3": v3,
             }
-            if mode == "envab":
+            if mode in {"paired", "envab"}:
                 result["env_a"] = env_a_overrides
+            if mode == "envab":
                 result["env_b"] = env_b_overrides
             blob = json.dumps(result, indent=2, default=str)
             print(blob)
@@ -815,6 +913,8 @@ def main(
             "mode": mode,
             "use_snapshot": use_snapshot,
         }
+        if mode == "paired":
+            bench_kwargs["env_a"] = env_a_overrides
         if mode == "envab":
             bench_kwargs["env_a"] = env_a_overrides
             bench_kwargs["env_b"] = env_b_overrides

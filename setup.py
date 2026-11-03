@@ -59,6 +59,13 @@ ext_modules = [
         extra_link_args=csparse_link_args,
         libraries=csparse_libraries,
     ),
+    # DS2 component A (CHUZC).  _ds2_chuzc.c is pure C with no CPython or
+    # _csparse dependency; _ds2_chuzc_py.c is validation-harness glue.
+    Extension(
+        "linprogx._ds2_chuzc",
+        sources=["src/linprogx/_ds2_chuzc.c", "src/linprogx/_ds2_chuzc_py.c"],
+        extra_compile_args=["-O3"],
+    ),
 ]
 
 setup(ext_modules=ext_modules)

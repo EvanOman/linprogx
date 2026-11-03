@@ -1,0 +1,89 @@
+{
+  "provenance": "SOURCE-INFORMED (HiGHS). Not a clean-room result.",
+  "date": "2026-07-29",
+  "board_before": "23W-0P-1L",
+  "board_after": "24W-0P-0L",
+  "production_commit": "152dab7f8191687bb3744fa5fab5748b59537994",
+  "greenbea": {
+    "status": "optimal",
+    "objective_original": -72555248.12984599,
+    "max_original_equality_residual": 1.458272436138941e-08,
+    "eps": 2e-05,
+    "iterations": 2424,
+    "reduced_shape": [1188, 3525, 24045],
+    "paired_v3": {
+      "hosts": 3,
+      "pairs_per_host": 7,
+      "ratio_median_of_hosts": 0.9860742124468825,
+      "ratio_min_host": 0.941674755278022,
+      "ratio_max_host": 0.9947675567879833,
+      "linprogx_pair_wins": 15,
+      "total_pairs": 21,
+      "run": "https://modal.com/apps/evan058/main/ap-2PCmH1FVOahtUWa5jDFRZK"
+    },
+    "envab_v3_vs_shipped": {
+      "ratio_median_of_hosts": 0.6682348428111041,
+      "candidate_pair_wins": 21,
+      "total_pairs": 21,
+      "run": "https://modal.com/apps/evan058/main/ap-aInbt9GCL3giDJp11lb8Ia"
+    },
+    "route_gate_v3": {
+      "ratio_median_of_hosts": 0.6977805255130155,
+      "candidate_pair_wins": 21,
+      "total_pairs": 21,
+      "run": "https://modal.com/apps/evan058/main/ap-OScunRF8x3QlCpTDuGY1wP"
+    }
+  },
+  "greenbeb_control": {
+    "status": "optimal",
+    "objective_original": -4302260.261206587,
+    "max_original_equality_residual": 1.1327605520250472e-11,
+    "iterations": 4320,
+    "reduced_shape": [1187, 3514, 23937],
+    "envab_v3_vs_shipped": {
+      "ratio_median_of_hosts": 0.6900626224716127,
+      "candidate_pair_wins": 21,
+      "total_pairs": 21
+    }
+  },
+  "route_gate_null_controls_v3": {
+    "hosts": 3,
+    "pairs_per_host": 7,
+    "run": "https://modal.com/apps/evan058/main/ap-OScunRF8x3QlCpTDuGY1wP",
+    "candidate_over_shipped_median_of_hosts": {
+      "80bau3b": 0.9965400713189084,
+      "cre_a": 0.9998604597662583,
+      "cre_b": 0.9739945057602971,
+      "degen3": 0.9843325406227769,
+      "osa_14": 0.9513955448324223,
+      "stocfor3": 1.009714440792272
+    }
+  },
+  "validation": {
+    "command": "just ci",
+    "passed": true,
+    "tests_passed": 554,
+    "tests_skipped": 7,
+    "coverage_percent": 89.19,
+    "lint": "passed",
+    "format": "passed",
+    "type": "passed",
+    "bandit": "passed",
+    "dependency_audit": "passed"
+  },
+  "kills": {
+    "initial_ds2_composition": {
+      "greenbea_candidate_over_baseline": 1.1290404616273684,
+      "greenbeb_candidate_over_baseline": 0.9372916151222913
+    },
+    "sparse_tau_ftran": {
+      "greenbea_candidate_over_dense": 1.2063029312259035,
+      "greenbeb_candidate_over_dense": 1.236968733720119
+    },
+    "fused_two_rhs_ftran": {
+      "greenbea_candidate_over_separate": 0.9077147906174611,
+      "greenbeb_candidate_over_separate": 1.0673307083220087,
+      "disposition": "killed by greenbeb control"
+    }
+  }
+}

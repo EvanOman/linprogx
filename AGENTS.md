@@ -2,6 +2,17 @@
 
 ## Purpose
 
+> **PROVENANCE NOTICE (2026-07-25).** The clean-room rule *"never read any
+> solver's source code"* was lifted **for greenbea only**, by explicit owner
+> authorisation, after 23/24 cells were won blind and greenbea was documented as
+> having no remaining funded mechanism. Boundary tag:
+> `clean-room-boundary-2026-07-25`. Read `docs/PROVENANCE.md` **before** making
+> any public claim about the board — the 23 clean-room wins and any
+> source-informed greenbea win must never be reported as the same kind of
+> result. All other constraints (no per-problem tuning, eps=2e-5,
+> certificate-backed optimality, honest reporting, no verbatim copying) remain
+> fully binding.
+
 `linprogx` is a benchmarkable learning artifact: a small LP solver whose mechanics stay inspectable while it competes against mature open-source solvers on the included examples and Netlib-scale fixtures. It is not a production replacement for HiGHS, CLP, Gurobi, CPLEX, or Mosek.
 
 Keep the runtime solver dependency-light. SciPy, Clarabel, NumPy, plotting, audit, and coverage tools belong in the `dev` extra for tests, comparisons, and benchmarks. OpenBLAS is the one native runtime dependency for the sparse C extension's dense-tail factorization.

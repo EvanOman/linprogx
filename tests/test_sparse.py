@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 
 import pytest
 
@@ -806,7 +807,19 @@ class _StallPredictorMatrix:
     def __init__(self) -> None:
         self.ipm_calls = 0
         self.ds_calls = 0
+        self.ds2_calls = 0
         self.pdhg_calls = 0
+
+    def solve_eq_box_ds2(self, *args: object, **kwargs: object) -> dict[str, object]:
+        self.ds2_calls += 1
+        return {
+            "status": "optimal",
+            "objective": -5.0,
+            "max_primal_residual": 0.0,
+            "iterations": 100,
+            "x": [1.0] * 200,
+            "y": [0.0] * 50,
+        }
 
     def solve_eq_box_dual_simplex(self, *args: object, **kwargs: object) -> dict[str, object]:
         self.ds_calls += 1
@@ -855,7 +868,7 @@ class _StallPredictorMatrix:
 
 
 def test_stall_predictor_routes_to_ds_before_ipm() -> None:
-    """When the stall predictor fires, DS is called first and IPM is skipped."""
+    """Without a qualifying aggregation, the shipped DS rescue is preserved."""
     matrix = _StallPredictorMatrix()
 
     # Build a problem that triggers the signal: 120 lo-only columns with c=0
@@ -877,9 +890,50 @@ def test_stall_predictor_routes_to_ds_before_ipm() -> None:
     assert result.backend == "native-c-sparse-dual-simplex"
     assert result.solution.status == Status.OPTIMAL
     assert "stall predictor" in result.solution.message
+    assert matrix.ds2_calls == 0
     assert matrix.ds_calls == 1
     assert matrix.ipm_calls == 0
     assert matrix.pdhg_calls == 0
+
+
+def test_qualifying_aggressive_aggregation_routes_to_ds2(monkeypatch) -> None:
+    matrix = _StallPredictorMatrix()
+    seen = {"aggressive": False}
+    n = 200
+    c = [0.0] * 120 + [1.0] * 80
+    lo = [0.0] * n
+    hi = [float("inf")] * 120 + [10.0] * 80
+    reduction = SimpleNamespace(
+        _matrix=matrix,
+        _reduction_counts={},
+        c=c,
+        b=[1.0] * 50,
+        lo=lo,
+        hi=hi,
+        removed_rows=0,
+        removed_cols=0,
+    )
+
+    def fake_presolve(*args: object, **kwargs: object) -> object:
+        return reduction
+
+    def fake_aggressive(value: object) -> object:
+        assert value is reduction
+        seen["aggressive"] = True
+        return reduction
+
+    monkeypatch.setattr("linprogx.sparse.presolve_matrix", fake_presolve)
+    monkeypatch.setattr("linprogx.sparse.aggressive_aggregate_for_ds2", fake_aggressive)
+    monkeypatch.setattr("linprogx.sparse.postsolve_x", lambda x, _reduction: x)
+    problem = SparseLPProblem(
+        c, A_eq=matrix, b_eq=[1.0] * 50, bounds=list(zip(lo, hi, strict=True))
+    )
+
+    SparseSolver(algorithm="auto", eps=1e-6).solve(problem)
+
+    assert seen["aggressive"] is True
+    assert matrix.ds2_calls == 1
+    assert matrix.ds_calls == 0
 
 
 class _StallPredictorFailMatrix(_StallPredictorMatrix):
@@ -919,3 +973,33 @@ def test_stall_predictor_falls_through_when_ds_fails() -> None:
     # DS was tried first but failed; IPM should have been attempted
     assert matrix.ds_calls >= 1
     assert matrix.ipm_calls >= 1
+
+
+def test_w2b_force_ds2_hook_is_off_by_default_and_reroutes_the_shortcut(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Measurement hook: LINPROGX_W2B_FORCE_DS2 sends the stall shortcut to DS2."""
+    n = 200
+    m = 50
+    c = [0.0] * 120 + [1.0] * 80
+    lo = [0.0] * n
+    hi = [float("inf")] * 120 + [10.0] * 80
+    bounds: list[tuple[float | None, float | None]] = [
+        (lo[j], hi[j] if hi[j] != float("inf") else None) for j in range(n)
+    ]
+    b = [1.0] * m
+
+    def route(matrix: _StallPredictorMatrix) -> None:
+        SparseSolver(algorithm="auto", eps=1e-6, presolve=False).solve(
+            SparseLPProblem(c, A_eq=matrix, b_eq=b, objective="min", bounds=bounds)
+        )
+
+    monkeypatch.delenv("LINPROGX_W2B_FORCE_DS2", raising=False)
+    default = _StallPredictorMatrix()
+    route(default)
+    assert (default.ds_calls, default.ds2_calls) == (1, 0)
+
+    monkeypatch.setenv("LINPROGX_W2B_FORCE_DS2", "1")
+    forced = _StallPredictorMatrix()
+    route(forced)
+    assert (forced.ds_calls, forced.ds2_calls) == (0, 1)
