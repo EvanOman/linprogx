@@ -1,0 +1,637 @@
+{
+  "greenbea": {
+    "cases": 200,
+    "mean_alpha_nnz": 2984.19,
+    "mean_n_total": 5393,
+    "cycles": {
+      "harris_dense": {
+        "median": 28890.0,
+        "mean": 29349.9,
+        "p90": 36468,
+        "total": 5869980
+      },
+      "harris_pattern": {
+        "median": 20844.0,
+        "mean": 19596.6,
+        "p90": 31788,
+        "total": 3919320
+      },
+      "ds2": {
+        "median": 22158.0,
+        "mean": 21002.94,
+        "p90": 34704,
+        "total": 4200588
+      },
+      "ds2_noart": {
+        "median": 21906.0,
+        "mean": 20841.3,
+        "p90": 33804,
+        "total": 4168260
+      }
+    },
+    "stats": {
+      "harris_dense": {
+        "n_call": 3000,
+        "n_admitted": 1631775,
+        "n_prefilter": 0,
+        "n_sweep_visits": 0,
+        "n_group": 0,
+        "n_flip_total": 0,
+        "n_no_group": 0
+      },
+      "harris_pattern": {
+        "n_call": 3000,
+        "n_admitted": 1631775,
+        "n_prefilter": 0,
+        "n_sweep_visits": 0,
+        "n_group": 0,
+        "n_flip_total": 0,
+        "n_no_group": 0
+      },
+      "ds2": {
+        "n_call": 3200,
+        "n_admitted": 1740000,
+        "n_prefilter": 61408,
+        "n_sweep_visits": 1852720,
+        "n_group": 3488,
+        "n_flip_total": 240,
+        "n_no_group": 0
+      },
+      "ds2_noart": {
+        "n_call": 3000,
+        "n_admitted": 1631250,
+        "n_prefilter": 64215,
+        "n_sweep_visits": 1977150,
+        "n_group": 5955,
+        "n_flip_total": 3060,
+        "n_no_group": 0
+      }
+    },
+    "agreement": {
+      "harris_dense_vs_shipped": 200,
+      "harris_pattern_vs_shipped": 200,
+      "ds2_vs_shipped": 186,
+      "ds2_vs_harris_dense": 186
+    },
+    "flips": {
+      "ds2_total": 15,
+      "ds2_calls_with_flips": 14,
+      "ds2_max": 2,
+      "ds2_noart_total": 204,
+      "ds2_noart_calls_with_flips": 61,
+      "shipped_total": 105,
+      "shipped_calls_with_flips": 78
+    },
+    "census": {
+      "mean_cand": 543.75,
+      "mean_flippable": 27.5,
+      "frac_flippable": 0.04633314443759051,
+      "calls_where_absorb_ge_delta": 0,
+      "calls_partition_exhausted": 0,
+      "calls_degenerate_zero_step": 33,
+      "mean_groups": 1.09,
+      "calls_one_group": 186,
+      "median_absorb_over_delta": 5.9222701229115394e-06
+    },
+    "groups": {
+      "mean": 2.09,
+      "max": 4
+    },
+    "theta_rel_err_max_noflip": 0.0,
+    "theta_rel_err_n": 153,
+    "theta_clamped_dual_infeasible": 33,
+    "soundness": {
+      "entering_not_admissible": 0,
+      "entering_alpha_below_Ta": 0,
+      "flip_not_boxed": 0,
+      "flip_is_no_flip_column": 0,
+      "flip_equals_entering": 0,
+      "flip_ratio_above_entering": 0,
+      "step_negative": 0
+    },
+    "ds2_longer_step_than_harris": 14,
+    "sample_disagreements": [
+      {
+        "iter": 119,
+        "shipped": 1463,
+        "harris_dense": 1463,
+        "ds2": 437,
+        "ds2_flips": 1,
+        "ds2_alpha": 0.9890282905687444,
+        "harris_alpha": 1.1811016073670562,
+        "ds2_ratio": 0.13349243613576844,
+        "harris_ratio": 0.07400849856098728
+      },
+      {
+        "iter": 340,
+        "shipped": 2512,
+        "harris_dense": 2512,
+        "ds2": 2905,
+        "ds2_flips": 1,
+        "ds2_alpha": -0.9367357066679645,
+        "harris_alpha": 0.9300925117500694,
+        "ds2_ratio": 0.054996861837370944,
+        "harris_ratio": 0.0
+      },
+      {
+        "iter": 1326,
+        "shipped": 2497,
+        "harris_dense": 2497,
+        "ds2": 3017,
+        "ds2_flips": 1,
+        "ds2_alpha": -1.2855679249467085,
+        "harris_alpha": -4.714300372137014,
+        "ds2_ratio": 0.5314669066227593,
+        "harris_ratio": 0.4561054748069006
+      },
+      {
+        "iter": 1955,
+        "shipped": 3543,
+        "harris_dense": 3543,
+        "ds2": 770,
+        "ds2_flips": 1,
+        "ds2_alpha": -0.7132788052482402,
+        "harris_alpha": -0.20862454665686203,
+        "ds2_ratio": 0.09828092299065544,
+        "harris_ratio": 0.07688052555604019
+      },
+      {
+        "iter": 2057,
+        "shipped": 2480,
+        "harris_dense": 2480,
+        "ds2": 1198,
+        "ds2_flips": 1,
+        "ds2_alpha": -3.6595930014220617,
+        "harris_alpha": 124.52623400619626,
+        "ds2_ratio": 0.016357206231948456,
+        "harris_ratio": 0.006297493089554112
+      },
+      {
+        "iter": 2125,
+        "shipped": 701,
+        "harris_dense": 701,
+        "ds2": 744,
+        "ds2_flips": 1,
+        "ds2_alpha": 0.7280124851912324,
+        "harris_alpha": 1.0,
+        "ds2_ratio": 2.1975127449107754,
+        "harris_ratio": 0.556
+      },
+      {
+        "iter": 2278,
+        "shipped": 1469,
+        "harris_dense": 1469,
+        "ds2": 1811,
+        "ds2_flips": 1,
+        "ds2_alpha": -2.5679159641254183,
+        "harris_alpha": 17.99049778478903,
+        "ds2_ratio": 0.05331421471387278,
+        "harris_ratio": 0.030892541946237303
+      },
+      {
+        "iter": 2312,
+        "shipped": 1461,
+        "harris_dense": 1461,
+        "ds2": 1108,
+        "ds2_flips": 1,
+        "ds2_alpha": -0.5267675222444699,
+        "harris_alpha": -2.753275568621862,
+        "ds2_ratio": 0.21145735573482768,
+        "harris_ratio": 0.01619273015832705
+      },
+      {
+        "iter": 2839,
+        "shipped": 3585,
+        "harris_dense": 3585,
+        "ds2": 3564,
+        "ds2_flips": 1,
+        "ds2_alpha": 1.6817928305074306,
+        "harris_alpha": 1.011695347093548,
+        "ds2_ratio": 0.3385550000000263,
+        "harris_ratio": 0.3343327882393623
+      },
+      {
+        "iter": 2992,
+        "shipped": 3554,
+        "harris_dense": 3554,
+        "ds2": 156,
+        "ds2_flips": 1,
+        "ds2_alpha": -0.45635120294312254,
+        "harris_alpha": 0.2588545337914885,
+        "ds2_ratio": 1.2278559611941335,
+        "harris_ratio": 0.18267940098229857
+      },
+      {
+        "iter": 3094,
+        "shipped": 1463,
+        "harris_dense": 1463,
+        "ds2": 3561,
+        "ds2_flips": 1,
+        "ds2_alpha": -1.6936133514652172,
+        "harris_alpha": -3.4498560590120713,
+        "ds2_ratio": 0.04464568203762901,
+        "harris_ratio": 0.00866584952133783
+      },
+      {
+        "iter": 3162,
+        "shipped": 706,
+        "harris_dense": 706,
+        "ds2": 550,
+        "ds2_flips": 1,
+        "ds2_alpha": -1.083847318985301,
+        "harris_alpha": -0.19063255681683272,
+        "ds2_ratio": 0.04870525399481409,
+        "harris_ratio": 0.023552247071697
+      }
+    ],
+    "solve": {
+      "status": "optimal",
+      "iterations": 6807,
+      "objective": -72555248.12984574,
+      "backend": "native-c-sparse-dual_simplex"
+    }
+  },
+  "degen2": {
+    "cases": 70,
+    "mean_alpha_nnz": 792.2285714285714,
+    "mean_n_total": 1143,
+    "cycles": {
+      "harris_dense": {
+        "median": 5886.0,
+        "mean": 5878.285714285715,
+        "p90": 7092,
+        "total": 411480
+      },
+      "harris_pattern": {
+        "median": 5454.0,
+        "mean": 5003.4857142857145,
+        "p90": 6156,
+        "total": 350244
+      },
+      "ds2": {
+        "median": 5688.0,
+        "mean": 5406.171428571429,
+        "p90": 6552,
+        "total": 378432
+      },
+      "ds2_noart": {
+        "median": 5706.0,
+        "mean": 5621.142857142857,
+        "p90": 6588,
+        "total": 393480
+      }
+    },
+    "stats": {
+      "harris_dense": {
+        "n_call": 1050,
+        "n_admitted": 147465,
+        "n_prefilter": 0,
+        "n_sweep_visits": 0,
+        "n_group": 0,
+        "n_flip_total": 0,
+        "n_no_group": 0
+      },
+      "harris_pattern": {
+        "n_call": 1050,
+        "n_admitted": 147465,
+        "n_prefilter": 0,
+        "n_sweep_visits": 0,
+        "n_group": 0,
+        "n_flip_total": 0,
+        "n_no_group": 0
+      },
+      "ds2": {
+        "n_call": 1120,
+        "n_admitted": 157296,
+        "n_prefilter": 12800,
+        "n_sweep_visits": 172544,
+        "n_group": 1312,
+        "n_flip_total": 192,
+        "n_no_group": 0
+      },
+      "ds2_noart": {
+        "n_call": 1050,
+        "n_admitted": 147465,
+        "n_prefilter": 15210,
+        "n_sweep_visits": 223365,
+        "n_group": 3075,
+        "n_flip_total": 2100,
+        "n_no_group": 0
+      }
+    },
+    "agreement": {
+      "harris_dense_vs_shipped": 70,
+      "harris_pattern_vs_shipped": 70,
+      "ds2_vs_shipped": 60,
+      "ds2_vs_harris_dense": 60
+    },
+    "flips": {
+      "ds2_total": 12,
+      "ds2_calls_with_flips": 10,
+      "ds2_max": 2,
+      "ds2_noart_total": 140,
+      "ds2_noart_calls_with_flips": 31,
+      "shipped_total": 24,
+      "shipped_calls_with_flips": 24
+    },
+    "census": {
+      "mean_cand": 140.44285714285715,
+      "mean_flippable": 24.742857142857144,
+      "frac_flippable": 0.17800682194009795,
+      "calls_where_absorb_ge_delta": 17,
+      "calls_partition_exhausted": 0,
+      "calls_degenerate_zero_step": 0,
+      "mean_groups": 1.1714285714285715,
+      "calls_one_group": 60,
+      "median_absorb_over_delta": 0.38988926336062696
+    },
+    "groups": {
+      "mean": 2.1714285714285713,
+      "max": 4
+    },
+    "theta_rel_err_max_noflip": 0.0,
+    "theta_rel_err_n": 60,
+    "theta_clamped_dual_infeasible": 0,
+    "soundness": {
+      "entering_not_admissible": 0,
+      "entering_alpha_below_Ta": 0,
+      "flip_not_boxed": 0,
+      "flip_is_no_flip_column": 0,
+      "flip_equals_entering": 0,
+      "flip_ratio_above_entering": 0,
+      "step_negative": 0
+    },
+    "ds2_longer_step_than_harris": 10,
+    "sample_disagreements": [
+      {
+        "iter": 187,
+        "shipped": 505,
+        "harris_dense": 505,
+        "ds2": 301,
+        "ds2_flips": 1,
+        "ds2_alpha": 2.499999999999999,
+        "harris_alpha": 0.5000000000000003,
+        "ds2_ratio": 0.26899999999999774,
+        "harris_ratio": 0.21500000000000793
+      },
+      {
+        "iter": 425,
+        "shipped": 261,
+        "harris_dense": 261,
+        "ds2": 272,
+        "ds2_flips": 1,
+        "ds2_alpha": 0.27272727272727154,
+        "harris_alpha": 0.9545454545454521,
+        "ds2_ratio": 1.3166666667166456,
+        "harris_ratio": 1.2957142856857462
+      },
+      {
+        "iter": 510,
+        "shipped": 505,
+        "harris_dense": 505,
+        "ds2": 709,
+        "ds2_flips": 1,
+        "ds2_alpha": -1.0833333333333042,
+        "harris_alpha": -0.5416666666666325,
+        "ds2_ratio": 0.15435897433442455,
+        "harris_ratio": 0.09282051283339131
+      },
+      {
+        "iter": 544,
+        "shipped": 911,
+        "harris_dense": 911,
+        "ds2": 253,
+        "ds2_flips": 1,
+        "ds2_alpha": -1.7499999999999991,
+        "harris_alpha": 1.499999999999998,
+        "ds2_ratio": 0.1557142857142533,
+        "harris_ratio": 0.06999999999995564
+      },
+      {
+        "iter": 697,
+        "shipped": 886,
+        "harris_dense": 886,
+        "ds2": 480,
+        "ds2_flips": 2,
+        "ds2_alpha": -0.9999999999999968,
+        "harris_alpha": 0.5624999999999984,
+        "ds2_ratio": 0.11000000000003354,
+        "harris_ratio": 0.05055555556114969
+      },
+      {
+        "iter": 833,
+        "shipped": 750,
+        "harris_dense": 750,
+        "ds2": 214,
+        "ds2_flips": 1,
+        "ds2_alpha": -0.960000000000004,
+        "harris_alpha": -2.040000000000003,
+        "ds2_ratio": 0.09291666666666071,
+        "harris_ratio": 0.07392156862745151
+      },
+      {
+        "iter": 884,
+        "shipped": 896,
+        "harris_dense": 896,
+        "ds2": 3,
+        "ds2_flips": 1,
+        "ds2_alpha": -0.999999999999998,
+        "harris_alpha": -1.0000000000000036,
+        "ds2_ratio": 0.07000000000000475,
+        "harris_ratio": 0.039999999999997565
+      },
+      {
+        "iter": 918,
+        "shipped": 731,
+        "harris_dense": 731,
+        "ds2": 471,
+        "ds2_flips": 2,
+        "ds2_alpha": 1.0000000000000082,
+        "harris_alpha": -0.9999999999999963,
+        "ds2_ratio": 1.2299999999999733,
+        "harris_ratio": 0.5699999999999831
+      },
+      {
+        "iter": 1088,
+        "shipped": 902,
+        "harris_dense": 902,
+        "ds2": 552,
+        "ds2_flips": 1,
+        "ds2_alpha": 0.20000000000002427,
+        "harris_alpha": 0.9999999999999007,
+        "ds2_ratio": 0.24999999985003718,
+        "harris_ratio": 0.07000000000001634
+      },
+      {
+        "iter": 1139,
+        "shipped": 906,
+        "harris_dense": 906,
+        "ds2": 565,
+        "ds2_flips": 1,
+        "ds2_alpha": -1.0000000000015776,
+        "harris_alpha": -2.00000000000266,
+        "ds2_ratio": 0.04333333326718068,
+        "harris_ratio": 0.02166666665858861
+      }
+    ],
+    "solve": {
+      "status": "optimal",
+      "iterations": 1174,
+      "objective": -1435.1779999999999,
+      "backend": "native-c-sparse-dual_simplex"
+    }
+  },
+  "25fv47": {
+    "cases": 200,
+    "mean_alpha_nnz": 1856.15,
+    "mean_n_total": 2508,
+    "cycles": {
+      "harris_dense": {
+        "median": 16056.0,
+        "mean": 15954.12,
+        "p90": 18864,
+        "total": 3190824
+      },
+      "harris_pattern": {
+        "median": 14670.0,
+        "mean": 13470.84,
+        "p90": 16704,
+        "total": 2694168
+      },
+      "ds2": {
+        "median": 15444.0,
+        "mean": 14319.36,
+        "p90": 17748,
+        "total": 2863872
+      },
+      "ds2_noart": {
+        "median": 15156.0,
+        "mean": 14388.3,
+        "p90": 18468,
+        "total": 2877660
+      }
+    },
+    "stats": {
+      "harris_dense": {
+        "n_call": 3000,
+        "n_admitted": 1306035,
+        "n_prefilter": 0,
+        "n_sweep_visits": 0,
+        "n_group": 0,
+        "n_flip_total": 0,
+        "n_no_group": 0
+      },
+      "harris_pattern": {
+        "n_call": 3000,
+        "n_admitted": 1306035,
+        "n_prefilter": 0,
+        "n_sweep_visits": 0,
+        "n_group": 0,
+        "n_flip_total": 0,
+        "n_no_group": 0
+      },
+      "ds2": {
+        "n_call": 3200,
+        "n_admitted": 1390576,
+        "n_prefilter": 41488,
+        "n_sweep_visits": 1434256,
+        "n_group": 3264,
+        "n_flip_total": 48,
+        "n_no_group": 0
+      },
+      "ds2_noart": {
+        "n_call": 3000,
+        "n_admitted": 1303665,
+        "n_prefilter": 48900,
+        "n_sweep_visits": 1555050,
+        "n_group": 5190,
+        "n_flip_total": 2265,
+        "n_no_group": 0
+      }
+    },
+    "agreement": {
+      "harris_dense_vs_shipped": 200,
+      "harris_pattern_vs_shipped": 200,
+      "ds2_vs_shipped": 197,
+      "ds2_vs_harris_dense": 197
+    },
+    "flips": {
+      "ds2_total": 3,
+      "ds2_calls_with_flips": 3,
+      "ds2_max": 1,
+      "ds2_noart_total": 151,
+      "ds2_noart_calls_with_flips": 45,
+      "shipped_total": 64,
+      "shipped_calls_with_flips": 53
+    },
+    "census": {
+      "mean_cand": 434.555,
+      "mean_flippable": 10.225,
+      "frac_flippable": 0.02367279649160861,
+      "calls_where_absorb_ge_delta": 14,
+      "calls_partition_exhausted": 0,
+      "calls_degenerate_zero_step": 12,
+      "mean_groups": 1.02,
+      "calls_one_group": 196,
+      "median_absorb_over_delta": 0.045178943014856136
+    },
+    "groups": {
+      "mean": 2.02,
+      "max": 3
+    },
+    "theta_rel_err_max_noflip": 0.0,
+    "theta_rel_err_n": 185,
+    "theta_clamped_dual_infeasible": 12,
+    "soundness": {
+      "entering_not_admissible": 0,
+      "entering_alpha_below_Ta": 0,
+      "flip_not_boxed": 0,
+      "flip_is_no_flip_column": 0,
+      "flip_equals_entering": 0,
+      "flip_ratio_above_entering": 0,
+      "step_negative": 0
+    },
+    "ds2_longer_step_than_harris": 3,
+    "sample_disagreements": [
+      {
+        "iter": 238,
+        "shipped": 1112,
+        "harris_dense": 1112,
+        "ds2": 405,
+        "ds2_flips": 1,
+        "ds2_alpha": 0.21542445312868438,
+        "harris_alpha": -1.09877365508884,
+        "ds2_ratio": 0.35163591707181674,
+        "harris_ratio": 0.3082065488339439
+      },
+      {
+        "iter": 1989,
+        "shipped": 1384,
+        "harris_dense": 1384,
+        "ds2": 594,
+        "ds2_flips": 1,
+        "ds2_alpha": 0.7577747178460124,
+        "harris_alpha": -0.7983259218170135,
+        "ds2_ratio": 0.0005621707114005143,
+        "harris_ratio": 0.0004272539040078231
+      },
+      {
+        "iter": 2227,
+        "shipped": 702,
+        "harris_dense": 702,
+        "ds2": 679,
+        "ds2_flips": 1,
+        "ds2_alpha": -0.7141525424395911,
+        "harris_alpha": -2.270072220509446,
+        "ds2_ratio": 0.0024923535719964134,
+        "harris_ratio": 0.0017947218486882013
+      }
+    ],
+    "solve": {
+      "status": "optimal",
+      "iterations": 5144,
+      "objective": 5501.8458882867435,
+      "backend": "native-c-sparse-dual_simplex"
+    }
+  }
+}
