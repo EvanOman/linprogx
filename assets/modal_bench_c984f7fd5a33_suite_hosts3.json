@@ -1,0 +1,5256 @@
+{
+  "ref": "c984f7fd5a333f57ca77b57ea6dab037d8686cfb",
+  "mode": "suite",
+  "protocol": "v3",
+  "hosts": 3,
+  "pairs": 7,
+  "use_snapshot": true,
+  "instances": [
+    "lp_80bau3b",
+    "lp_cre_a",
+    "lp_cre_b",
+    "lp_cre_d",
+    "lp_d2q06c",
+    "lp_degen3",
+    "lp_fit2p",
+    "lp_greenbea",
+    "lp_ken_07",
+    "lp_ken_11",
+    "lp_ken_13",
+    "lp_ken_18",
+    "lp_maros_r7",
+    "lp_osa_14",
+    "lp_osa_30",
+    "lp_osa_60",
+    "lp_pds_10",
+    "lp_pds_20",
+    "lp_pilot87",
+    "lp_qap12",
+    "lp_qap15",
+    "lp_stocfor3",
+    "lp_truss",
+    "lp_woodw",
+    "lp_25fv47",
+    "lp_agg2",
+    "lp_agg3",
+    "lp_bnl2",
+    "lp_cycle",
+    "lp_degen2",
+    "lp_fffff800",
+    "lp_fit1p",
+    "lp_ganges",
+    "lp_greenbeb",
+    "lp_israel",
+    "lp_pilot",
+    "lp_sierra",
+    "lp_stocfor2",
+    "lp_tuff"
+  ],
+  "host_results": [
+    {
+      "ref": "c984f7fd5a333f57ca77b57ea6dab037d8686cfb",
+      "mode": "suite",
+      "use_snapshot": true,
+      "machine_info": {
+        "cpu_model": "unknown",
+        "cpu_count": 20,
+        "mem_total_kb": 395296456,
+        "loadavg": "0.00 0.00 0.00 0/0 0",
+        "modal_region": "us-west-2",
+        "modal_cloud": "CLOUD_PROVIDER_AWS",
+        "modal_task_id": "ta-01KYRSV2W735ZRYPS6DKK4SSVR"
+      },
+      "load_checks": {
+        "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+        "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+      },
+      "rows": [
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 987224.1924090905,
+          "seconds": 0.29875934700000073,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_80bau3b"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 987224.1192292592,
+          "seconds": 0.4964764030000026,
+          "residual": 4.985927513579877e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_80bau3b"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 987224.1945366068,
+          "seconds": 0.2061828400000003,
+          "residual": 1.390167497817484e-11,
+          "backend": "ipm",
+          "iterations": 44,
+          "instance": "lp_80bau3b"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 23595407.060971618,
+          "seconds": 0.15178745599999743,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cre_a"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 23595407.911347955,
+          "seconds": 0.22774794900000117,
+          "residual": 3.3941262816155814e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cre_a"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 23595585.417344905,
+          "seconds": 0.1509041489999987,
+          "residual": 4.462208380573429e-12,
+          "backend": "ipm",
+          "iterations": 34,
+          "instance": "lp_cre_a"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 23129639.88683238,
+          "seconds": 2.5619349689999993,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cre_b"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 23129640.335307445,
+          "seconds": 23.664255032999996,
+          "residual": 3.4229688814378705e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cre_b"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 23129652.848933715,
+          "seconds": 1.6600932240000006,
+          "residual": 8.005997914518618e-07,
+          "backend": "ipm",
+          "iterations": 67,
+          "instance": "lp_cre_b"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 24454969.764549237,
+          "seconds": 1.489403744999997,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cre_d"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 24454969.79117602,
+          "seconds": 21.065244842,
+          "residual": 2.093410720360211e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cre_d"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 24454970.18393172,
+          "seconds": 1.6051349869999996,
+          "residual": 1.4097167877480388e-11,
+          "backend": "ipm",
+          "iterations": 71,
+          "instance": "lp_cre_d"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 122784.21081418938,
+          "seconds": 1.182117544999997,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_d2q06c"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 122784.31353135985,
+          "seconds": 5.430064837000003,
+          "residual": 1.5197778313602583e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_d2q06c"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 122784.21082829626,
+          "seconds": 0.4791159159999978,
+          "residual": 3.94094703537462e-08,
+          "backend": "ipm",
+          "iterations": 47,
+          "instance": "lp_d2q06c"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -987.2940000000006,
+          "seconds": 0.27179434499998933,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_degen3"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -987.2939998180177,
+          "seconds": 1.0665995419999916,
+          "residual": 7.105427357601002e-14,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_degen3"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -987.293643377887,
+          "seconds": 0.2606562800000063,
+          "residual": 1.981270280282388e-06,
+          "backend": "ipm",
+          "iterations": 17,
+          "instance": "lp_degen3"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 68464.29329383216,
+          "seconds": 1.3548842370000074,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_fit2p"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 68464.29326208474,
+          "seconds": 0.4269012339999989,
+          "residual": 1.0166077300062937e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_fit2p"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 68464.64373165695,
+          "seconds": 0.11423650300000077,
+          "residual": 2.904589361927298e-07,
+          "backend": "ipm",
+          "iterations": 19,
+          "instance": "lp_fit2p"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -72555248.12984593,
+          "seconds": 0.37626943799999424,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_greenbea"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -72462501.09250104,
+          "seconds": 4.332118285000007,
+          "residual": 1.3666649265747923e-06,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_greenbea"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -72555248.12984599,
+          "seconds": 0.3781188770000057,
+          "residual": 1.458272436138941e-08,
+          "backend": "simplex",
+          "iterations": 2424,
+          "instance": "lp_greenbea"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -679520443.3816886,
+          "seconds": 0.07238748500000725,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_07"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -679520443.427247,
+          "seconds": 0.09467829999999822,
+          "residual": 7.107736621492222e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_07"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -679516573.9551827,
+          "seconds": 0.12414262000000065,
+          "residual": 1.4036163520358969e-07,
+          "backend": "ipm",
+          "iterations": 15,
+          "instance": "lp_ken_07"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -6972382262.519994,
+          "seconds": 0.49259720999999956,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_11"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -6972382262.884266,
+          "seconds": 0.9672901370000062,
+          "residual": 1.507303150277269e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_11"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -6972337379.424228,
+          "seconds": 0.2965390960000036,
+          "residual": 1.9693812646437436e-05,
+          "backend": "ipm",
+          "iterations": 22,
+          "instance": "lp_ken_11"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -10257394789.48247,
+          "seconds": 1.3789240910000018,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_13"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -10257394791.359547,
+          "seconds": 2.512277886999996,
+          "residual": 1.1647998121588898e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_13"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -10257349765.293476,
+          "seconds": 0.6967303739999977,
+          "residual": 2.58827640209347e-07,
+          "backend": "ipm",
+          "iterations": 26,
+          "instance": "lp_ken_13"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -52217025287.396805,
+          "seconds": 13.362452974999997,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_18"
+        },
+        {
+          "solver": "clarabel",
+          "status": "DualInfeasible",
+          "objective": null,
+          "seconds": 5.62407581299999,
+          "residual": null,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_18"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -52216513731.184135,
+          "seconds": 6.165070490000005,
+          "residual": 1.4835892216069624e-05,
+          "backend": "ipm",
+          "iterations": 34,
+          "instance": "lp_ken_18"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1497185.1664796423,
+          "seconds": 1.0204642129999968,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_maros_r7"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1497185.1505517806,
+          "seconds": 3.411593013000015,
+          "residual": 3.2741809263825417e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_maros_r7"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1497185.1673729126,
+          "seconds": 0.7733720789999836,
+          "residual": 2.785895958368201e-10,
+          "backend": "ipm",
+          "iterations": 20,
+          "instance": "lp_maros_r7"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1106462.8447362536,
+          "seconds": 1.3779254000000094,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_osa_14"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1106462.9763350524,
+          "seconds": 3.2228995229999953,
+          "residual": 5.056790541857481e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_osa_14"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1106463.0130451946,
+          "seconds": 1.1604843880000146,
+          "residual": 6.492371085187187e-10,
+          "backend": "ipm",
+          "iterations": 55,
+          "instance": "lp_osa_14"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 2142139.8732097656,
+          "seconds": 5.098283006000003,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_osa_30"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 2142129.087202329,
+          "seconds": 7.924761932000024,
+          "residual": 2.9596982642488e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_osa_30"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 2142164.062525542,
+          "seconds": 1.806521000999993,
+          "residual": 1.8408172763884068e-09,
+          "backend": "ipm",
+          "iterations": 45,
+          "instance": "lp_osa_30"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 4044072.503157441,
+          "seconds": 22.656086597000012,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_osa_60"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 4044018.4499107935,
+          "seconds": 30.727965799999993,
+          "residual": 6.490154191851616e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_osa_60"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 4044093.806063003,
+          "seconds": 5.677975004000018,
+          "residual": 6.897607818245888e-09,
+          "backend": "ipm",
+          "iterations": 56,
+          "instance": "lp_osa_60"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 26727094976.0,
+          "seconds": 1.8188164919999963,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pds_10"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 26727094980.040283,
+          "seconds": 33.555979148999995,
+          "residual": 3.3276269245268087e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pds_10"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 26727095027.02298,
+          "seconds": 1.4881230770000116,
+          "residual": 4.690181299338292e-06,
+          "backend": "pdhg",
+          "iterations": 6400,
+          "instance": "lp_pds_10"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 23821658640.0,
+          "seconds": 13.374555154000006,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pds_20"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 23821658640.613903,
+          "seconds": 121.73329683600002,
+          "residual": 1.1486743698823883e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pds_20"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 23821658599.850216,
+          "seconds": 5.822024916999965,
+          "residual": 8.059333872267871e-06,
+          "backend": "pdhg",
+          "iterations": 14016,
+          "instance": "lp_pds_20"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 301.71034733316753,
+          "seconds": 4.758732608999992,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pilot87"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 301.72472388939445,
+          "seconds": 19.657670350000046,
+          "residual": 4.720686417935452e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pilot87"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 301.71046610478913,
+          "seconds": 3.8876484749999918,
+          "residual": 5.289280124998186e-11,
+          "backend": "ipm",
+          "iterations": 128,
+          "instance": "lp_pilot87"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 522.8943505590611,
+          "seconds": 120.77408918300006,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_qap12"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 522.8943498310758,
+          "seconds": 3.6606075800000326,
+          "residual": 1.9137945790733737e-13,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_qap12"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 522.8974498035591,
+          "seconds": 2.089024489999929,
+          "residual": 1.8567850028277516e-05,
+          "backend": "pdhg",
+          "iterations": 3392,
+          "instance": "lp_qap12"
+        },
+        {
+          "solver": "highs",
+          "status": "timeout",
+          "seconds": 200.0,
+          "instance": "lp_qap15"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1040.9940300104643,
+          "seconds": 15.510742532000108,
+          "residual": 1.1357383870496256e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_qap15"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1041.0001778455592,
+          "seconds": 0.6583285520000572,
+          "residual": 6.960290616721959e-06,
+          "backend": "pdhg",
+          "iterations": 3456,
+          "instance": "lp_qap15"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -39976.78394364944,
+          "seconds": 0.7982645209999646,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_stocfor3"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -39976.573791885334,
+          "seconds": 1.427823103000037,
+          "residual": 5.4569682106375694e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_stocfor3"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -39976.78278194891,
+          "seconds": 0.7647150579999789,
+          "residual": 8.549250196665525e-11,
+          "backend": "ipm",
+          "iterations": 45,
+          "instance": "lp_stocfor3"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 458815.84718561656,
+          "seconds": 3.5387287030000607,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_truss"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 458815.84699389717,
+          "seconds": 0.237798454999961,
+          "residual": 3.552178924035642e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_truss"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 458822.3288455236,
+          "seconds": 0.146826467999972,
+          "residual": 2.4024373601605475e-09,
+          "backend": "ipm",
+          "iterations": 20,
+          "instance": "lp_truss"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1.3044763330842293,
+          "seconds": 0.13906866900003934,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_woodw"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1.3044763344099919,
+          "seconds": 0.34588442299991584,
+          "residual": 2.8421709430404007e-13,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_woodw"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1.3045073685958548,
+          "seconds": 0.13014012299993283,
+          "residual": 3.9835867937654257e-10,
+          "backend": "ipm",
+          "iterations": 32,
+          "instance": "lp_woodw"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 5501.845888286747,
+          "seconds": 0.23474262100000942,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_25fv47"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 5501.852129097799,
+          "seconds": 0.14799338199998147,
+          "residual": 1.4847809430790313e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_25fv47"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 5501.845888286745,
+          "seconds": 0.8349699289999535,
+          "residual": 4.547473508864641e-12,
+          "backend": "simplex",
+          "iterations": 6948,
+          "instance": "lp_25fv47"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -20239252.355977114,
+          "seconds": 0.02613887600000453,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_agg2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -20239252.8836114,
+          "seconds": 0.06405162299995482,
+          "residual": 2.3283064365386963e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_agg2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -20239252.355977103,
+          "seconds": 0.010680622999984735,
+          "residual": 2.3283064365386963e-10,
+          "backend": "simplex",
+          "iterations": 274,
+          "instance": "lp_agg2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 10312115.935089216,
+          "seconds": 0.027366354000037063,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_agg3"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 10312115.253581174,
+          "seconds": 0.05725519500003884,
+          "residual": 2.3283064365386963e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_agg3"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 10312115.93508923,
+          "seconds": 0.01055274600003031,
+          "residual": 2.255546860396862e-10,
+          "backend": "simplex",
+          "iterations": 272,
+          "instance": "lp_agg3"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1811.2365403585468,
+          "seconds": 0.11825265899994974,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_bnl2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1811.2401886648884,
+          "seconds": 1.6285878830000229,
+          "residual": 7.2532046183306544e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_bnl2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1811.2365603095307,
+          "seconds": 0.2655977709999888,
+          "residual": 6.601652557947091e-11,
+          "backend": "ipm",
+          "iterations": 63,
+          "instance": "lp_bnl2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -5.226393024894102,
+          "seconds": 0.26048770799991416,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cycle"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -5.226392986379928,
+          "seconds": 0.31627145400000245,
+          "residual": 1.0913936421275139e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cycle"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -5.226393024894102,
+          "seconds": 0.11224867199996424,
+          "residual": 3.637978807091713e-12,
+          "backend": "simplex",
+          "iterations": 1046,
+          "instance": "lp_cycle"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -1435.178,
+          "seconds": 0.02893063900000925,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_degen2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -1435.1779999365303,
+          "seconds": 0.025328382999987298,
+          "residual": 3.7969627442180354e-14,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_degen2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -1435.178,
+          "seconds": 0.10990958500008219,
+          "residual": 4.270195308464508e-15,
+          "backend": "simplex",
+          "iterations": 1453,
+          "instance": "lp_degen2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 555679.5648174965,
+          "seconds": 0.02579592400002184,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_fffff800"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 555678.9711012235,
+          "seconds": 0.10323303699999542,
+          "residual": 7.62359748798855e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_fffff800"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 555679.5648174962,
+          "seconds": 0.01545229200007725,
+          "residual": 5.820766091346741e-11,
+          "backend": "simplex",
+          "iterations": 345,
+          "instance": "lp_fffff800"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 9146.378092420935,
+          "seconds": 0.06220371400002023,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_fit1p"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 9146.37806119832,
+          "seconds": 0.04281872299998213,
+          "residual": 1.1368683772161603e-13,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_fit1p"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 9146.402320767444,
+          "seconds": 0.014843109000025834,
+          "residual": 6.847571611956482e-07,
+          "backend": "ipm",
+          "iterations": 14,
+          "instance": "lp_fit1p"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -109585.73612927811,
+          "seconds": 0.032243870999991486,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ganges"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -109585.73915910229,
+          "seconds": 0.08827923000001192,
+          "residual": 4.9602988383412594e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ganges"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -109585.60502745956,
+          "seconds": 0.033992197999964446,
+          "residual": 3.82840426027542e-11,
+          "backend": "ipm",
+          "iterations": 16,
+          "instance": "lp_ganges"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -4302260.261206587,
+          "seconds": 0.6373320889999832,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_greenbeb"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -4302262.042601127,
+          "seconds": 6.0825791839999965,
+          "residual": 3.426858196988937e-07,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_greenbeb"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -4302260.261206587,
+          "seconds": 0.8788335590000997,
+          "residual": 1.1327605520250472e-11,
+          "backend": "simplex",
+          "iterations": 4320,
+          "instance": "lp_greenbeb"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -896644.8218630459,
+          "seconds": 0.013767477999977018,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_israel"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -896644.7351975112,
+          "seconds": 0.01193072499995651,
+          "residual": 2.4219382055434835e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_israel"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -896644.8218630457,
+          "seconds": 0.007333979999998519,
+          "residual": 1.1641532182693481e-10,
+          "backend": "simplex",
+          "iterations": 234,
+          "instance": "lp_israel"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -557.4897292744034,
+          "seconds": 1.4085142210000186,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pilot"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -557.4886404192993,
+          "seconds": 10.90834027599999,
+          "residual": 7.870609225340347e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pilot"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -557.4897286448786,
+          "seconds": 0.8644429799999216,
+          "residual": 1.5459103007606428e-08,
+          "backend": "ipm",
+          "iterations": 65,
+          "instance": "lp_pilot"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 15394362.183631929,
+          "seconds": 0.0422753279999597,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_sierra"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 15394362.180751849,
+          "seconds": 0.0686895059999415,
+          "residual": 6.769642513645656e-07,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_sierra"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 15394362.183631929,
+          "seconds": 0.11189800800002558,
+          "residual": 1.8189894035458565e-12,
+          "backend": "simplex",
+          "iterations": 725,
+          "instance": "lp_sierra"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -39024.408537882104,
+          "seconds": 0.0877850759999319,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_stocfor2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -39024.40616721909,
+          "seconds": 0.09967028100004427,
+          "residual": 1.8189894035458565e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_stocfor2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -39024.40846944525,
+          "seconds": 0.0659272030000011,
+          "residual": 1.4551915228366852e-11,
+          "backend": "ipm",
+          "iterations": 21,
+          "instance": "lp_stocfor2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 0.2921477650936128,
+          "seconds": 0.018235707000030743,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_tuff"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 0.2921478101616915,
+          "seconds": 0.02598202899991975,
+          "residual": 1.8189894035458565e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_tuff"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 0.2921477650936129,
+          "seconds": 0.007059391999973741,
+          "residual": 1.1368683772161603e-12,
+          "backend": "simplex",
+          "iterations": 159,
+          "instance": "lp_tuff"
+        }
+      ],
+      "host_index": 0
+    },
+    {
+      "ref": "c984f7fd5a333f57ca77b57ea6dab037d8686cfb",
+      "mode": "suite",
+      "use_snapshot": true,
+      "machine_info": {
+        "cpu_model": "unknown",
+        "cpu_count": 20,
+        "mem_total_kb": 395296444,
+        "loadavg": "0.00 0.00 0.00 0/0 0",
+        "modal_region": "us-west-2",
+        "modal_cloud": "CLOUD_PROVIDER_AWS",
+        "modal_task_id": "ta-01KYRSV1EKZ4NTQBKXB24PH8YR"
+      },
+      "load_checks": {
+        "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+        "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+      },
+      "rows": [
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 987224.1924090905,
+          "seconds": 0.2666497569999997,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_80bau3b"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 987224.1192292592,
+          "seconds": 0.48094637500000204,
+          "residual": 4.985927513579877e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_80bau3b"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 987224.1945366068,
+          "seconds": 0.21201499500000054,
+          "residual": 1.390167497817484e-11,
+          "backend": "ipm",
+          "iterations": 44,
+          "instance": "lp_80bau3b"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 23595407.060971618,
+          "seconds": 0.1415871029999991,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cre_a"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 23595407.911347955,
+          "seconds": 0.21354791699999964,
+          "residual": 3.3941262816155814e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cre_a"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 23595585.417344905,
+          "seconds": 0.1513082009999991,
+          "residual": 4.462208380573429e-12,
+          "backend": "ipm",
+          "iterations": 34,
+          "instance": "lp_cre_a"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 23129639.88683238,
+          "seconds": 2.5666386749999965,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cre_b"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 23129640.335307445,
+          "seconds": 23.448554752,
+          "residual": 3.4229688814378705e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cre_b"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 23129652.848933715,
+          "seconds": 1.6884044130000007,
+          "residual": 8.005997914518618e-07,
+          "backend": "ipm",
+          "iterations": 67,
+          "instance": "lp_cre_b"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 24454969.764549237,
+          "seconds": 1.4892360790000012,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cre_d"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 24454969.79117602,
+          "seconds": 20.823363192000002,
+          "residual": 2.093410720360211e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cre_d"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 24454970.18393172,
+          "seconds": 1.4281530670000109,
+          "residual": 1.4097167877480388e-11,
+          "backend": "ipm",
+          "iterations": 71,
+          "instance": "lp_cre_d"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 122784.21081418938,
+          "seconds": 1.1279797669999994,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_d2q06c"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 122784.31353135985,
+          "seconds": 4.9303608120000035,
+          "residual": 1.5197778313602583e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_d2q06c"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 122784.21082829626,
+          "seconds": 0.4283710919999919,
+          "residual": 3.94094703537462e-08,
+          "backend": "ipm",
+          "iterations": 47,
+          "instance": "lp_d2q06c"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -987.2940000000006,
+          "seconds": 0.26816942900001095,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_degen3"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -987.2939998180177,
+          "seconds": 0.970469174999991,
+          "residual": 7.105427357601002e-14,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_degen3"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -987.293643377887,
+          "seconds": 0.27078171800000916,
+          "residual": 1.981270280282388e-06,
+          "backend": "ipm",
+          "iterations": 17,
+          "instance": "lp_degen3"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 68464.29329383216,
+          "seconds": 1.2919200910000086,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_fit2p"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 68464.29326208474,
+          "seconds": 0.3997041390000078,
+          "residual": 1.0166077300062937e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_fit2p"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 68464.64373165695,
+          "seconds": 0.11187130399999035,
+          "residual": 2.904589361927298e-07,
+          "backend": "ipm",
+          "iterations": 19,
+          "instance": "lp_fit2p"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -72555248.12984593,
+          "seconds": 0.3647073709999944,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_greenbea"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -72462501.09250104,
+          "seconds": 4.128077016000006,
+          "residual": 1.3666649265747923e-06,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_greenbea"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -72555248.12984599,
+          "seconds": 0.36389932799998803,
+          "residual": 1.458272436138941e-08,
+          "backend": "simplex",
+          "iterations": 2424,
+          "instance": "lp_greenbea"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -679520443.3816886,
+          "seconds": 0.06576115199999322,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_07"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -679520443.427247,
+          "seconds": 0.08735289099999477,
+          "residual": 7.107736621492222e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_07"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -679516573.9551827,
+          "seconds": 0.028476498000003403,
+          "residual": 1.4036163520358969e-07,
+          "backend": "ipm",
+          "iterations": 15,
+          "instance": "lp_ken_07"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -6972382262.519994,
+          "seconds": 0.42037021400000185,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_11"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -6972382262.884266,
+          "seconds": 0.8999137849999954,
+          "residual": 1.507303150277269e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_11"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -6972337379.424228,
+          "seconds": 0.2777081269999968,
+          "residual": 1.9693812646437436e-05,
+          "backend": "ipm",
+          "iterations": 22,
+          "instance": "lp_ken_11"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -10257394789.48247,
+          "seconds": 1.2461392350000011,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_13"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -10257394791.359547,
+          "seconds": 2.230280351999994,
+          "residual": 1.1647998121588898e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_13"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -10257349765.293476,
+          "seconds": 0.6666583950000131,
+          "residual": 2.58827640209347e-07,
+          "backend": "ipm",
+          "iterations": 26,
+          "instance": "lp_ken_13"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -52217025287.396805,
+          "seconds": 12.53902392500001,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_18"
+        },
+        {
+          "solver": "clarabel",
+          "status": "DualInfeasible",
+          "objective": null,
+          "seconds": 5.37017824900002,
+          "residual": null,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_18"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -52216513731.184135,
+          "seconds": 5.782234265,
+          "residual": 1.4835892216069624e-05,
+          "backend": "ipm",
+          "iterations": 34,
+          "instance": "lp_ken_18"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1497185.1664796423,
+          "seconds": 1.0099603610000258,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_maros_r7"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1497185.1505517806,
+          "seconds": 3.1106131730000186,
+          "residual": 3.2741809263825417e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_maros_r7"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1497185.1673729126,
+          "seconds": 0.7266441849999978,
+          "residual": 2.785895958368201e-10,
+          "backend": "ipm",
+          "iterations": 20,
+          "instance": "lp_maros_r7"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1106462.8447362536,
+          "seconds": 1.3123904699999969,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_osa_14"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1106462.9763350524,
+          "seconds": 2.8460462740000025,
+          "residual": 5.056790541857481e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_osa_14"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1106463.0130451946,
+          "seconds": 1.0489070529999935,
+          "residual": 6.492371085187187e-10,
+          "backend": "ipm",
+          "iterations": 55,
+          "instance": "lp_osa_14"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 2142139.8732097656,
+          "seconds": 4.7374085099999945,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_osa_30"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 2142129.087202329,
+          "seconds": 6.9483907380000005,
+          "residual": 2.9596982642488e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_osa_30"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 2142164.062525542,
+          "seconds": 2.038004145000002,
+          "residual": 1.8408172763884068e-09,
+          "backend": "ipm",
+          "iterations": 45,
+          "instance": "lp_osa_30"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 4044072.503157441,
+          "seconds": 21.364137236999994,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_osa_60"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 4044018.4499107935,
+          "seconds": 29.659333887000003,
+          "residual": 6.490154191851616e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_osa_60"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 4044093.806063003,
+          "seconds": 5.941388457000016,
+          "residual": 6.897607818245888e-09,
+          "backend": "ipm",
+          "iterations": 56,
+          "instance": "lp_osa_60"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 26727094976.0,
+          "seconds": 1.8103626900000052,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pds_10"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 26727094980.040283,
+          "seconds": 34.87381001700004,
+          "residual": 3.3276269245268087e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pds_10"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 26727095027.02298,
+          "seconds": 1.670306316000051,
+          "residual": 4.690181299338292e-06,
+          "backend": "pdhg",
+          "iterations": 6400,
+          "instance": "lp_pds_10"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 23821658640.0,
+          "seconds": 13.230881947,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pds_20"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 23821658640.613903,
+          "seconds": 126.42133872599999,
+          "residual": 1.1486743698823883e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pds_20"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 23821658599.850216,
+          "seconds": 7.107697701000006,
+          "residual": 8.059333872267871e-06,
+          "backend": "pdhg",
+          "iterations": 14016,
+          "instance": "lp_pds_20"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 301.71034733316753,
+          "seconds": 4.718128804999992,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pilot87"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 301.72472388939445,
+          "seconds": 24.371719239000015,
+          "residual": 4.720686417935452e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pilot87"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 301.71046610478913,
+          "seconds": 4.493448145000002,
+          "residual": 5.289280124998186e-11,
+          "backend": "ipm",
+          "iterations": 128,
+          "instance": "lp_pilot87"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 522.8943505590611,
+          "seconds": 119.240983486,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_qap12"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 522.8943498310758,
+          "seconds": 4.235207650000007,
+          "residual": 1.9137945790733737e-13,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_qap12"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 522.8974498035591,
+          "seconds": 2.126163482000038,
+          "residual": 1.8567850028277516e-05,
+          "backend": "pdhg",
+          "iterations": 3392,
+          "instance": "lp_qap12"
+        },
+        {
+          "solver": "highs",
+          "status": "timeout",
+          "seconds": 200.0,
+          "instance": "lp_qap15"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1040.9940300104643,
+          "seconds": 17.504400807000025,
+          "residual": 1.1357383870496256e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_qap15"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1041.0001778455592,
+          "seconds": 0.7800568140000905,
+          "residual": 6.960290616721959e-06,
+          "backend": "pdhg",
+          "iterations": 3456,
+          "instance": "lp_qap15"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -39976.78394364944,
+          "seconds": 0.8369727560000229,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_stocfor3"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -39976.573791885334,
+          "seconds": 1.491024048999975,
+          "residual": 5.4569682106375694e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_stocfor3"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -39976.78278194891,
+          "seconds": 0.8232094930000358,
+          "residual": 8.549250196665525e-11,
+          "backend": "ipm",
+          "iterations": 45,
+          "instance": "lp_stocfor3"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 458815.84718561656,
+          "seconds": 3.5737077159999444,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_truss"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 458815.84699389717,
+          "seconds": 0.25389534599992203,
+          "residual": 3.552178924035642e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_truss"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 458822.3288455236,
+          "seconds": 0.1846558020000657,
+          "residual": 2.4024373601605475e-09,
+          "backend": "ipm",
+          "iterations": 20,
+          "instance": "lp_truss"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1.3044763330842293,
+          "seconds": 0.14431061400000544,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_woodw"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1.3044763344099919,
+          "seconds": 0.3409477400000469,
+          "residual": 2.8421709430404007e-13,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_woodw"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1.3045073685958548,
+          "seconds": 0.1320717710000281,
+          "residual": 3.9835867937654257e-10,
+          "backend": "ipm",
+          "iterations": 32,
+          "instance": "lp_woodw"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 5501.845888286747,
+          "seconds": 0.23530434300005254,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_25fv47"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 5501.852129097799,
+          "seconds": 0.14660261100004846,
+          "residual": 1.4847809430790313e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_25fv47"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 5501.845888286745,
+          "seconds": 0.8476830419999715,
+          "residual": 4.547473508864641e-12,
+          "backend": "simplex",
+          "iterations": 6948,
+          "instance": "lp_25fv47"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -20239252.355977114,
+          "seconds": 0.027373709000016788,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_agg2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -20239252.8836114,
+          "seconds": 0.06111082200004603,
+          "residual": 2.3283064365386963e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_agg2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -20239252.355977103,
+          "seconds": 0.01013014000000112,
+          "residual": 2.3283064365386963e-10,
+          "backend": "simplex",
+          "iterations": 274,
+          "instance": "lp_agg2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 10312115.935089216,
+          "seconds": 0.02758363200007352,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_agg3"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 10312115.253581174,
+          "seconds": 0.05912864600009016,
+          "residual": 2.3283064365386963e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_agg3"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 10312115.93508923,
+          "seconds": 0.010625437999919995,
+          "residual": 2.255546860396862e-10,
+          "backend": "simplex",
+          "iterations": 272,
+          "instance": "lp_agg3"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1811.2365403585468,
+          "seconds": 0.11450109899999461,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_bnl2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1811.2401886648884,
+          "seconds": 1.755566454000018,
+          "residual": 7.2532046183306544e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_bnl2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1811.2365603095307,
+          "seconds": 0.3200665610000897,
+          "residual": 6.601652557947091e-11,
+          "backend": "ipm",
+          "iterations": 63,
+          "instance": "lp_bnl2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -5.226393024894102,
+          "seconds": 0.2618346819999715,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cycle"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -5.226392986379928,
+          "seconds": 0.31396954199999527,
+          "residual": 1.0913936421275139e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cycle"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -5.226393024894102,
+          "seconds": 0.11076085299998795,
+          "residual": 3.637978807091713e-12,
+          "backend": "simplex",
+          "iterations": 1046,
+          "instance": "lp_cycle"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -1435.178,
+          "seconds": 0.02936707099991054,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_degen2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -1435.1779999365303,
+          "seconds": 0.024990363000028992,
+          "residual": 3.7969627442180354e-14,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_degen2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -1435.178,
+          "seconds": 0.10964998500003276,
+          "residual": 4.270195308464508e-15,
+          "backend": "simplex",
+          "iterations": 1453,
+          "instance": "lp_degen2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 555679.5648174965,
+          "seconds": 0.025986747999922954,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_fffff800"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 555678.9711012235,
+          "seconds": 0.1011482830000432,
+          "residual": 7.62359748798855e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_fffff800"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 555679.5648174962,
+          "seconds": 0.015009050999992724,
+          "residual": 5.820766091346741e-11,
+          "backend": "simplex",
+          "iterations": 345,
+          "instance": "lp_fffff800"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 9146.378092420935,
+          "seconds": 0.06138882899995224,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_fit1p"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 9146.37806119832,
+          "seconds": 0.04386144599993713,
+          "residual": 1.1368683772161603e-13,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_fit1p"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 9146.402320767444,
+          "seconds": 0.01613223399999697,
+          "residual": 6.847571611956482e-07,
+          "backend": "ipm",
+          "iterations": 14,
+          "instance": "lp_fit1p"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -109585.73612927811,
+          "seconds": 0.03218349099995521,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ganges"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -109585.73915910229,
+          "seconds": 0.08370105300002706,
+          "residual": 4.9602988383412594e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ganges"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -109585.60502745956,
+          "seconds": 0.034778581999944436,
+          "residual": 3.82840426027542e-11,
+          "backend": "ipm",
+          "iterations": 16,
+          "instance": "lp_ganges"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -4302260.261206587,
+          "seconds": 0.6238078049999558,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_greenbeb"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -4302262.042601127,
+          "seconds": 6.520599207999908,
+          "residual": 3.426858196988937e-07,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_greenbeb"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -4302260.261206587,
+          "seconds": 0.8727236830000038,
+          "residual": 1.1327605520250472e-11,
+          "backend": "simplex",
+          "iterations": 4320,
+          "instance": "lp_greenbeb"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -896644.8218630459,
+          "seconds": 0.014447411000105603,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_israel"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -896644.7351975112,
+          "seconds": 0.011552351999966959,
+          "residual": 2.4219382055434835e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_israel"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -896644.8218630457,
+          "seconds": 0.007201822000070024,
+          "residual": 1.1641532182693481e-10,
+          "backend": "simplex",
+          "iterations": 234,
+          "instance": "lp_israel"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -557.4897292744034,
+          "seconds": 1.439043912000102,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pilot"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -557.4886404192993,
+          "seconds": 12.780132680999941,
+          "residual": 7.870609225340347e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pilot"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -557.4897286448786,
+          "seconds": 0.9555343720001019,
+          "residual": 1.5459103007606428e-08,
+          "backend": "ipm",
+          "iterations": 65,
+          "instance": "lp_pilot"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 15394362.183631929,
+          "seconds": 0.04302611900004649,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_sierra"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 15394362.180751849,
+          "seconds": 0.07031476600002406,
+          "residual": 6.769642513645656e-07,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_sierra"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 15394362.183631929,
+          "seconds": 0.11570212399999491,
+          "residual": 1.8189894035458565e-12,
+          "backend": "simplex",
+          "iterations": 725,
+          "instance": "lp_sierra"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -39024.408537882104,
+          "seconds": 0.0889998549999973,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_stocfor2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -39024.40616721909,
+          "seconds": 0.09975750000000971,
+          "residual": 1.8189894035458565e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_stocfor2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -39024.40846944525,
+          "seconds": 0.06734408800002711,
+          "residual": 1.4551915228366852e-11,
+          "backend": "ipm",
+          "iterations": 21,
+          "instance": "lp_stocfor2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 0.2921477650936128,
+          "seconds": 0.018493783999929292,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_tuff"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 0.2921478101616915,
+          "seconds": 0.027848736999999346,
+          "residual": 1.8189894035458565e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_tuff"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 0.2921477650936129,
+          "seconds": 0.006885271999976794,
+          "residual": 1.1368683772161603e-12,
+          "backend": "simplex",
+          "iterations": 159,
+          "instance": "lp_tuff"
+        }
+      ],
+      "host_index": 1
+    },
+    {
+      "ref": "c984f7fd5a333f57ca77b57ea6dab037d8686cfb",
+      "mode": "suite",
+      "use_snapshot": true,
+      "machine_info": {
+        "cpu_model": "unknown",
+        "cpu_count": 20,
+        "mem_total_kb": 195132284,
+        "loadavg": "0.00 0.00 0.00 0/0 0",
+        "modal_region": "us-west-2",
+        "modal_cloud": "CLOUD_PROVIDER_AWS",
+        "modal_task_id": "ta-01KYRSV7X4G616CMZ87433AKER"
+      },
+      "load_checks": {
+        "loadavg_at_start": "0.00 0.00 0.00 0/0 0",
+        "loadavg_at_end": "0.00 0.00 0.00 0/0 0"
+      },
+      "rows": [
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 987224.1924090905,
+          "seconds": 0.2777127159999999,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_80bau3b"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 987224.1192292592,
+          "seconds": 0.4826428860000007,
+          "residual": 4.985927513579877e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_80bau3b"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 987224.1945366068,
+          "seconds": 0.19835555499999913,
+          "residual": 1.390167497817484e-11,
+          "backend": "ipm",
+          "iterations": 44,
+          "instance": "lp_80bau3b"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 23595407.060971618,
+          "seconds": 0.15455104200000136,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cre_a"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 23595407.911347955,
+          "seconds": 0.2241799680000014,
+          "residual": 3.3941262816155814e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cre_a"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 23595585.417344905,
+          "seconds": 0.1433506780000009,
+          "residual": 4.462208380573429e-12,
+          "backend": "ipm",
+          "iterations": 34,
+          "instance": "lp_cre_a"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 23129639.88683238,
+          "seconds": 2.5222637100000007,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cre_b"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 23129640.335307445,
+          "seconds": 24.206538437999995,
+          "residual": 3.4229688814378705e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cre_b"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 23129652.848933715,
+          "seconds": 1.4712064010000034,
+          "residual": 8.005997914518618e-07,
+          "backend": "ipm",
+          "iterations": 67,
+          "instance": "lp_cre_b"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 24454969.764549237,
+          "seconds": 1.437762872999997,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cre_d"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 24454969.79117602,
+          "seconds": 21.14455168,
+          "residual": 2.093410720360211e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cre_d"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 24454970.18393172,
+          "seconds": 1.3884732390000067,
+          "residual": 1.4097167877480388e-11,
+          "backend": "ipm",
+          "iterations": 71,
+          "instance": "lp_cre_d"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 122784.21081418938,
+          "seconds": 1.1706231869999897,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_d2q06c"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 122784.31353135985,
+          "seconds": 7.442104396999994,
+          "residual": 1.5197778313602583e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_d2q06c"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 122784.21082829626,
+          "seconds": 0.38786684699999796,
+          "residual": 3.94094703537462e-08,
+          "backend": "ipm",
+          "iterations": 47,
+          "instance": "lp_d2q06c"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -987.2940000000006,
+          "seconds": 0.27205007799999237,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_degen3"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -987.2939998180177,
+          "seconds": 1.2360577520000078,
+          "residual": 7.105427357601002e-14,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_degen3"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -987.293643377887,
+          "seconds": 0.2374493450000017,
+          "residual": 1.981270280282388e-06,
+          "backend": "ipm",
+          "iterations": 17,
+          "instance": "lp_degen3"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 68464.29329383216,
+          "seconds": 1.3434800840000065,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_fit2p"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 68464.29326208474,
+          "seconds": 0.40770928999999967,
+          "residual": 1.0166077300062937e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_fit2p"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 68464.64373165695,
+          "seconds": 0.11500196099999016,
+          "residual": 2.904589361927298e-07,
+          "backend": "ipm",
+          "iterations": 19,
+          "instance": "lp_fit2p"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -72555248.12984593,
+          "seconds": 0.37458599100000356,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_greenbea"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -72462501.09250104,
+          "seconds": 5.350123850000003,
+          "residual": 1.3666649265747923e-06,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_greenbea"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -72555248.12984599,
+          "seconds": 0.37329851699999494,
+          "residual": 1.458272436138941e-08,
+          "backend": "simplex",
+          "iterations": 2424,
+          "instance": "lp_greenbea"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -679520443.3816886,
+          "seconds": 0.07530174600000805,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_07"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -679520443.427247,
+          "seconds": 0.10073513599999728,
+          "residual": 7.107736621492222e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_07"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -679516573.9551827,
+          "seconds": 0.030409952999988832,
+          "residual": 1.4036163520358969e-07,
+          "backend": "ipm",
+          "iterations": 15,
+          "instance": "lp_ken_07"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -6972382262.519994,
+          "seconds": 0.44591347499999756,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_11"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -6972382262.884266,
+          "seconds": 0.9048854320000004,
+          "residual": 1.507303150277269e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_11"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -6972337379.424228,
+          "seconds": 0.2831837419999914,
+          "residual": 1.9693812646437436e-05,
+          "backend": "ipm",
+          "iterations": 22,
+          "instance": "lp_ken_11"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -10257394789.48247,
+          "seconds": 1.3046924299999887,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_13"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -10257394791.359547,
+          "seconds": 2.299235637999999,
+          "residual": 1.1647998121588898e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_13"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -10257349765.293476,
+          "seconds": 0.6673098369999906,
+          "residual": 2.58827640209347e-07,
+          "backend": "ipm",
+          "iterations": 26,
+          "instance": "lp_ken_13"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -52217025287.396805,
+          "seconds": 12.892743356000011,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ken_18"
+        },
+        {
+          "solver": "clarabel",
+          "status": "DualInfeasible",
+          "objective": null,
+          "seconds": 5.3949265939999975,
+          "residual": null,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ken_18"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -52216513731.184135,
+          "seconds": 5.619564570999984,
+          "residual": 1.4835892216069624e-05,
+          "backend": "ipm",
+          "iterations": 34,
+          "instance": "lp_ken_18"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1497185.1664796423,
+          "seconds": 0.9879603260000067,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_maros_r7"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1497185.1505517806,
+          "seconds": 3.3533280080000054,
+          "residual": 3.2741809263825417e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_maros_r7"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1497185.1673729126,
+          "seconds": 0.7184061270000086,
+          "residual": 2.785895958368201e-10,
+          "backend": "ipm",
+          "iterations": 20,
+          "instance": "lp_maros_r7"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1106462.8447362536,
+          "seconds": 1.3186275799999976,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_osa_14"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1106462.9763350524,
+          "seconds": 2.653286113000007,
+          "residual": 5.056790541857481e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_osa_14"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1106463.0130451946,
+          "seconds": 1.024177040000012,
+          "residual": 6.492371085187187e-10,
+          "backend": "ipm",
+          "iterations": 55,
+          "instance": "lp_osa_14"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 2142139.8732097656,
+          "seconds": 4.735357948000001,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_osa_30"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 2142129.087202329,
+          "seconds": 6.642166614999979,
+          "residual": 2.9596982642488e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_osa_30"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 2142164.062525542,
+          "seconds": 1.7259906239999907,
+          "residual": 1.8408172763884068e-09,
+          "backend": "ipm",
+          "iterations": 45,
+          "instance": "lp_osa_30"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 4044072.503157441,
+          "seconds": 20.981703159000006,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_osa_60"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 4044018.4499107935,
+          "seconds": 28.58474987300002,
+          "residual": 6.490154191851616e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_osa_60"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 4044093.806063003,
+          "seconds": 5.329058696999994,
+          "residual": 6.897607818245888e-09,
+          "backend": "ipm",
+          "iterations": 56,
+          "instance": "lp_osa_60"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 26727094976.0,
+          "seconds": 1.8465085489999922,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pds_10"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 26727094980.040283,
+          "seconds": 36.68445953099999,
+          "residual": 3.3276269245268087e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pds_10"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 26727095027.02298,
+          "seconds": 1.884467217000008,
+          "residual": 4.690181299338292e-06,
+          "backend": "pdhg",
+          "iterations": 6400,
+          "instance": "lp_pds_10"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 23821658640.0,
+          "seconds": 13.253929782,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pds_20"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 23821658640.613903,
+          "seconds": 127.526511046,
+          "residual": 1.1486743698823883e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pds_20"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 23821658599.850216,
+          "seconds": 6.362158190000002,
+          "residual": 8.059333872267871e-06,
+          "backend": "pdhg",
+          "iterations": 14016,
+          "instance": "lp_pds_20"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 301.71034733316753,
+          "seconds": 4.625077146999956,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pilot87"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 301.72472388939445,
+          "seconds": 20.848806728,
+          "residual": 4.720686417935452e-09,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pilot87"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 301.71046610478913,
+          "seconds": 3.8170236560000035,
+          "residual": 5.289280124998186e-11,
+          "backend": "ipm",
+          "iterations": 128,
+          "instance": "lp_pilot87"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 522.8943505590611,
+          "seconds": 121.13386025099999,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_qap12"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 522.8943498310758,
+          "seconds": 3.745375084999978,
+          "residual": 1.9137945790733737e-13,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_qap12"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 522.8974498035591,
+          "seconds": 2.2230285609999783,
+          "residual": 1.8567850028277516e-05,
+          "backend": "pdhg",
+          "iterations": 3392,
+          "instance": "lp_qap12"
+        },
+        {
+          "solver": "highs",
+          "status": "timeout",
+          "seconds": 200.0,
+          "instance": "lp_qap15"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1040.9940300104643,
+          "seconds": 17.232504745999904,
+          "residual": 1.1357383870496256e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_qap15"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1041.0001778455592,
+          "seconds": 0.8277829450000809,
+          "residual": 6.960290616721959e-06,
+          "backend": "pdhg",
+          "iterations": 3456,
+          "instance": "lp_qap15"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -39976.78394364944,
+          "seconds": 0.8296430679999958,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_stocfor3"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -39976.573791885334,
+          "seconds": 1.4438389939999752,
+          "residual": 5.4569682106375694e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_stocfor3"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -39976.78278194891,
+          "seconds": 0.7825305299999172,
+          "residual": 8.549250196665525e-11,
+          "backend": "ipm",
+          "iterations": 45,
+          "instance": "lp_stocfor3"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 458815.84718561656,
+          "seconds": 3.600599589000012,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_truss"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 458815.84699389717,
+          "seconds": 0.2774650040000779,
+          "residual": 3.552178924035642e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_truss"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 458822.3288455236,
+          "seconds": 0.1583427829999664,
+          "residual": 2.4024373601605475e-09,
+          "backend": "ipm",
+          "iterations": 20,
+          "instance": "lp_truss"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1.3044763330842293,
+          "seconds": 0.15340482399994926,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_woodw"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1.3044763344099919,
+          "seconds": 0.35637809699994705,
+          "residual": 2.8421709430404007e-13,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_woodw"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1.3045073685958548,
+          "seconds": 0.13226687099995615,
+          "residual": 3.9835867937654257e-10,
+          "backend": "ipm",
+          "iterations": 32,
+          "instance": "lp_woodw"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 5501.845888286747,
+          "seconds": 0.258349327000019,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_25fv47"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 5501.852129097799,
+          "seconds": 0.15423317099998712,
+          "residual": 1.4847809430790313e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_25fv47"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 5501.845888286745,
+          "seconds": 0.8373083889999862,
+          "residual": 4.547473508864641e-12,
+          "backend": "simplex",
+          "iterations": 6948,
+          "instance": "lp_25fv47"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -20239252.355977114,
+          "seconds": 0.03188351899996178,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_agg2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -20239252.8836114,
+          "seconds": 0.06556436699997903,
+          "residual": 2.3283064365386963e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_agg2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -20239252.355977103,
+          "seconds": 0.010341678000031607,
+          "residual": 2.3283064365386963e-10,
+          "backend": "simplex",
+          "iterations": 274,
+          "instance": "lp_agg2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 10312115.935089216,
+          "seconds": 0.032544904000019415,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_agg3"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 10312115.253581174,
+          "seconds": 0.0624854760000062,
+          "residual": 2.3283064365386963e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_agg3"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 10312115.93508923,
+          "seconds": 0.011075839000000087,
+          "residual": 2.255546860396862e-10,
+          "backend": "simplex",
+          "iterations": 272,
+          "instance": "lp_agg3"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 1811.2365403585468,
+          "seconds": 0.12677768300000025,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_bnl2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 1811.2401886648884,
+          "seconds": 1.8098507559999462,
+          "residual": 7.2532046183306544e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_bnl2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 1811.2365603095307,
+          "seconds": 0.28122140300001774,
+          "residual": 6.601652557947091e-11,
+          "backend": "ipm",
+          "iterations": 63,
+          "instance": "lp_bnl2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -5.226393024894102,
+          "seconds": 0.2756407859999399,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_cycle"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -5.226392986379928,
+          "seconds": 0.3313892200000055,
+          "residual": 1.0913936421275139e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_cycle"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -5.226393024894102,
+          "seconds": 0.10743003499999304,
+          "residual": 3.637978807091713e-12,
+          "backend": "simplex",
+          "iterations": 1046,
+          "instance": "lp_cycle"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -1435.178,
+          "seconds": 0.03426526800001284,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_degen2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -1435.1779999365303,
+          "seconds": 0.02764879699998346,
+          "residual": 3.7969627442180354e-14,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_degen2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -1435.178,
+          "seconds": 0.10875356199994712,
+          "residual": 4.270195308464508e-15,
+          "backend": "simplex",
+          "iterations": 1453,
+          "instance": "lp_degen2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 555679.5648174965,
+          "seconds": 0.030509319000088908,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_fffff800"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 555678.9711012235,
+          "seconds": 0.10785436000003301,
+          "residual": 7.62359748798855e-08,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_fffff800"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 555679.5648174962,
+          "seconds": 0.015166152999995575,
+          "residual": 5.820766091346741e-11,
+          "backend": "simplex",
+          "iterations": 345,
+          "instance": "lp_fffff800"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 9146.378092420935,
+          "seconds": 0.06821138600002996,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_fit1p"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 9146.37806119832,
+          "seconds": 0.04620760299997073,
+          "residual": 1.1368683772161603e-13,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_fit1p"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 9146.402320767444,
+          "seconds": 0.016585049000013896,
+          "residual": 6.847571611956482e-07,
+          "backend": "ipm",
+          "iterations": 14,
+          "instance": "lp_fit1p"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -109585.73612927811,
+          "seconds": 0.05333549400006632,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_ganges"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -109585.73915910229,
+          "seconds": 0.09283585000002859,
+          "residual": 4.9602988383412594e-11,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_ganges"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -109585.60502745956,
+          "seconds": 0.03615278400002353,
+          "residual": 3.82840426027542e-11,
+          "backend": "ipm",
+          "iterations": 16,
+          "instance": "lp_ganges"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -4302260.261206587,
+          "seconds": 0.6517773719999695,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_greenbeb"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -4302262.042601127,
+          "seconds": 6.626130791000037,
+          "residual": 3.426858196988937e-07,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_greenbeb"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -4302260.261206587,
+          "seconds": 0.9027815040000178,
+          "residual": 1.1327605520250472e-11,
+          "backend": "simplex",
+          "iterations": 4320,
+          "instance": "lp_greenbeb"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -896644.8218630459,
+          "seconds": 0.019073023000032663,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_israel"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -896644.7351975112,
+          "seconds": 0.012446627000031185,
+          "residual": 2.4219382055434835e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_israel"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -896644.8218630457,
+          "seconds": 0.007639528000026985,
+          "residual": 1.1641532182693481e-10,
+          "backend": "simplex",
+          "iterations": 234,
+          "instance": "lp_israel"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -557.4897292744034,
+          "seconds": 1.4496422860000848,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_pilot"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -557.4886404192993,
+          "seconds": 10.800488009999981,
+          "residual": 7.870609225340347e-10,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_pilot"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -557.4897286448786,
+          "seconds": 0.9591923839999481,
+          "residual": 1.5459103007606428e-08,
+          "backend": "ipm",
+          "iterations": 65,
+          "instance": "lp_pilot"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 15394362.183631929,
+          "seconds": 0.05272462700008873,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_sierra"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 15394362.180751849,
+          "seconds": 0.08175690499990651,
+          "residual": 6.769642513645656e-07,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_sierra"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 15394362.183631929,
+          "seconds": 0.11404564500003289,
+          "residual": 1.8189894035458565e-12,
+          "backend": "simplex",
+          "iterations": 725,
+          "instance": "lp_sierra"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": -39024.408537882104,
+          "seconds": 0.09966099899997971,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_stocfor2"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": -39024.40616721909,
+          "seconds": 0.11702313500006767,
+          "residual": 1.8189894035458565e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_stocfor2"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": -39024.40846944525,
+          "seconds": 0.07180112499997904,
+          "residual": 1.4551915228366852e-11,
+          "backend": "ipm",
+          "iterations": 21,
+          "instance": "lp_stocfor2"
+        },
+        {
+          "solver": "highs",
+          "status": "optimal",
+          "objective": 0.2921477650936128,
+          "seconds": 0.023384916000054545,
+          "residual": null,
+          "backend": "highs",
+          "iterations": null,
+          "instance": "lp_tuff"
+        },
+        {
+          "solver": "clarabel",
+          "status": "optimal",
+          "objective": 0.2921478101616915,
+          "seconds": 0.03126811099991755,
+          "residual": 1.8189894035458565e-12,
+          "backend": "clarabel",
+          "iterations": null,
+          "instance": "lp_tuff"
+        },
+        {
+          "solver": "linprogx",
+          "status": "optimal",
+          "objective": 0.2921477650936129,
+          "seconds": 0.008319990000018151,
+          "residual": 1.1368683772161603e-12,
+          "backend": "simplex",
+          "iterations": 159,
+          "instance": "lp_tuff"
+        }
+      ],
+      "host_index": 2
+    }
+  ],
+  "v3": {
+    "protocol": "suite-v3",
+    "hosts": 3,
+    "instances": {
+      "lp_25fv47": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.23530434300005254,
+            "seconds_min_host": 0.23474262100000942,
+            "seconds_max_host": 0.258349327000019,
+            "objective": 5501.845888286747,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.14799338199998147,
+            "seconds_min_host": 0.14660261100004846,
+            "seconds_max_host": 0.15423317099998712,
+            "objective": 5501.852129097799,
+            "max_residual": 1.4847809430790313e-12,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.8373083889999862,
+            "seconds_min_host": 0.8349699289999535,
+            "seconds_max_host": 0.8476830419999715,
+            "objective": 5501.845888286745,
+            "max_residual": 4.547473508864641e-12,
+            "backend": "simplex",
+            "iterations": 6948
+          }
+        },
+        "linprogx_over_highs": 3.5584060129302384,
+        "linprogx_over_clarabel": 5.657742107684863
+      },
+      "lp_80bau3b": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.2777127159999999,
+            "seconds_min_host": 0.2666497569999997,
+            "seconds_max_host": 0.29875934700000073,
+            "objective": 987224.1924090905,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.4826428860000007,
+            "seconds_min_host": 0.48094637500000204,
+            "seconds_max_host": 0.4964764030000026,
+            "objective": 987224.1192292592,
+            "max_residual": 4.985927513579877e-08,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.2061828400000003,
+            "seconds_min_host": 0.19835555499999913,
+            "seconds_max_host": 0.21201499500000054,
+            "objective": 987224.1945366068,
+            "max_residual": 1.390167497817484e-11,
+            "backend": "ipm",
+            "iterations": 44
+          }
+        },
+        "linprogx_over_highs": 0.7424321182325708,
+        "linprogx_over_clarabel": 0.4271954399012938
+      },
+      "lp_agg2": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.027373709000016788,
+            "seconds_min_host": 0.02613887600000453,
+            "seconds_max_host": 0.03188351899996178,
+            "objective": -20239252.355977114,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.06405162299995482,
+            "seconds_min_host": 0.06111082200004603,
+            "seconds_max_host": 0.06556436699997903,
+            "objective": -20239252.8836114,
+            "max_residual": 2.3283064365386963e-10,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.010341678000031607,
+            "seconds_min_host": 0.01013014000000112,
+            "seconds_max_host": 0.010680622999984735,
+            "objective": -20239252.355977103,
+            "max_residual": 2.3283064365386963e-10,
+            "backend": "simplex",
+            "iterations": 274
+          }
+        },
+        "linprogx_over_highs": 0.3777960085725052,
+        "linprogx_over_clarabel": 0.16145848482307626
+      },
+      "lp_agg3": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.02758363200007352,
+            "seconds_min_host": 0.027366354000037063,
+            "seconds_max_host": 0.032544904000019415,
+            "objective": 10312115.935089216,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.05912864600009016,
+            "seconds_min_host": 0.05725519500003884,
+            "seconds_max_host": 0.0624854760000062,
+            "objective": 10312115.253581174,
+            "max_residual": 2.3283064365386963e-10,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.010625437999919995,
+            "seconds_min_host": 0.01055274600003031,
+            "seconds_max_host": 0.011075839000000087,
+            "objective": 10312115.93508923,
+            "max_residual": 2.255546860396862e-10,
+            "backend": "simplex",
+            "iterations": 272
+          }
+        },
+        "linprogx_over_highs": 0.3852080828185235,
+        "linprogx_over_clarabel": 0.1797003435509718
+      },
+      "lp_bnl2": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.11825265899994974,
+            "seconds_min_host": 0.11450109899999461,
+            "seconds_max_host": 0.12677768300000025,
+            "objective": 1811.2365403585468,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.755566454000018,
+            "seconds_min_host": 1.6285878830000229,
+            "seconds_max_host": 1.8098507559999462,
+            "objective": 1811.2401886648884,
+            "max_residual": 7.2532046183306544e-12,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.28122140300001774,
+            "seconds_min_host": 0.2655977709999888,
+            "seconds_max_host": 0.3200665610000897,
+            "objective": 1811.2365603095307,
+            "max_residual": 6.601652557947091e-11,
+            "backend": "ipm",
+            "iterations": 63
+          }
+        },
+        "linprogx_over_highs": 2.3781402074023323,
+        "linprogx_over_clarabel": 0.16018841232655204
+      },
+      "lp_cre_a": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.15178745599999743,
+            "seconds_min_host": 0.1415871029999991,
+            "seconds_max_host": 0.15455104200000136,
+            "objective": 23595407.060971618,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.2241799680000014,
+            "seconds_min_host": 0.21354791699999964,
+            "seconds_max_host": 0.22774794900000117,
+            "objective": 23595407.911347955,
+            "max_residual": 3.3941262816155814e-08,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.1509041489999987,
+            "seconds_min_host": 0.1433506780000009,
+            "seconds_max_host": 0.1513082009999991,
+            "objective": 23595585.417344905,
+            "max_residual": 4.462208380573429e-12,
+            "backend": "ipm",
+            "iterations": 34
+          }
+        },
+        "linprogx_over_highs": 0.9941806324232831,
+        "linprogx_over_clarabel": 0.6731384179696099
+      },
+      "lp_cre_b": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 2.5619349689999993,
+            "seconds_min_host": 2.5222637100000007,
+            "seconds_max_host": 2.5666386749999965,
+            "objective": 23129639.88683238,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 23.664255032999996,
+            "seconds_min_host": 23.448554752,
+            "seconds_max_host": 24.206538437999995,
+            "objective": 23129640.335307445,
+            "max_residual": 3.4229688814378705e-09,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.6600932240000006,
+            "seconds_min_host": 1.4712064010000034,
+            "seconds_max_host": 1.6884044130000007,
+            "objective": 23129652.848933715,
+            "max_residual": 8.005997914518618e-07,
+            "backend": "ipm",
+            "iterations": 67
+          }
+        },
+        "linprogx_over_highs": 0.647984138585682,
+        "linprogx_over_clarabel": 0.07015193259559564
+      },
+      "lp_cre_d": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.4892360790000012,
+            "seconds_min_host": 1.437762872999997,
+            "seconds_max_host": 1.489403744999997,
+            "objective": 24454969.764549237,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 21.065244842,
+            "seconds_min_host": 20.823363192000002,
+            "seconds_max_host": 21.14455168,
+            "objective": 24454969.79117602,
+            "max_residual": 2.093410720360211e-08,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.4281530670000109,
+            "seconds_min_host": 1.3884732390000067,
+            "seconds_max_host": 1.6051349869999996,
+            "objective": 24454970.18393172,
+            "max_residual": 1.4097167877480388e-11,
+            "backend": "ipm",
+            "iterations": 71
+          }
+        },
+        "linprogx_over_highs": 0.9589836609108969,
+        "linprogx_over_clarabel": 0.06779665167492151
+      },
+      "lp_cycle": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.2618346819999715,
+            "seconds_min_host": 0.26048770799991416,
+            "seconds_max_host": 0.2756407859999399,
+            "objective": -5.226393024894102,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.31627145400000245,
+            "seconds_min_host": 0.31396954199999527,
+            "seconds_max_host": 0.3313892200000055,
+            "objective": -5.226392986379928,
+            "max_residual": 1.0913936421275139e-11,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.11076085299998795,
+            "seconds_min_host": 0.10743003499999304,
+            "seconds_max_host": 0.11224867199996424,
+            "objective": -5.226393024894102,
+            "max_residual": 3.637978807091713e-12,
+            "backend": "simplex",
+            "iterations": 1046
+          }
+        },
+        "linprogx_over_highs": 0.42301826539541465,
+        "linprogx_over_clarabel": 0.3502081885644573
+      },
+      "lp_d2q06c": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.1706231869999897,
+            "seconds_min_host": 1.1279797669999994,
+            "seconds_max_host": 1.182117544999997,
+            "objective": 122784.21081418938,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 5.430064837000003,
+            "seconds_min_host": 4.9303608120000035,
+            "seconds_max_host": 7.442104396999994,
+            "objective": 122784.31353135985,
+            "max_residual": 1.5197778313602583e-09,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.4283710919999919,
+            "seconds_min_host": 0.38786684699999796,
+            "seconds_max_host": 0.4791159159999978,
+            "objective": 122784.21082829626,
+            "max_residual": 3.94094703537462e-08,
+            "backend": "ipm",
+            "iterations": 47
+          }
+        },
+        "linprogx_over_highs": 0.36593422781740587,
+        "linprogx_over_clarabel": 0.07888876189490546
+      },
+      "lp_degen2": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.02936707099991054,
+            "seconds_min_host": 0.02893063900000925,
+            "seconds_max_host": 0.03426526800001284,
+            "objective": -1435.178,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.025328382999987298,
+            "seconds_min_host": 0.024990363000028992,
+            "seconds_max_host": 0.02764879699998346,
+            "objective": -1435.1779999365303,
+            "max_residual": 3.7969627442180354e-14,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.10964998500003276,
+            "seconds_min_host": 0.10875356199994712,
+            "seconds_max_host": 0.10990958500008219,
+            "objective": -1435.178,
+            "max_residual": 4.270195308464508e-15,
+            "backend": "simplex",
+            "iterations": 1453
+          }
+        },
+        "linprogx_over_highs": 3.7337732796153484,
+        "linprogx_over_clarabel": 4.32913482870532
+      },
+      "lp_degen3": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.27179434499998933,
+            "seconds_min_host": 0.26816942900001095,
+            "seconds_max_host": 0.27205007799999237,
+            "objective": -987.2940000000006,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.0665995419999916,
+            "seconds_min_host": 0.970469174999991,
+            "seconds_max_host": 1.2360577520000078,
+            "objective": -987.2939998180177,
+            "max_residual": 7.105427357601002e-14,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.2606562800000063,
+            "seconds_min_host": 0.2374493450000017,
+            "seconds_max_host": 0.27078171800000916,
+            "objective": -987.293643377887,
+            "max_residual": 1.981270280282388e-06,
+            "backend": "ipm",
+            "iterations": 17
+          }
+        },
+        "linprogx_over_highs": 0.9590202474595876,
+        "linprogx_over_clarabel": 0.24438064122102196
+      },
+      "lp_fffff800": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.025986747999922954,
+            "seconds_min_host": 0.02579592400002184,
+            "seconds_max_host": 0.030509319000088908,
+            "objective": 555679.5648174965,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.10323303699999542,
+            "seconds_min_host": 0.1011482830000432,
+            "seconds_max_host": 0.10785436000003301,
+            "objective": 555678.9711012235,
+            "max_residual": 7.62359748798855e-08,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.015166152999995575,
+            "seconds_min_host": 0.015009050999992724,
+            "seconds_max_host": 0.01545229200007725,
+            "objective": 555679.5648174962,
+            "max_residual": 5.820766091346741e-11,
+            "backend": "simplex",
+            "iterations": 345
+          }
+        },
+        "linprogx_over_highs": 0.5836110389818895,
+        "linprogx_over_clarabel": 0.14691181661153926
+      },
+      "lp_fit1p": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.06220371400002023,
+            "seconds_min_host": 0.06138882899995224,
+            "seconds_max_host": 0.06821138600002996,
+            "objective": 9146.378092420935,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.04386144599993713,
+            "seconds_min_host": 0.04281872299998213,
+            "seconds_max_host": 0.04620760299997073,
+            "objective": 9146.37806119832,
+            "max_residual": 1.1368683772161603e-13,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.01613223399999697,
+            "seconds_min_host": 0.014843109000025834,
+            "seconds_max_host": 0.016585049000013896,
+            "objective": 9146.402320767444,
+            "max_residual": 6.847571611956482e-07,
+            "backend": "ipm",
+            "iterations": 14
+          }
+        },
+        "linprogx_over_highs": 0.2593451895813122,
+        "linprogx_over_clarabel": 0.3677998668812718
+      },
+      "lp_fit2p": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.3434800840000065,
+            "seconds_min_host": 1.2919200910000086,
+            "seconds_max_host": 1.3548842370000074,
+            "objective": 68464.29329383216,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.40770928999999967,
+            "seconds_min_host": 0.3997041390000078,
+            "seconds_max_host": 0.4269012339999989,
+            "objective": 68464.29326208474,
+            "max_residual": 1.0166077300062937e-09,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.11423650300000077,
+            "seconds_min_host": 0.11187130399999035,
+            "seconds_max_host": 0.11500196099999016,
+            "objective": 68464.64373165695,
+            "max_residual": 2.904589361927298e-07,
+            "backend": "ipm",
+            "iterations": 19
+          }
+        },
+        "linprogx_over_highs": 0.08503029137572256,
+        "linprogx_over_clarabel": 0.2801910719277475
+      },
+      "lp_ganges": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.032243870999991486,
+            "seconds_min_host": 0.03218349099995521,
+            "seconds_max_host": 0.05333549400006632,
+            "objective": -109585.73612927811,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.08827923000001192,
+            "seconds_min_host": 0.08370105300002706,
+            "seconds_max_host": 0.09283585000002859,
+            "objective": -109585.73915910229,
+            "max_residual": 4.9602988383412594e-11,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.034778581999944436,
+            "seconds_min_host": 0.033992197999964446,
+            "seconds_max_host": 0.03615278400002353,
+            "objective": -109585.60502745956,
+            "max_residual": 3.82840426027542e-11,
+            "backend": "ipm",
+            "iterations": 16
+          }
+        },
+        "linprogx_over_highs": 1.0786106295969742,
+        "linprogx_over_clarabel": 0.3939610936789972
+      },
+      "lp_greenbea": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.37458599100000356,
+            "seconds_min_host": 0.3647073709999944,
+            "seconds_max_host": 0.37626943799999424,
+            "objective": -72555248.12984593,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 4.332118285000007,
+            "seconds_min_host": 4.128077016000006,
+            "seconds_max_host": 5.350123850000003,
+            "objective": -72462501.09250104,
+            "max_residual": 1.3666649265747923e-06,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.37329851699999494,
+            "seconds_min_host": 0.36389932799998803,
+            "seconds_max_host": 0.3781188770000057,
+            "objective": -72555248.12984599,
+            "max_residual": 1.458272436138941e-08,
+            "backend": "simplex",
+            "iterations": 2424
+          }
+        },
+        "linprogx_over_highs": 0.9965629414047985,
+        "linprogx_over_clarabel": 0.08616997331133454
+      },
+      "lp_greenbeb": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.6373320889999832,
+            "seconds_min_host": 0.6238078049999558,
+            "seconds_max_host": 0.6517773719999695,
+            "objective": -4302260.261206587,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 6.520599207999908,
+            "seconds_min_host": 6.0825791839999965,
+            "seconds_max_host": 6.626130791000037,
+            "objective": -4302262.042601127,
+            "max_residual": 3.426858196988937e-07,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.8788335590000997,
+            "seconds_min_host": 0.8727236830000038,
+            "seconds_max_host": 0.9027815040000178,
+            "objective": -4302260.261206587,
+            "max_residual": 1.1327605520250472e-11,
+            "backend": "simplex",
+            "iterations": 4320
+          }
+        },
+        "linprogx_over_highs": 1.378925640444448,
+        "linprogx_over_clarabel": 0.13477803664452923
+      },
+      "lp_israel": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.014447411000105603,
+            "seconds_min_host": 0.013767477999977018,
+            "seconds_max_host": 0.019073023000032663,
+            "objective": -896644.8218630459,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.01193072499995651,
+            "seconds_min_host": 0.011552351999966959,
+            "seconds_max_host": 0.012446627000031185,
+            "objective": -896644.7351975112,
+            "max_residual": 2.4219382055434835e-10,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.007333979999998519,
+            "seconds_min_host": 0.007201822000070024,
+            "seconds_max_host": 0.007639528000026985,
+            "objective": -896644.8218630457,
+            "max_residual": 1.1641532182693481e-10,
+            "backend": "simplex",
+            "iterations": 234
+          }
+        },
+        "linprogx_over_highs": 0.5076328208524635,
+        "linprogx_over_clarabel": 0.6147136909136077
+      },
+      "lp_ken_07": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.07238748500000725,
+            "seconds_min_host": 0.06576115199999322,
+            "seconds_max_host": 0.07530174600000805,
+            "objective": -679520443.3816886,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.09467829999999822,
+            "seconds_min_host": 0.08735289099999477,
+            "seconds_max_host": 0.10073513599999728,
+            "objective": -679520443.427247,
+            "max_residual": 7.107736621492222e-11,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.030409952999988832,
+            "seconds_min_host": 0.028476498000003403,
+            "seconds_max_host": 0.12414262000000065,
+            "objective": -679516573.9551827,
+            "max_residual": 1.4036163520358969e-07,
+            "backend": "ipm",
+            "iterations": 15
+          }
+        },
+        "linprogx_over_highs": 0.420099593182244,
+        "linprogx_over_clarabel": 0.32119242740933673
+      },
+      "lp_ken_11": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.44591347499999756,
+            "seconds_min_host": 0.42037021400000185,
+            "seconds_max_host": 0.49259720999999956,
+            "objective": -6972382262.519994,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.9048854320000004,
+            "seconds_min_host": 0.8999137849999954,
+            "seconds_max_host": 0.9672901370000062,
+            "objective": -6972382262.884266,
+            "max_residual": 1.507303150277269e-10,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.2831837419999914,
+            "seconds_min_host": 0.2777081269999968,
+            "seconds_max_host": 0.2965390960000036,
+            "objective": -6972337379.424228,
+            "max_residual": 1.9693812646437436e-05,
+            "backend": "ipm",
+            "iterations": 22
+          }
+        },
+        "linprogx_over_highs": 0.6350643294643494,
+        "linprogx_over_clarabel": 0.312949829874144
+      },
+      "lp_ken_13": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.3046924299999887,
+            "seconds_min_host": 1.2461392350000011,
+            "seconds_max_host": 1.3789240910000018,
+            "objective": -10257394789.48247,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 2.299235637999999,
+            "seconds_min_host": 2.230280351999994,
+            "seconds_max_host": 2.512277886999996,
+            "objective": -10257394791.359547,
+            "max_residual": 1.1647998121588898e-09,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.6673098369999906,
+            "seconds_min_host": 0.6666583950000131,
+            "seconds_max_host": 0.6967303739999977,
+            "objective": -10257349765.293476,
+            "max_residual": 2.58827640209347e-07,
+            "backend": "ipm",
+            "iterations": 26
+          }
+        },
+        "linprogx_over_highs": 0.5114690801110852,
+        "linprogx_over_clarabel": 0.29023116464063387
+      },
+      "lp_ken_18": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 12.892743356000011,
+            "seconds_min_host": 12.53902392500001,
+            "seconds_max_host": 13.362452974999997,
+            "objective": -52217025287.396805,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 0,
+            "status": "incomplete",
+            "seconds_median_of_hosts": null,
+            "seconds_min_host": null,
+            "seconds_max_host": null,
+            "objective": null,
+            "max_residual": null,
+            "backend": null,
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 5.782234265,
+            "seconds_min_host": 5.619564570999984,
+            "seconds_max_host": 6.165070490000005,
+            "objective": -52216513731.184135,
+            "max_residual": 1.4835892216069624e-05,
+            "backend": "ipm",
+            "iterations": 34
+          }
+        },
+        "linprogx_over_highs": 0.44848750225909595,
+        "linprogx_over_clarabel": null
+      },
+      "lp_maros_r7": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.0099603610000258,
+            "seconds_min_host": 0.9879603260000067,
+            "seconds_max_host": 1.0204642129999968,
+            "objective": 1497185.1664796423,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 3.3533280080000054,
+            "seconds_min_host": 3.1106131730000186,
+            "seconds_max_host": 3.411593013000015,
+            "objective": 1497185.1505517806,
+            "max_residual": 3.2741809263825417e-11,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.7266441849999978,
+            "seconds_min_host": 0.7184061270000086,
+            "seconds_max_host": 0.7733720789999836,
+            "objective": 1497185.1673729126,
+            "max_residual": 2.785895958368201e-10,
+            "backend": "ipm",
+            "iterations": 20
+          }
+        },
+        "linprogx_over_highs": 0.7194779251341125,
+        "linprogx_over_clarabel": 0.21669344104318133
+      },
+      "lp_osa_14": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.3186275799999976,
+            "seconds_min_host": 1.3123904699999969,
+            "seconds_max_host": 1.3779254000000094,
+            "objective": 1106462.8447362536,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 2.8460462740000025,
+            "seconds_min_host": 2.653286113000007,
+            "seconds_max_host": 3.2228995229999953,
+            "objective": 1106462.9763350524,
+            "max_residual": 5.056790541857481e-10,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.0489070529999935,
+            "seconds_min_host": 1.024177040000012,
+            "seconds_max_host": 1.1604843880000146,
+            "objective": 1106463.0130451946,
+            "max_residual": 6.492371085187187e-10,
+            "backend": "ipm",
+            "iterations": 55
+          }
+        },
+        "linprogx_over_highs": 0.7954535980507821,
+        "linprogx_over_clarabel": 0.3685488400460184
+      },
+      "lp_osa_30": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 4.7374085099999945,
+            "seconds_min_host": 4.735357948000001,
+            "seconds_max_host": 5.098283006000003,
+            "objective": 2142139.8732097656,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 6.9483907380000005,
+            "seconds_min_host": 6.642166614999979,
+            "seconds_max_host": 7.924761932000024,
+            "objective": 2142129.087202329,
+            "max_residual": 2.9596982642488e-09,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.806521000999993,
+            "seconds_min_host": 1.7259906239999907,
+            "seconds_max_host": 2.038004145000002,
+            "objective": 2142164.062525542,
+            "max_residual": 1.8408172763884068e-09,
+            "backend": "ipm",
+            "iterations": 45
+          }
+        },
+        "linprogx_over_highs": 0.381331058359583,
+        "linprogx_over_clarabel": 0.2599912798686355
+      },
+      "lp_osa_60": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 21.364137236999994,
+            "seconds_min_host": 20.981703159000006,
+            "seconds_max_host": 22.656086597000012,
+            "objective": 4044072.503157441,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 29.659333887000003,
+            "seconds_min_host": 28.58474987300002,
+            "seconds_max_host": 30.727965799999993,
+            "objective": 4044018.4499107935,
+            "max_residual": 6.490154191851616e-09,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 5.677975004000018,
+            "seconds_min_host": 5.329058696999994,
+            "seconds_max_host": 5.941388457000016,
+            "objective": 4044093.806063003,
+            "max_residual": 6.897607818245888e-09,
+            "backend": "ipm",
+            "iterations": 56
+          }
+        },
+        "linprogx_over_highs": 0.26577132233388207,
+        "linprogx_over_clarabel": 0.19143973447389978
+      },
+      "lp_pds_10": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.8188164919999963,
+            "seconds_min_host": 1.8103626900000052,
+            "seconds_max_host": 1.8465085489999922,
+            "objective": 26727094976.0,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 34.87381001700004,
+            "seconds_min_host": 33.555979148999995,
+            "seconds_max_host": 36.68445953099999,
+            "objective": 26727094980.040283,
+            "max_residual": 3.3276269245268087e-10,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.670306316000051,
+            "seconds_min_host": 1.4881230770000116,
+            "seconds_max_host": 1.884467217000008,
+            "objective": 26727095027.02298,
+            "max_residual": 4.690181299338292e-06,
+            "backend": "pdhg",
+            "iterations": 6400
+          }
+        },
+        "linprogx_over_highs": 0.9183479055456324,
+        "linprogx_over_clarabel": 0.04789572218194175
+      },
+      "lp_pds_20": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 13.253929782,
+            "seconds_min_host": 13.230881947,
+            "seconds_max_host": 13.374555154000006,
+            "objective": 23821658640.0,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 126.42133872599999,
+            "seconds_min_host": 121.73329683600002,
+            "seconds_max_host": 127.526511046,
+            "objective": 23821658640.613903,
+            "max_residual": 1.1486743698823883e-09,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 6.362158190000002,
+            "seconds_min_host": 5.822024916999965,
+            "seconds_max_host": 7.107697701000006,
+            "objective": 23821658599.850216,
+            "max_residual": 8.059333872267871e-06,
+            "backend": "pdhg",
+            "iterations": 14016
+          }
+        },
+        "linprogx_over_highs": 0.4800205142659177,
+        "linprogx_over_clarabel": 0.05032503416048348
+      },
+      "lp_pilot": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.439043912000102,
+            "seconds_min_host": 1.4085142210000186,
+            "seconds_max_host": 1.4496422860000848,
+            "objective": -557.4897292744034,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 10.90834027599999,
+            "seconds_min_host": 10.800488009999981,
+            "seconds_max_host": 12.780132680999941,
+            "objective": -557.4886404192993,
+            "max_residual": 7.870609225340347e-10,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.9555343720001019,
+            "seconds_min_host": 0.8644429799999216,
+            "seconds_max_host": 0.9591923839999481,
+            "objective": -557.4897286448786,
+            "max_residual": 1.5459103007606428e-08,
+            "backend": "ipm",
+            "iterations": 65
+          }
+        },
+        "linprogx_over_highs": 0.6640064031625147,
+        "linprogx_over_clarabel": 0.08759667812182419
+      },
+      "lp_pilot87": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 4.718128804999992,
+            "seconds_min_host": 4.625077146999956,
+            "seconds_max_host": 4.758732608999992,
+            "objective": 301.71034733316753,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 20.848806728,
+            "seconds_min_host": 19.657670350000046,
+            "seconds_max_host": 24.371719239000015,
+            "objective": 301.72472388939445,
+            "max_residual": 4.720686417935452e-09,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 3.8876484749999918,
+            "seconds_min_host": 3.8170236560000035,
+            "seconds_max_host": 4.493448145000002,
+            "objective": 301.71046610478913,
+            "max_residual": 5.289280124998186e-11,
+            "backend": "ipm",
+            "iterations": 128
+          }
+        },
+        "linprogx_over_highs": 0.8239809966358047,
+        "linprogx_over_clarabel": 0.1864686322684775
+      },
+      "lp_qap12": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 120.77408918300006,
+            "seconds_min_host": 119.240983486,
+            "seconds_max_host": 121.13386025099999,
+            "objective": 522.8943505590611,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 3.745375084999978,
+            "seconds_min_host": 3.6606075800000326,
+            "seconds_max_host": 4.235207650000007,
+            "objective": 522.8943498310758,
+            "max_residual": 1.9137945790733737e-13,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 2.126163482000038,
+            "seconds_min_host": 2.089024489999929,
+            "seconds_max_host": 2.2230285609999783,
+            "objective": 522.8974498035591,
+            "max_residual": 1.8567850028277516e-05,
+            "backend": "pdhg",
+            "iterations": 3392
+          }
+        },
+        "linprogx_over_highs": 0.017604467120248116,
+        "linprogx_over_clarabel": 0.5676770506951911
+      },
+      "lp_qap15": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 0,
+            "status": "incomplete",
+            "seconds_median_of_hosts": null,
+            "seconds_min_host": null,
+            "seconds_max_host": null,
+            "objective": null,
+            "max_residual": null,
+            "backend": null,
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 17.232504745999904,
+            "seconds_min_host": 15.510742532000108,
+            "seconds_max_host": 17.504400807000025,
+            "objective": 1040.9940300104643,
+            "max_residual": 1.1357383870496256e-12,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.7800568140000905,
+            "seconds_min_host": 0.6583285520000572,
+            "seconds_max_host": 0.8277829450000809,
+            "objective": 1041.0001778455592,
+            "max_residual": 6.960290616721959e-06,
+            "backend": "pdhg",
+            "iterations": 3456
+          }
+        },
+        "linprogx_over_highs": null,
+        "linprogx_over_clarabel": 0.045266595048010144
+      },
+      "lp_sierra": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.04302611900004649,
+            "seconds_min_host": 0.0422753279999597,
+            "seconds_max_host": 0.05272462700008873,
+            "objective": 15394362.183631929,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.07031476600002406,
+            "seconds_min_host": 0.0686895059999415,
+            "seconds_max_host": 0.08175690499990651,
+            "objective": 15394362.180751849,
+            "max_residual": 6.769642513645656e-07,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.11404564500003289,
+            "seconds_min_host": 0.11189800800002558,
+            "seconds_max_host": 0.11570212399999491,
+            "objective": 15394362.183631929,
+            "max_residual": 1.8189894035458565e-12,
+            "backend": "simplex",
+            "iterations": 725
+          }
+        },
+        "linprogx_over_highs": 2.650614269902188,
+        "linprogx_over_clarabel": 1.6219302358197971
+      },
+      "lp_stocfor2": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.0889998549999973,
+            "seconds_min_host": 0.0877850759999319,
+            "seconds_max_host": 0.09966099899997971,
+            "objective": -39024.408537882104,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.09975750000000971,
+            "seconds_min_host": 0.09967028100004427,
+            "seconds_max_host": 0.11702313500006767,
+            "objective": -39024.40616721909,
+            "max_residual": 1.8189894035458565e-12,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.06734408800002711,
+            "seconds_min_host": 0.0659272030000011,
+            "seconds_max_host": 0.07180112499997904,
+            "objective": -39024.40846944525,
+            "max_residual": 1.4551915228366852e-11,
+            "backend": "ipm",
+            "iterations": 21
+          }
+        },
+        "linprogx_over_highs": 0.7566763788551022,
+        "linprogx_over_clarabel": 0.6750779440144405
+      },
+      "lp_stocfor3": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.8296430679999958,
+            "seconds_min_host": 0.7982645209999646,
+            "seconds_max_host": 0.8369727560000229,
+            "objective": -39976.78394364944,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 1.4438389939999752,
+            "seconds_min_host": 1.427823103000037,
+            "seconds_max_host": 1.491024048999975,
+            "objective": -39976.573791885334,
+            "max_residual": 5.4569682106375694e-12,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.7825305299999172,
+            "seconds_min_host": 0.7647150579999789,
+            "seconds_max_host": 0.8232094930000358,
+            "objective": -39976.78278194891,
+            "max_residual": 8.549250196665525e-11,
+            "backend": "ipm",
+            "iterations": 45
+          }
+        },
+        "linprogx_over_highs": 0.9432134856334643,
+        "linprogx_over_clarabel": 0.5419790802518876
+      },
+      "lp_truss": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 3.5737077159999444,
+            "seconds_min_host": 3.5387287030000607,
+            "seconds_max_host": 3.600599589000012,
+            "objective": 458815.84718561656,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.25389534599992203,
+            "seconds_min_host": 0.237798454999961,
+            "seconds_max_host": 0.2774650040000779,
+            "objective": 458815.84699389717,
+            "max_residual": 3.552178924035642e-11,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.1583427829999664,
+            "seconds_min_host": 0.146826467999972,
+            "seconds_max_host": 0.1846558020000657,
+            "objective": 458822.3288455236,
+            "max_residual": 2.4024373601605475e-09,
+            "backend": "ipm",
+            "iterations": 20
+          }
+        },
+        "linprogx_over_highs": 0.04430770381445735,
+        "linprogx_over_clarabel": 0.6236537435389423
+      },
+      "lp_tuff": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.018493783999929292,
+            "seconds_min_host": 0.018235707000030743,
+            "seconds_max_host": 0.023384916000054545,
+            "objective": 0.2921477650936128,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.027848736999999346,
+            "seconds_min_host": 0.02598202899991975,
+            "seconds_max_host": 0.03126811099991755,
+            "objective": 0.2921478101616915,
+            "max_residual": 1.8189894035458565e-12,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.007059391999973741,
+            "seconds_min_host": 0.006885271999976794,
+            "seconds_max_host": 0.008319990000018151,
+            "objective": 0.2921477650936129,
+            "max_residual": 1.1368683772161603e-12,
+            "backend": "simplex",
+            "iterations": 159
+          }
+        },
+        "linprogx_over_highs": 0.38171701367339056,
+        "linprogx_over_clarabel": 0.25349056224610494
+      },
+      "lp_woodw": {
+        "solvers": {
+          "highs": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.14431061400000544,
+            "seconds_min_host": 0.13906866900003934,
+            "seconds_max_host": 0.15340482399994926,
+            "objective": 1.3044763330842293,
+            "max_residual": null,
+            "backend": "highs",
+            "iterations": null
+          },
+          "clarabel": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.34588442299991584,
+            "seconds_min_host": 0.3409477400000469,
+            "seconds_max_host": 0.35637809699994705,
+            "objective": 1.3044763344099919,
+            "max_residual": 2.8421709430404007e-13,
+            "backend": "clarabel",
+            "iterations": null
+          },
+          "linprogx": {
+            "hosts_observed": 3,
+            "hosts_optimal": 3,
+            "status": "optimal",
+            "seconds_median_of_hosts": 0.1320717710000281,
+            "seconds_min_host": 0.13014012299993283,
+            "seconds_max_host": 0.13226687099995615,
+            "objective": 1.3045073685958548,
+            "max_residual": 3.9835867937654257e-10,
+            "backend": "ipm",
+            "iterations": 32
+          }
+        },
+        "linprogx_over_highs": 0.9151909713309314,
+        "linprogx_over_clarabel": 0.38183786900417954
+      }
+    }
+  }
+}

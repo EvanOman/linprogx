@@ -1,0 +1,186 @@
+[
+  {
+    "instance": "lp_80bau3b",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 44,
+    "seconds": 0.10777610610239208,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_cre_a",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 34,
+    "seconds": 0.08235779101960361,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_cre_b",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 66,
+    "seconds": 1.2993233960587531,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_cre_d",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 71,
+    "seconds": 1.028185335919261,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_d2q06c",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 47,
+    "seconds": 0.25130120920948684,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_degen3",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 17,
+    "seconds": 0.14635584084317088,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_fit2p",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 19,
+    "seconds": 0.07363713812083006,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_greenbea",
+    "backend": "native-c-sparse-dual-simplex",
+    "status": "optimal",
+    "iterations": 4399,
+    "seconds": 0.3777007630560547,
+    "ds_touched": true
+  },
+  {
+    "instance": "lp_ken_07",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 15,
+    "seconds": 0.016842585057020187,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_ken_11",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 22,
+    "seconds": 0.15574896405451,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_ken_13",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 26,
+    "seconds": 0.4677970218472183,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_ken_18",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 34,
+    "seconds": 5.037265808088705,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_maros_r7",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 20,
+    "seconds": 0.6523506850935519,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_osa_14",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 55,
+    "seconds": 0.8400398318190128,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_osa_30",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 45,
+    "seconds": 4.879916578065604,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_osa_60",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 56,
+    "seconds": 5.298294374952093,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_pds_10",
+    "backend": "native-c-sparse-pdhg",
+    "status": "optimal",
+    "iterations": 6400,
+    "seconds": 1.530540945008397,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_pds_20",
+    "backend": "native-c-sparse-pdhg",
+    "status": "optimal",
+    "iterations": 14016,
+    "seconds": 6.6325125868897885,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_pilot87",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 128,
+    "seconds": 3.582771656801924,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_qap12",
+    "backend": "native-c-sparse-pdhg",
+    "status": "optimal",
+    "iterations": 3392,
+    "seconds": 1.5197410369291902,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_stocfor3",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 45,
+    "seconds": 0.5287007698789239,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_truss",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 20,
+    "seconds": 0.0842357671353966,
+    "ds_touched": false
+  },
+  {
+    "instance": "lp_woodw",
+    "backend": "native-c-sparse-ipm",
+    "status": "optimal",
+    "iterations": 32,
+    "seconds": 0.08302461891435087,
+    "ds_touched": false
+  }
+]
