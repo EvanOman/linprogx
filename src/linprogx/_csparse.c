@@ -2356,6 +2356,7 @@ done:
 static PyObject *CSRMatrix_normal_equations_solve(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_solve_eq_box_ipm(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
 static PyObject *CSRMatrix_solve_eq_box_dual_simplex(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
+static PyObject *CSRMatrix_solve_eq_box_ds2(CSRMatrixObject *self, PyObject *args, PyObject *kwds);
 static PyObject *CSRMatrix_supernode_sizes(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_supernode_symbolic_structure(CSRMatrixObject *self, PyObject *args);
 static PyObject *CSRMatrix_cholesky_symbolic_fingerprint(CSRMatrixObject *self, PyObject *args);
@@ -2376,6 +2377,7 @@ static PyMethodDef CSRMatrix_methods[] = {
     {"normal_equations_solve", (PyCFunction)CSRMatrix_normal_equations_solve, METH_VARARGS, "Solve (A diag(d) A' + delta I) x = rhs with the native sparse Cholesky."},
     {"solve_eq_box_ipm", (PyCFunction)CSRMatrix_solve_eq_box_ipm, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with a native interior point method."},
     {"solve_eq_box_dual_simplex", (PyCFunction)CSRMatrix_solve_eq_box_dual_simplex, METH_VARARGS | METH_KEYWORDS, "Solve min c'x subject to Ax=b and lo<=x<=hi with bounded-variable dual simplex."},
+    {"solve_eq_box_ds2", (PyCFunction)CSRMatrix_solve_eq_box_ds2, METH_VARARGS | METH_KEYWORDS, "DS2 (gated rewrite): solve min c'x subject to Ax=b and lo<=x<=hi with the new dual simplex."},
     {"supernode_sizes", (PyCFunction)CSRMatrix_supernode_sizes, METH_NOARGS, "Test hook: fundamental supernode sizes of the Cholesky factor of A A'."},
     {"supernode_symbolic_structure", (PyCFunction)CSRMatrix_supernode_symbolic_structure, METH_NOARGS, "Test hook: supernodal row lists and descendant update maps."},
     {"cholesky_symbolic_fingerprint", (PyCFunction)CSRMatrix_cholesky_symbolic_fingerprint, METH_NOARGS, "Test hook: hashes of Cholesky symbolic structures."},
@@ -8929,6 +8931,15 @@ typedef struct {
     int32_t *ft_spk_col;       /* packed entry -> owning spike id */
     int32_t *ft_spk_nextrow;   /* packed entry -> next entry in same row */
     int32_t *ft_rowhead;       /* z-row -> first packed spike entry or -1 */
+    /* C-2 PHASE 1: compacted STATIC U'/U'^T.  The virtual representation
+     * filters the static factor at SOLVE time (30.07% of static element visits
+     * on greenbea are loaded then discarded).  These hold the same entries in
+     * the SAME ORDER with the dead ones physically removed, so the solve loops
+     * run unconditionally.  Rebuilt eagerly at each FT commit for only the
+     * O(nnz of one row + one column) entries whose liveness actually changed. */
+    int32_t *uc_idx;  double *uc_val;  int32_t *uc_end;   /* U columns  (FTRAN) */
+    int32_t *utc_idx; double *utc_val; int32_t *utc_end;  /* U^T rows   (BTRAN) */
+    int uc_active;
     /* row-eta file */
     int32_t *ft_eta_slot;      /* eta k -> target z-slot t_k */
     int32_t *ft_eta_start;     /* eta k -> packed start (size n+1) */
@@ -9183,6 +9194,8 @@ static void lu_context_free(LUContext *ctx) {
     free(ctx->ft_spk_slot); free(ctx->ft_spk_created); free(ctx->ft_spk_start);
     free(ctx->ft_spk_idx); free(ctx->ft_spk_val);
     free(ctx->ft_spk_col); free(ctx->ft_spk_nextrow); free(ctx->ft_rowhead);
+    free(ctx->uc_idx); free(ctx->uc_val); free(ctx->uc_end);
+    free(ctx->utc_idx); free(ctx->utc_val); free(ctx->utc_end);
     free(ctx->ft_eta_slot); free(ctx->ft_eta_start);
     free(ctx->ft_eta_idx); free(ctx->ft_eta_val);
     free(ctx->ft_v); free(ctx->ft_acc); free(ctx->ft_pat); free(ctx->ft_pat2);
@@ -9879,6 +9892,9 @@ assemble:
     ctx->ft_spk_slot = NULL; ctx->ft_spk_created = NULL; ctx->ft_spk_start = NULL;
     ctx->ft_spk_idx = NULL; ctx->ft_spk_val = NULL;
     ctx->ft_spk_col = NULL; ctx->ft_spk_nextrow = NULL; ctx->ft_rowhead = NULL;
+    ctx->uc_idx = NULL; ctx->uc_val = NULL; ctx->uc_end = NULL;
+    ctx->utc_idx = NULL; ctx->utc_val = NULL; ctx->utc_end = NULL;
+    ctx->uc_active = 0;
     ctx->ft_eta_slot = NULL; ctx->ft_eta_start = NULL;
     ctx->ft_eta_idx = NULL; ctx->ft_eta_val = NULL;
     ctx->ft_upd_cap = 0;
@@ -10212,6 +10228,168 @@ static void gp_usolve(const LUContext *ctx, double *x,
 /* ==================================================================== */
 
 /* Lazy allocation of all FT state on the first update. Returns 0/-1. */
+/* C-2 PHASE 1 gate.  Default OFF until A/B-verified; the compacted structures
+ * are exact (same entries, same order) so the gate is a measurement tool, not a
+ * correctness switch. */
+/* KILLED 2026-07-25 on measurement -- default OFF, diagnostic only. */
+static int g_uc_compact = 0;
+static void lu_refresh_uprime_compact(void) {
+    const char *e = getenv("LINPROGX_DS_UPRIME_COMPACT");
+    g_uc_compact = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_uprime_compact_on(void) { return g_uc_compact; }
+
+/* ROUTE OVERRIDE (LINPROGX_DS_FORCE_GP=1).  The adaptive route picks the
+ * dense-staged FT bodies from OUTPUT solution density, but greenbea's
+ * intermediate phases are hypersparse (26.9 active U'^T rows of m=1,525;
+ * 17.78% nonzero L^T rows).  The hyper-sparse Gilbert-Peierls path already
+ * exists in this file -- this forces it so the threshold can be tested rather
+ * than assumed. */
+static int g_force_gp = 0;
+static void lu_refresh_force_gp(void) {
+    const char *e = getenv("LINPROGX_DS_FORCE_GP");
+    g_force_gp = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_force_gp_on(void) { return g_force_gp; }
+
+/* K5 rcost/clear fusion gate. */
+static int g_rcost_fuse = 0;
+static void lu_refresh_rcost_fuse(void) {
+    const char *e = getenv("LINPROGX_DS_RCOST_FUSE");
+    g_rcost_fuse = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_rcost_fuse_on(void) { return g_rcost_fuse; }
+
+/* L^T empty-column skip gate. */
+static int g_lt_skip = 0;
+static void lu_refresh_lt_skip(void) {
+    const char *e = getenv("LINPROGX_DS_LT_SKIP");
+    g_lt_skip = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_lt_skip_on(void) { return g_lt_skip; }
+
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). Logical-form gate: carry the RHS in the
+ * artificial (logical) column bounds instead of a separate RHS vector -- the
+ * prerequisite for doing dual Phase 1 as an in-place bound swap. */
+static int g_logical_form = 0;
+static void ds_refresh_logical_form(void) {
+    const char *e = getenv("LINPROGX_DS_LOGICAL_FORM");
+    g_logical_form = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_logical_form_on(void) { return g_logical_form; }
+
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). In-place dual Phase 1 gate. */
+static int g_ds_phase1 = 0;
+static void ds_refresh_phase1(void) {
+    const char *e = getenv("LINPROGX_DS_PHASE1");
+    g_ds_phase1 = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_phase1_on(void) { return g_ds_phase1; }
+
+/* PROVENANCE: SOURCE-INFORMED (HiGHS).  Edge-weight floor.  HiGHS clamps every
+ * updated dual edge weight to >= kMinDualSteepestEdgeWeight = 1e-4
+ * (SimplexConst.h:162, applied HEkk.cpp:2234-2235).  linprogx shipped 1e-12 --
+ * eight orders of magnitude in which a drifted-small weight can make a row look,
+ * in HiGHS's own words, "unreasonably attractive". */
+static double g_edge_floor = 1e-12;
+static void ds_refresh_edge_floor(void) {
+    const char *e = getenv("LINPROGX_DS_EDGE_FLOOR");
+    g_edge_floor = (e != NULL && atof(e) > 0.0) ? atof(e) : 1e-12;
+}
+static double ds_edge_floor(void) { return g_edge_floor; }
+
+/* PROVENANCE: SOURCE-INFORMED (HiGHS).  Row re-selection on stale DSE weights. */
+static int g_reselect = 0;
+static double g_reselect_tol = 0.25;   /* HiGHS: SimplexConst.h:160 */
+static int g_reselect_cap = 10;        /* bound the retries per pivot */
+static void ds_refresh_reselect(void) {
+    const char *e = getenv("LINPROGX_DS_RESELECT");
+    g_reselect = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    const char *t = getenv("LINPROGX_DS_RESELECT_TOL");
+    g_reselect_tol = (t != NULL && atof(t) > 0.0) ? atof(t) : 0.25;
+    const char *c = getenv("LINPROGX_DS_RESELECT_CAP");
+    g_reselect_cap = (c != NULL && atoi(c) > 0) ? atoi(c) : 10;
+}
+static int ds_reselect_on(void) { return g_reselect; }
+static double ds_reselect_tol(void) { return g_reselect_tol; }
+static int ds_reselect_cap(void) { return g_reselect_cap; }
+
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). Rotating CHUZR scan start. */
+static int g_rot_start = 0;
+static void ds_refresh_rot_start(void) {
+    const char *e = getenv("LINPROGX_DS_ROT_START");
+    g_rot_start = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_rot_start_on(void) { return g_rot_start; }
+
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). Perturb row/logical costs too. */
+static int g_perturb_rows = 0;
+static void ds_refresh_perturb_rows(void) {
+    const char *e = getenv("LINPROGX_DS_PERTURB_ROWS");
+    g_perturb_rows = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_perturb_rows_on(void) { return g_perturb_rows; }
+
+/* PROVENANCE: SOURCE-INFORMED (HiGHS). Skip the crash; start from B = I. */
+static int g_logical_basis = 0;
+static void ds_refresh_logical_basis(void) {
+    const char *e = getenv("LINPROGX_DS_LOGICAL_BASIS");
+    g_logical_basis = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int ds_logical_basis_on(void) { return g_logical_basis; }
+
+/* Rebuild the compacted live entries of U column j (FTRAN static path).
+ * Scans the ORIGINAL list in index order and copies only live entries, so the
+ * traversal order -- and therefore every floating-point accumulation order --
+ * is bit-identical to the filtered virtual form. */
+static void lu_uc_rebuild_col(LUContext *ctx, int32_t j) {
+    int32_t w = ctx->u_indptr[j];
+    for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
+        int32_t i = ctx->u_indices[p];
+        if (i == j) continue;
+        if (ctx->ft_del_stamp[i] >= 0) continue;
+        ctx->uc_idx[w] = i;
+        ctx->uc_val[w] = ctx->u_values[p];
+        w++;
+    }
+    ctx->uc_end[j] = w;
+}
+
+/* Rebuild the compacted live entries of U^T row j (BTRAN static path). */
+static void lu_uc_rebuild_row(LUContext *ctx, int32_t j) {
+    int32_t w = ctx->ut_indptr[j];
+    for (int32_t p = ctx->ut_indptr[j]; p < ctx->ut_indptr[j + 1]; p++) {
+        int32_t l = ctx->ut_indices[p];
+        if (l == j) continue;
+        if (ctx->ft_col_spike[l] >= 0) continue;
+        ctx->utc_idx[w] = l;
+        ctx->utc_val[w] = ctx->ut_values[p];
+        w++;
+    }
+    ctx->utc_end[j] = w;
+}
+
+static void lu_uc_rebuild_all(LUContext *ctx) {
+    if (!ctx->uc_active) return;
+    for (int32_t j = 0; j < ctx->m; j++) {
+        lu_uc_rebuild_col(ctx, j);
+        lu_uc_rebuild_row(ctx, j);
+    }
+}
+
+/* One FT commit marks slot t: column t spiked AND row t deleted.  Only the
+ * columns that contain row t, and the rows that contain column t, change
+ * liveness -- and both sets are read straight off the transpose. */
+static void lu_uc_commit(LUContext *ctx, int32_t t) {
+    if (!ctx->uc_active) return;
+    for (int32_t p = ctx->ut_indptr[t]; p < ctx->ut_indptr[t + 1]; p++) {
+        lu_uc_rebuild_col(ctx, ctx->ut_indices[p]);
+    }
+    for (int32_t p = ctx->u_indptr[t]; p < ctx->u_indptr[t + 1]; p++) {
+        lu_uc_rebuild_row(ctx, ctx->u_indices[p]);
+    }
+}
+
 static int lu_ft_lazy_init(LUContext *ctx) {
     if (ctx->ft_order != NULL) return 0;
     int32_t m = ctx->m;
@@ -10220,6 +10398,17 @@ static int lu_ft_lazy_init(LUContext *ctx) {
     ctx->ft_col_spike = malloc((size_t)m * sizeof(int32_t));
     ctx->ft_del_stamp = malloc((size_t)m * sizeof(int32_t));
     ctx->ft_rowhead = malloc((size_t)m * sizeof(int32_t));
+    if (lu_uprime_compact_on()) {
+        int32_t unnz = ctx->u_indptr[m];
+        ctx->uc_idx  = malloc((size_t)(unnz > 0 ? unnz : 1) * sizeof(int32_t));
+        ctx->uc_val  = malloc((size_t)(unnz > 0 ? unnz : 1) * sizeof(double));
+        ctx->uc_end  = malloc((size_t)m * sizeof(int32_t));
+        ctx->utc_idx = malloc((size_t)(unnz > 0 ? unnz : 1) * sizeof(int32_t));
+        ctx->utc_val = malloc((size_t)(unnz > 0 ? unnz : 1) * sizeof(double));
+        ctx->utc_end = malloc((size_t)m * sizeof(int32_t));
+        ctx->uc_active = (ctx->uc_idx && ctx->uc_val && ctx->uc_end &&
+                          ctx->utc_idx && ctx->utc_val && ctx->utc_end);
+    }
     ctx->ft_v = calloc((size_t)m, sizeof(double));
     ctx->ft_acc = calloc((size_t)m, sizeof(double));
     ctx->ft_pat = malloc((size_t)m * sizeof(int32_t));
@@ -10239,6 +10428,7 @@ static int lu_ft_lazy_init(LUContext *ctx) {
         ctx->ft_del_stamp[i] = -1;
         ctx->ft_rowhead[i] = -1;
     }
+    lu_uc_rebuild_all(ctx);
     return 0;
 }
 
@@ -10257,6 +10447,12 @@ static inline int lu_ft_row_live(const LUContext *ctx, int32_t i, int32_t create
  *
  * Returns 0 on success, -1 on rejection (caller must refactorize).
  */
+/* FT update sweep: how much of lu_update's 7.06% is the positional scan finding
+ * nothing, versus real elimination work?  Same question the solves answered. */
+static unsigned long long g_ftu_scan = 0, g_ftu_nz = 0, g_ftu_calls = 0;
+static unsigned long long g_ftu_cyc = 0;
+static int lu_uprime_census_on(void);
+
 static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
                         int32_t ent_nnz, const int32_t *ent_idx,
                         const double *ent_val) {
@@ -10362,10 +10558,14 @@ static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
             w_val_heap = 1;
         }
         int32_t pt = ctx->ft_pos[t];
+        const int ftu_census = lu_uprime_census_on();
+        unsigned long long ftu_t0 = ftu_census ? __rdtsc() : 0ULL;
+        if (ftu_census) { g_ftu_calls++; g_ftu_scan += (unsigned long long)(m - pt - 1); }
         for (int32_t k = pt + 1; k < m; k++) {
             int32_t j = ctx->ft_order[k];
             double aj = acc[j];
             if (aj == 0.0) continue;
+            if (ftu_census) g_ftu_nz++;
             acc[j] = 0.0;
             double wj = aj / ctx->u_diag[j];
             w_idx[n_w] = j;
@@ -10389,6 +10589,7 @@ static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
                 acc[slot] -= wj * ctx->ft_spk_val[e];
             }
         }
+        if (ftu_census) g_ftu_cyc += __rdtsc() - ftu_t0;
         /* acc positions consumed as visited; any residue (numerically
          * cancelled fill never visited) is zero by construction of the
          * sweep, but clear defensively at w support tail positions is
@@ -10537,6 +10738,7 @@ static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
     /* bookkeeping: replace column t, delete row t, cycle t to the end */
     ctx->ft_col_spike[t] = sid;
     ctx->ft_del_stamp[t] = upd;
+    lu_uc_commit(ctx, t);
     ctx->u_diag[t] = d;
     {
         int32_t pt = ctx->ft_pos[t];
@@ -10561,12 +10763,146 @@ static int lu_ft_update(LUContext *ctx, int32_t leaving_pos,
 #undef LU_FT_CLEAR_V
 }
 
+/* PERMUTATION-BOUNDARY CENSUS (diagnostic only; env LINPROGX_DS_PERM_CENSUS=1).
+ *
+ * The dense-staged FT solve bodies pay O(m) permuted gathers/scatters at the
+ * LU<->DS boundary regardless of right-hand-side sparsity: FTRAN's rhs is an
+ * entering column with ~5-8 nonzeros and BTRAN's rhs is a UNIT VECTOR, yet both
+ * gather all m entries.  The hyper-sparse GP path in this same file already
+ * uses the correct sparse idiom (see the comment at "Permute sparse rhs:
+ * z[inv_perm_row[idx]] = val"), so this measures what the dense-staged path
+ * gives up.  rdtsc brackets whole loops only -- never per element. */
+#define LU_PERM_FTRAN_IN   0
+#define LU_PERM_FTRAN_OUT  1
+#define LU_PERM_BTRAN_IN   2
+#define LU_PERM_BTRAN_OUT  3
+#define LU_PERM_FTRAN_SCAN 4
+#define LU_PERM_BTRAN_SCAN 5
+#define LU_PERM_NSTREAM    6
+static unsigned long long g_perm_cyc[LU_PERM_NSTREAM] = {0};
+static unsigned long long g_perm_calls[LU_PERM_NSTREAM] = {0};
+static unsigned long long g_perm_solve_cyc = 0;
+static int g_perm_census = -1;
+
+/* U' VIRTUALIZATION CENSUS (env LINPROGX_DS_UPRIME_CENSUS=1).
+ * The FT state represents U' virtually: the static U filtered at SOLVE TIME by
+ * liveness predicates, plus packed spike columns reached through a linked list.
+ * Every filtered-out element was still loaded and branched on -- dead work that
+ * an explicitly maintained sparse U'/U'^T would never visit.  These counters
+ * are exact and load-invariant (pure counts, no timing). */
+static unsigned long long g_up_static_seen = 0, g_up_static_applied = 0;
+static unsigned long long g_up_spike_seen = 0, g_up_spike_applied = 0;
+static unsigned long long g_up_rows_seen = 0, g_up_rows_dead = 0;
+/* Cycle brackets at ROW granularity (not per element), so rdtsc overhead is
+ * ~0.2% of the run.  Separates the two U' access patterns: the STATIC stream is
+ * a contiguous indexed walk; the SPIKE stream is a linked list whose every step
+ * costs four SERIALLY DEPENDENT loads before one axpy.  Cycles-per-element on
+ * each is the latency question that now decides C-2 phase 2. */
+static unsigned long long g_up_static_cyc = 0, g_up_spike_cyc = 0;
+/* Whole-phase brackets inside lu_ft_btran: which phase actually owns btran_rho's
+ * 17.05% of wall, given that the U' traversal is only 2.64% of the run? */
+static unsigned long long g_bt_uphase_cyc = 0, g_bt_eta_cyc = 0, g_bt_lt_cyc = 0;
+static unsigned long long g_bt_lt_rows = 0, g_bt_lt_rows_nz = 0;
+static unsigned long long g_bt_lt_empty = 0;
+static int g_up_census = -1;
+/* TRACE HASH ORACLE (env LINPROGX_DS_TRACE_HASH=1).
+ * Characterization gate for high-risk FT/solve changes, per AGENTS.md.
+ * Objective + iteration count are too weak: a reordering can preserve both and
+ * still perturb intermediate vectors.  This folds the RAW BITS of every BTRAN
+ * and FTRAN output vector into an FNV-1a running hash, so any change to any
+ * solve result anywhere in the run alters the digest.  Off-path when disabled. */
+static unsigned long long g_trace_hash = 1469598103934665603ULL;
+static unsigned long long g_trace_vectors = 0;
+static int g_trace_on = -1;
+static int lu_trace_hash_on(void) {
+    if (g_trace_on < 0) {
+        const char *e = getenv("LINPROGX_DS_TRACE_HASH");
+        g_trace_on = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    }
+    return g_trace_on;
+}
+static void lu_trace_fold(const double *v, int32_t n) {
+    if (!lu_trace_hash_on()) return;
+    const unsigned char *p = (const unsigned char *)v;
+    size_t nbytes = (size_t)n * sizeof(double);
+    unsigned long long h = g_trace_hash;
+    for (size_t i = 0; i < nbytes; i++) {
+        h ^= (unsigned long long)p[i];
+        h *= 1099511628211ULL;
+    }
+    g_trace_hash = h;
+    g_trace_vectors++;
+}
+
+static int lu_uprime_census_on(void) {
+    if (g_up_census < 0) {
+        const char *e = getenv("LINPROGX_DS_UPRIME_CENSUS");
+        g_up_census = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    }
+    return g_up_census;
+}
+
+static int g_branchless_scan = 0;  /* KILLED 2026-07-25: measurably slower */
+static void lu_refresh_branchless_scan(void) {
+    const char *e = getenv("LINPROGX_DS_BRANCHLESS_SCAN");
+    g_branchless_scan = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_branchless_scan_on(void) { return g_branchless_scan; }
+
+/* SPARSE PERMUTE-IN (A/B gate LINPROGX_DS_SPARSE_PERMIN, default on).
+ * The dense-staged FT solve bodies place their right-hand side with an O(m)
+ * PERMUTED GATHER regardless of rhs sparsity: FTRAN's rhs is an entering column
+ * with ~5-8 nonzeros and BTRAN's is a UNIT VECTOR, yet both touch all m slots.
+ * The hyper-sparse GP path in this same file already uses the correct idiom
+ * ("Permute sparse rhs: z[inv_perm_row[idx]] = val"), and both inverse
+ * permutations are built (inv_perm_row[perm_row[k]]=k, inv_perm_col[...]).
+ * Replacing the gather with a sequential clear plus n_rhs_nz scatters is
+ * BIT-IDENTICAL: z holds the same values in the same slots. */
+/* Default OFF: bit-identical and cycle-census-positive, but NOT part of the
+ * certified sha d50b01a and its whole-wall A/B was inconclusive (-2.54% on
+ * btran_rho against 6.23% control drift).  The shipped default must match what
+ * was certified; this rides the next envab run. */
+static int g_sparse_permin = 0;
+static void lu_refresh_sparse_permin(void) {
+    const char *e = getenv("LINPROGX_DS_SPARSE_PERMIN");
+    g_sparse_permin = (e != NULL && atoi(e) == 1) ? 1 : 0;
+}
+static int lu_sparse_permin_on(void) { return g_sparse_permin; }
+
+static int lu_perm_census_on(void) {
+    if (g_perm_census < 0) {
+        const char *e = getenv("LINPROGX_DS_PERM_CENSUS");
+        g_perm_census = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    }
+    return g_perm_census;
+}
+
+#define LU_PERM_T0(on) unsigned long long lu_perm_t0_ = (on) ? __rdtsc() : 0ULL
+#define LU_PERM_ACC(on, idx) do { \
+    if (on) { g_perm_cyc[(idx)] += __rdtsc() - lu_perm_t0_; g_perm_calls[(idx)]++; } \
+} while (0)
+
 /* Dense FTRAN with FT state: x = B'^{-1} b. */
-static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
+static void lu_ft_ftran_ex(LUContext *ctx, const double *b, double *x,
+                           const int32_t *sp_idx, const double *sp_val,
+                           int32_t sp_n) {
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
 
-    for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_row[k]];
+    const int perm_on = lu_perm_census_on();
+    const int up_census = lu_uprime_census_on();
+    {
+        LU_PERM_T0(perm_on);
+        if (sp_idx != NULL) {
+            memset(z, 0, (size_t)m * sizeof(double));
+            for (int32_t t = 0; t < sp_n; t++) {
+                z[ctx->inv_perm_row[sp_idx[t]]] = sp_val[t];
+            }
+        } else {
+            for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_row[k]];
+        }
+        LU_PERM_ACC(perm_on, LU_PERM_FTRAN_IN);
+    }
     for (int32_t j = 0; j < m; j++) {
         double zj = z[j];
         if (zj == 0.0) continue;
@@ -10593,27 +10929,62 @@ static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
             int32_t created = ctx->ft_spk_created[sid];
             for (int32_t p = ctx->ft_spk_start[sid]; p < ctx->ft_spk_start[sid + 1]; p++) {
                 int32_t i = ctx->ft_spk_idx[p];
+                if (up_census) g_up_spike_seen++;
                 if (!lu_ft_row_live(ctx, i, created)) continue;
+                if (up_census) g_up_spike_applied++;
                 z[i] -= ctx->ft_spk_val[p] * zj;
+            }
+        } else if (ctx->uc_active) {
+            const int32_t e = ctx->uc_end[j];
+            for (int32_t p = ctx->u_indptr[j]; p < e; p++) {
+                z[ctx->uc_idx[p]] -= ctx->uc_val[p] * zj;
+            }
+            if (up_census) {
+                g_up_static_seen += (unsigned long long)(e - ctx->u_indptr[j]);
+                g_up_static_applied += (unsigned long long)(e - ctx->u_indptr[j]);
             }
         } else {
             for (int32_t p = ctx->u_indptr[j]; p < ctx->u_indptr[j + 1]; p++) {
                 int32_t i = ctx->u_indices[p];
+                if (up_census) g_up_static_seen++;
                 if (i == j) continue;
                 if (ctx->ft_del_stamp[i] >= 0) continue; /* static: dead */
+                if (up_census) g_up_static_applied++;
                 z[i] -= ctx->u_values[p] * zj;
             }
         }
     }
-    for (int32_t k = 0; k < m; k++) x[ctx->perm_col[k]] = z[k];
+    {
+        LU_PERM_T0(perm_on);
+        for (int32_t k = 0; k < m; k++) x[ctx->perm_col[k]] = z[k];
+        LU_PERM_ACC(perm_on, LU_PERM_FTRAN_OUT);
+    }
+    lu_trace_fold(x, m);
+}
+
+static void lu_ft_ftran(LUContext *ctx, const double *b, double *x) {
+    lu_ft_ftran_ex(ctx, b, x, NULL, NULL, 0);
 }
 
 /* Dense BTRAN with FT state: x = B'^{-T} b. */
-static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
+static void lu_ft_btran_ex(LUContext *ctx, const double *b, double *x,
+                           int32_t sp_pos) {
     int32_t m = ctx->m;
     double *z = ctx->ws_z;
+    const int perm_on = lu_perm_census_on();
+    const int up_census = lu_uprime_census_on();
 
-    for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_col[k]];
+    {
+        LU_PERM_T0(perm_on);
+        if (sp_pos >= 0) {
+            memset(z, 0, (size_t)m * sizeof(double));
+            z[ctx->inv_perm_col[sp_pos]] = 1.0;
+        } else {
+            for (int32_t k = 0; k < m; k++) z[k] = b[ctx->perm_col[k]];
+        }
+        LU_PERM_ACC(perm_on, LU_PERM_BTRAN_IN);
+    }
+    unsigned long long bt_t0 = up_census ? __rdtsc() : 0ULL;
     /* U'^T forward solve in logical order (row-scatter form) */
     for (int32_t k = 0; k < m; k++) {
         int32_t j = ctx->ft_order[k];
@@ -10622,22 +10993,43 @@ static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
         zj /= ctx->u_diag[j];
         z[j] = zj;
         /* scatter live ROW j of U' */
+        unsigned long long up_t0 = up_census ? __rdtsc() : 0ULL;
         if (ctx->ft_del_stamp[j] < 0) {
+            if (ctx->uc_active) {
+                /* compacted: every entry is live, no per-element predicate */
+                const int32_t e = ctx->utc_end[j];
+                for (int32_t p = ctx->ut_indptr[j]; p < e; p++) {
+                    z[ctx->utc_idx[p]] -= ctx->utc_val[p] * zj;
+                }
+                if (up_census) {
+                    g_up_static_seen += (unsigned long long)(e - ctx->ut_indptr[j]);
+                    g_up_static_applied += (unsigned long long)(e - ctx->ut_indptr[j]);
+                }
+            } else
             for (int32_t p = ctx->ut_indptr[j]; p < ctx->ut_indptr[j + 1]; p++) {
                 int32_t l = ctx->ut_indices[p];
+                if (up_census) g_up_static_seen++;
                 if (l == j) continue;
                 if (ctx->ft_col_spike[l] >= 0) continue; /* static col dead */
+                if (up_census) g_up_static_applied++;
                 z[l] -= ctx->ut_values[p] * zj;
             }
+        } else if (up_census) {
+            g_up_rows_dead++;
         }
+        if (up_census) { g_up_static_cyc += __rdtsc() - up_t0; g_up_rows_seen++; up_t0 = __rdtsc(); }
         for (int32_t e = ctx->ft_rowhead[j]; e >= 0; e = ctx->ft_spk_nextrow[e]) {
             int32_t sid = ctx->ft_spk_col[e];
             int32_t slot = ctx->ft_spk_slot[sid];
+            if (up_census) g_up_spike_seen++;
             if (ctx->ft_col_spike[slot] != sid) continue;
             if (!lu_ft_row_live(ctx, j, ctx->ft_spk_created[sid])) continue;
+            if (up_census) g_up_spike_applied++;
             z[slot] -= ctx->ft_spk_val[e] * zj;
         }
+        if (up_census) g_up_spike_cyc += __rdtsc() - up_t0;
     }
+    if (up_census) { g_bt_uphase_cyc += __rdtsc() - bt_t0; bt_t0 = __rdtsc(); }
     /* transposed row etas, reverse order */
     for (int32_t k = ctx->ft_n_upd - 1; k >= 0; k--) {
         double zs = z[ctx->ft_eta_slot[k]];
@@ -10646,15 +11038,37 @@ static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
             z[ctx->ft_eta_idx[p]] -= ctx->ft_eta_val[p] * zs;
         }
     }
+    if (up_census) { g_bt_eta_cyc += __rdtsc() - bt_t0; bt_t0 = __rdtsc(); }
     /* L^T back solve */
     for (int32_t j = m - 1; j >= 0; j--) {
+        const int32_t p0 = ctx->l_indptr[j], p1 = ctx->l_indptr[j + 1];
+        if (up_census) {
+            g_bt_lt_rows++;
+            if (z[j] != 0.0) g_bt_lt_rows_nz++;
+            if (p0 == p1) g_bt_lt_empty++;
+        }
+        /* EMPTY-L-COLUMN SKIP.  With no entries the accumulation loop is a
+         * no-op and the store is z[j] = z[j], so skipping is BIT-IDENTICAL.
+         * L holds ~1.1 nonzeros per column at m=1,525, so most columns are
+         * empty and this is the common case. */
+        if (lu_lt_skip_on() && p0 == p1) continue;
         double s = z[j];
-        for (int32_t p = ctx->l_indptr[j]; p < ctx->l_indptr[j + 1]; p++) {
+        for (int32_t p = p0; p < p1; p++) {
             s -= ctx->l_values[p] * z[ctx->l_indices[p]];
         }
         z[j] = s;
     }
-    for (int32_t i = 0; i < m; i++) x[i] = z[ctx->inv_perm_row[i]];
+    if (up_census) g_bt_lt_cyc += __rdtsc() - bt_t0;
+    {
+        LU_PERM_T0(perm_on);
+        for (int32_t i = 0; i < m; i++) x[i] = z[ctx->inv_perm_row[i]];
+        LU_PERM_ACC(perm_on, LU_PERM_BTRAN_OUT);
+    }
+    lu_trace_fold(x, m);
+}
+
+static void lu_ft_btran(LUContext *ctx, const double *b, double *x) {
+    lu_ft_btran_ex(ctx, b, x, -1);
 }
 
 /*
@@ -10923,14 +11337,43 @@ static int32_t lu_ftran_sparse(LUContext *ctx,
          * instances (stocfor3, 80bau3b, cre_d) take the GP path. */
         int64_t s_cnt = ctx->ftran_sparse_count + ctx->btran_sparse_count;
         int64_t s_nnz = ctx->ftran_sparse_nnz_total + ctx->btran_sparse_nnz_total;
-        if (s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
-            double *rhs = ctx->ft_rhs;
-            for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = rhs_values[k];
-            lu_ft_ftran(ctx, rhs, x);
-            for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = 0.0;
+        if (!lu_force_gp_on() && s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
+            if (lu_sparse_permin_on()) {
+                /* Sparse rhs goes straight into the solve: the dense ft_rhs
+                 * staging and its re-zeroing are both unnecessary. */
+                lu_ft_ftran_ex(ctx, NULL, x, rhs_indices, rhs_values, n_rhs_nz);
+            } else {
+                double *rhs = ctx->ft_rhs;
+                for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = rhs_values[k];
+                lu_ft_ftran(ctx, rhs, x);
+                for (int32_t k = 0; k < n_rhs_nz; k++) rhs[rhs_indices[k]] = 0.0;
+            }
             int32_t nnz = 0;
-            for (int32_t i = 0; i < m; i++) {
-                if (x[i] != 0.0) x_pattern[nnz++] = i;
+            {
+                const int perm_on = lu_perm_census_on();
+                LU_PERM_T0(perm_on);
+                if (lu_branchless_scan_on()) {
+                    /* BRANCHLESS PATTERN COLLECTION.  The predicated form
+                     * writes unconditionally and advances the cursor by the
+                     * predicate, so it emits the SAME indices in the SAME
+                     * order as the branching form -- bit-identical output.
+                     * It removes one unpredictable data-dependent branch per
+                     * element; the solve result is 59-94% dense, so that
+                     * branch is close to a coin flip and mispredicts heavily
+                     * (measured 9.95 cyc/element on a cache-resident 12 KB
+                     * array).  Safe on bounds: x_pattern[nnz] is written
+                     * before the increment and nnz <= i, so the largest index
+                     * written is m-1. */
+                    for (int32_t i = 0; i < m; i++) {
+                        x_pattern[nnz] = i;
+                        nnz += (x[i] != 0.0);
+                    }
+                } else {
+                    for (int32_t i = 0; i < m; i++) {
+                        if (x[i] != 0.0) x_pattern[nnz++] = i;
+                    }
+                }
+                LU_PERM_ACC(perm_on, LU_PERM_FTRAN_SCAN);
             }
             ctx->ftran_sparse_count++;
             ctx->ftran_sparse_nnz_total += nnz;
@@ -11199,14 +11642,43 @@ static int32_t lu_btran_sparse(LUContext *ctx,
         /* Adaptive route: see lu_ftran_sparse. */
         int64_t s_cnt = ctx->ftran_sparse_count + ctx->btran_sparse_count;
         int64_t s_nnz = ctx->ftran_sparse_nnz_total + ctx->btran_sparse_nnz_total;
-        if (s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
-            double *rhs = ctx->ft_rhs;
-            rhs[rhs_pos] = 1.0;
-            lu_ft_btran(ctx, rhs, x);
-            rhs[rhs_pos] = 0.0;
+        if (!lu_force_gp_on() && s_cnt > 8 && s_nnz * 4 > (int64_t)m * s_cnt) {
+            if (lu_sparse_permin_on()) {
+                /* BTRAN's rhs is the unit vector e_{rhs_pos}: one scatter,
+                 * not an m-entry permuted gather. */
+                lu_ft_btran_ex(ctx, NULL, x, rhs_pos);
+            } else {
+                double *rhs = ctx->ft_rhs;
+                rhs[rhs_pos] = 1.0;
+                lu_ft_btran(ctx, rhs, x);
+                rhs[rhs_pos] = 0.0;
+            }
             int32_t nnz = 0;
-            for (int32_t i = 0; i < m; i++) {
-                if (x[i] != 0.0) x_pattern[nnz++] = i;
+            {
+                const int perm_on = lu_perm_census_on();
+                LU_PERM_T0(perm_on);
+                if (lu_branchless_scan_on()) {
+                    /* BRANCHLESS PATTERN COLLECTION.  The predicated form
+                     * writes unconditionally and advances the cursor by the
+                     * predicate, so it emits the SAME indices in the SAME
+                     * order as the branching form -- bit-identical output.
+                     * It removes one unpredictable data-dependent branch per
+                     * element; the solve result is 59-94% dense, so that
+                     * branch is close to a coin flip and mispredicts heavily
+                     * (measured 9.95 cyc/element on a cache-resident 12 KB
+                     * array).  Safe on bounds: x_pattern[nnz] is written
+                     * before the increment and nnz <= i, so the largest index
+                     * written is m-1. */
+                    for (int32_t i = 0; i < m; i++) {
+                        x_pattern[nnz] = i;
+                        nnz += (x[i] != 0.0);
+                    }
+                } else {
+                    for (int32_t i = 0; i < m; i++) {
+                        if (x[i] != 0.0) x_pattern[nnz++] = i;
+                    }
+                }
+                LU_PERM_ACC(perm_on, LU_PERM_BTRAN_SCAN);
             }
             ctx->btran_sparse_count++;
             ctx->btran_sparse_nnz_total += nnz;
@@ -12275,6 +12747,44 @@ static DSPriceChoice ds_price_avx2(
     return choice;
 }
 
+/* HARRIS CENSUS (diagnostic only; env LINPROGX_DS_HARRIS_CENSUS=1).
+ * Counts how many 4-column AVX2 blocks in Harris pass 1 have an empty
+ * eligibility mask.  Every such block still pays an unconditional
+ * _mm256_div_pd whose result is immediately blended to INFINITY, so an
+ * empty-mask block's division is provably dead work: skipping it is
+ * bit-identical because min(x, INFINITY) == x.  Counters are plain adds
+ * outside the vector body and are only touched when the flag is on. */
+static long long g_harris_blocks_total = 0;
+static long long g_harris_blocks_empty = 0;
+static long long g_harris_admissible_total = 0;
+static long long g_harris_calls = 0;
+static long long g_harris_support_total = 0;   /* nonzero alpha entries seen */
+static long long g_harris_ntotal_total = 0;    /* columns scanned densely */
+static long long g_harris_blocks_alpha_empty = 0; /* blocks with all-zero alpha */
+static int g_harris_census = -1;
+
+/* A/B ARM SELECTOR (diagnostic only; env LINPROGX_DS_HARRIS_FASTPATH).
+ * Refreshed once per solve, never inside the block loop, so an alternating
+ * within-process A/B sees identical contention on both arms -- the campaign's
+ * LOADED-BOX doctrine requires this because cross-process minima on this box
+ * drift 4-19% between runs.  Arm A (0) reproduces the shipped kernel; arm B (1)
+ * enables the two bit-identical early-outs.  Both arms carry the same branch so
+ * the comparison is not biased in favour of arm B. */
+static int g_harris_fastpath = 1;
+
+static void ds_harris_refresh_fastpath(void) {
+    const char *e = getenv("LINPROGX_DS_HARRIS_FASTPATH");
+    g_harris_fastpath = (e != NULL && atoi(e) == 0) ? 0 : 1;
+}
+
+static int ds_harris_census_on(void) {
+    if (g_harris_census < 0) {
+        const char *e = getenv("LINPROGX_DS_HARRIS_CENSUS");
+        g_harris_census = (e != NULL && atoi(e) == 1) ? 1 : 0;
+    }
+    return g_harris_census;
+}
+
 __attribute__((target("avx2")))
 static int ds_harris_pass1_avx2(
     int32_t n_total, const int32_t *basis_pos, const int8_t *bound_status,
@@ -12282,6 +12792,9 @@ static int ds_harris_pass1_avx2(
     int expand, double expand_tau, int32_t *cand_j, double *cand_alpha,
     double *theta_min_out)
 {
+    const int census_on = ds_harris_census_on();
+    const int fastpath = g_harris_fastpath;
+    if (census_on) g_harris_calls++;
     const __m256d sign_mask = _mm256_set1_pd(-0.0);
     const __m256d pivot_floor = _mm256_set1_pd(1e-9);
     const __m256d tau = _mm256_set1_pd(expand == 1 ? expand_tau : 0.0);
@@ -12294,6 +12807,23 @@ static int ds_harris_pass1_avx2(
         __m256d abs_alpha = _mm256_andnot_pd(sign_mask, alpha);
         int alpha_mask = _mm256_movemask_pd(
             _mm256_cmp_pd(abs_alpha, pivot_floor, _CMP_GE_OQ));
+
+        /* CHEAPEST-FILTER-FIRST.  eligible_mask is (nonbasic & alpha & dir),
+         * so alpha_mask == 0 forces eligible_mask == 0 and the block cannot
+         * contribute a candidate or lower theta_min.  Testing it here -- before
+         * the basis_pos load, the bound_status load/widen, and the three status
+         * compares -- is BIT-IDENTICAL and strictly cheaper than testing the
+         * full eligible_mask afterwards.  greenbea's pivot row has only 22.74%
+         * numerically nonzero columns, so most blocks die on this test. */
+        if (fastpath && alpha_mask == 0) {
+            if (census_on) {
+                g_harris_blocks_total++;
+                g_harris_blocks_empty++;
+                g_harris_blocks_alpha_empty++;
+                g_harris_ntotal_total += 4;
+            }
+            continue;
+        }
 
         __m128i positions = _mm_loadu_si128((const __m128i *)(basis_pos + j));
         int nonbasic_mask = _mm_movemask_ps(_mm_castsi128_ps(
@@ -12317,6 +12847,28 @@ static int ds_harris_pass1_avx2(
         int hi_direction = leaving_sigma > 0 ? positive_mask : negative_mask;
         int eligible_mask = nonbasic_mask & alpha_mask &
             ((lo_mask & lo_direction) | (hi_mask & hi_direction) | free_mask);
+
+        if (census_on) {
+            g_harris_blocks_total++;
+            if (eligible_mask == 0) g_harris_blocks_empty++;
+            else g_harris_admissible_total += __builtin_popcount((unsigned)eligible_mask);
+            /* alpha_mask counts lanes with |alpha| >= the 1e-9 pivot floor,
+             * i.e. the true numerical support of the pivot row.  Columns
+             * outside it are exactly the ones a support-driven scan could
+             * skip without changing eligibility. */
+            g_harris_support_total += __builtin_popcount((unsigned)alpha_mask);
+            g_harris_ntotal_total += 4;
+        }
+
+        /* DEAD-DIVISION SKIP.  When no lane in this block is eligible, the
+         * blend below would replace every ratio with INFINITY and
+         * min(theta_min_v, INFINITY) == theta_min_v, so the whole tail --
+         * including an unpipelined _mm256_div_pd -- is provably dead work.
+         * Measured on greenbea: 88.08% of blocks have an empty mask
+         * (1,187 of 1,348 divisions per pivot).  Skipping is BIT-IDENTICAL,
+         * not an approximation: theta_min, cand_j, cand_alpha and
+         * n_admissible are all unchanged. */
+        if (fastpath && eligible_mask == 0) continue;
 
         __m256d abs_r = _mm256_andnot_pd(
             sign_mask, _mm256_loadu_pd(r_ext + j));
@@ -12642,6 +13194,35 @@ static PyObject *ds_build_rate_hist_dict(
     return hist;
 }
 
+/* DS2 -- the gated dual-simplex rewrite.  Additive: everything it needs from
+ * this file (the LU kernels, the crash helpers) is already defined above, and
+ * nothing below it changes.
+ *
+ * The two selection components are dropped in by FILE PRESENCE: the real
+ * implementation if it exists, otherwise the stub shipped with ds2_core.  A
+ * component lands by adding its file -- no edit here and none in _ds2_core.c.
+ *
+ * DS2_AT_LO/HI/FREE/FIXED/BASIC in _ds2_iface.h are the same integers as the
+ * shipped DS_BOUND_* codes, so the shared basis-repair helpers above stay
+ * usable from DS2 unchanged. */
+#include "_ds2_iface.h"
+#if defined(__has_include)
+#  if __has_include("_ds2_chuzr.c")
+#    include "_ds2_chuzr.c"
+#  else
+#    include "_ds2_stub_chuzr.c"
+#  endif
+#  if __has_include("_ds2_chuzc.c")
+#    include "_ds2_chuzc.c"
+#  else
+#    include "_ds2_stub_chuzc.c"
+#  endif
+#else
+#  include "_ds2_stub_chuzr.c"
+#  include "_ds2_stub_chuzc.c"
+#endif
+#include "_ds2_core.c"
+
 static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     CSRMatrixObject *self, PyObject *args, PyObject *kwds)
 {
@@ -12675,6 +13256,32 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         PyErr_SetString(PyExc_ValueError, "matrix too large for 32-bit factorization");
         return NULL;
     }
+    /* DS2 GATE (LINPROGX_DS2=1, default OFF).  The only line of this function
+     * the rewrite touches: unset, control falls straight through and the
+     * shipped path is byte-identical (greenbea trace digest 679168a4baad36d6,
+     * 4,399 pivots). */
+    if (ds2_enabled()) {
+        return ds2_solve(self, c_obj, b_obj, lo_obj, hi_obj, max_iter_arg, tol);
+    }
+    /* Refresh the Harris A/B arm once per solve (never inside the hot loop). */
+    ds_harris_refresh_fastpath();
+    /* Whole-solve TSC bracket.  Reporting each stream as a FRACTION of this
+     * makes the census frequency-independent, so core boosting under load
+     * cannot bias the shares. */
+    lu_refresh_branchless_scan();
+    lu_refresh_sparse_permin();
+    lu_refresh_uprime_compact();
+    lu_refresh_force_gp();
+    lu_refresh_rcost_fuse();
+    lu_refresh_lt_skip();
+    ds_refresh_logical_form();
+    ds_refresh_phase1();
+    ds_refresh_edge_floor();
+    ds_refresh_reselect();
+    ds_refresh_rot_start();
+    ds_refresh_perturb_rows();
+    ds_refresh_logical_basis();
+    if (lu_perm_census_on()) g_perm_solve_cyc = __rdtsc();
     Py_ssize_t m_s = self->rows;
     Py_ssize_t n_s = self->cols;
     int32_t m = (int32_t)m_s;
@@ -12725,12 +13332,15 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     double *y   = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *x_B = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *rhs = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *b_zero_rhs = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    double *lo_true_all = NULL, *hi_true_all = NULL;  /* phase-1 bound save */
     double *rho = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *alpha_col = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *e_i = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *c_B = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *devex_w = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
     double *dse_tau = calloc((size_t)(m > 0 ? m : 1), sizeof(double));
+    int8_t *dse_reject = calloc((size_t)(m > 0 ? m : 1), sizeof(int8_t));
     int32_t *basis = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
 
     /* Basis CSC workspace (max nnz = A's nnz + m for artificials) */
@@ -12757,6 +13367,25 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * workspace clears and the 4g reduced-cost update (which reuses the
      * 4d scatter instead of redoing it). */
     int32_t *alpha_pattern = calloc((size_t)(n_total > 0 ? n_total : 1), sizeof(int32_t));
+    /* NARROW CSR INDEX CACHE (A/B gate LINPROGX_DS_IDX32, default on).
+     * CSRMatrixObject stores column indices as Py_ssize_t (8 bytes), but the
+     * pivot-row scatter -- the single largest phase (21.97% of wall) -- already
+     * casts every one of them down to int32_t.  Caching them once per solve as
+     * int32_t halves the index stream (greenbea: 186 KB -> 93 KB for 23,274
+     * nnz) with BIT-IDENTICAL values, since the cast already happened.  Build
+     * cost is one O(nnz) pass against 4,399 pivots x ~7,502 scatter visits. */
+    int32_t *csr_idx32 = NULL;
+    {
+        const char *e_idx32 = getenv("LINPROGX_DS_IDX32");
+        if (e_idx32 == NULL || atoi(e_idx32) != 0) {
+            csr_idx32 = malloc((size_t)(self->nnz > 0 ? self->nnz : 1) * sizeof(int32_t));
+            if (csr_idx32 != NULL) {
+                for (Py_ssize_t p_ = 0; p_ < self->nnz; p_++) {
+                    csr_idx32[p_] = (int32_t)self->indices[p_];
+                }
+            }
+        }
+    }
     /* Ratio-test candidate cache: pass 1's ascending scan records every
      * admissible (j, alpha_j) pair; the order-sensitive flip-collect and
      * sweep-2 then walk this compact list (measured ~10% of n_total on
@@ -13093,18 +13722,51 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
          * compound. Deterministic multiplicative-hash psi; exit checks,
          * objective, and dual gates all use c_orig, so this steers the
          * path only. */
-        for (int32_t j = 0; j < n; j++) {
+        /* PROVENANCE: SOURCE-INFORMED (HiGHS).  HiGHS perturbs ROW/LOGICAL
+         * costs as well as structural ones (HEkk.cpp:2551-2560), which breaks
+         * ties among slacks; ours perturbed structural columns only.
+         * LINPROGX_DS_PERTURB_ROWS=1 extends the loop over the artificials. */
+        const int32_t pert_end = ds_perturb_rows_on() ? n_total : n;
+        for (int32_t j = 0; j < pert_end; j++) {
             uint32_t h = (uint32_t)j * 2654435761u;
             double psi = 0.5 + 0.5 * ((double)h / 4294967296.0);
             c_ext[j] += 1e-9 * (1.0 + fabs(c_ext[j])) * psi;
         }
     }
 
-    /* Set up artificial columns: indices n..n+m-1, cost 0, bounds [0,0] (fixed) */
+    /* PROVENANCE: SOURCE-INFORMED (HiGHS).
+     * LOGICAL FORM (env LINPROGX_DS_LOGICAL_FORM=1).
+     *
+     * HiGHS carries the right-hand side in its ROW LOGICAL variables rather
+     * than in a separate RHS vector: rows read `Ax - s = 0` with `l_r <= s <=
+     * u_r`, so for an equality row the logical is fixed at b_i.  That is what
+     * makes dual Phase 1 an O(n) BOUND SWAP -- under the Phase-1 bound map an
+     * equality row's logical becomes [0,0] and Phase 1 solves `Ax = 0`, which
+     * is exactly the b-invariance this campaign proved from the outside.
+     *
+     * linprogx's artificial columns n..n+m-1 ARE those logicals: each is a
+     * single +1 in its row.  Row i reads `sum_j A[i,j] x_j + x_{n+i} = rhs_i`,
+     * so putting the RHS into the artificial bound means
+     *     rhs_i = 0  and  x_{n+i} fixed at -b_i.
+     * The basis matrix, the crash, the LU and every kernel are untouched; only
+     * the bound arrays and the x_B recompute source change.  This is a pure
+     * reformulation and must be RESULT-IDENTICAL. */
+    const int logical_form = ds_logical_form_on();
     for (int32_t i = 0; i < m; i++) {
         c_ext[n + i] = 0.0;
-        lo_ext[n + i] = 0.0;
-        hi_ext[n + i] = 0.0;
+        if (logical_form) {
+            lo_ext[n + i] = -b[i];
+            hi_ext[n + i] = -b[i];
+        } else {
+            lo_ext[n + i] = 0.0;
+            hi_ext[n + i] = 0.0;
+        }
+    }
+    /* RHS actually used by the x_B recomputes: zero under the logical form. */
+    double *b_solve = b;
+    if (logical_form) {
+        b_solve = b_zero_rhs;
+        for (int32_t i = 0; i < m; i++) b_solve[i] = 0.0;
     }
 
     /* Initialize Devex weights to 1. Exact DSE weights are initialized from
@@ -13119,7 +13781,20 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
      * Any uncovered row gets its artificial column. A diagnostic warm start
      * supplies the complete basis directly and skips only this crash build.
      */
-    if (!warm_start_requested) {
+    /* PROVENANCE: SOURCE-INFORMED (HiGHS).  LOGICAL-BASIS START
+     * (LINPROGX_DS_LOGICAL_BASIS=1).  HiGHS's crash is OFF by default
+     * (HighsOptions.h:914-919): it starts the dual simplex from the pure
+     * logical (slack) basis, where the dual steepest-edge weights are exactly
+     * 1 for free because B = I (HEkkDual.cpp:148-155).  linprogx always builds
+     * a triangular crash and must then compute exact weights by m BTRANs on a
+     * basis where they are not naturally 1 -- which is the weight-initialisation
+     * problem identified in the S3 study.  This skips the crash so the basis is
+     * all artificials, i.e. exactly B = I. */
+    if (!warm_start_requested && ds_logical_basis_on()) {
+        for (int32_t k = 0; k < m; k++) basis[k] = n + k;
+        basis_initialized = 1;
+    }
+    if (!warm_start_requested && !basis_initialized) {
         int8_t *row_covered = calloc((size_t)(m > 0 ? m : 1), sizeof(int8_t));
         /* Track which basis position each row is assigned to */
         int32_t *row_to_bpos = calloc((size_t)(m > 0 ? m : 1), sizeof(int32_t));
@@ -13509,6 +14184,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
     /* pivot-type composition, for degenerate-structure diagnosis */
     int64_t stat_flips = 0;
     int64_t stat_degenerate = 0;
+    int64_t stat_reselect = 0;
     int64_t stat_bland_pivots = 0;
     int64_t stat_max_degen_streak = 0;
     int64_t stat_art_ejections = 0;
@@ -13680,6 +14356,61 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
         int x_B_fresh = 0; /* set when x_B comes from a full solve, cleared
                             * after incremental pivot updates; infeasibility
                             * may only be declared from fresh state */
+        /* PROVENANCE: SOURCE-INFORMED (HiGHS).
+         * DUAL PHASE 1 AS AN IN-PLACE BOUND SWAP.
+         *
+         * Under the logical form the RHS lives in the artificial bounds, so
+         * replacing every bound with the synthetic map below turns the problem
+         * into `Ax = 0` with all variables BOXED.  Boxed bounds are always
+         * dual-placeable, so dual feasibility becomes achievable by
+         * construction and big-M is never needed.  Phase 1 runs the SAME loop
+         * on the SAME basis and factorization; Phase 2 restores the true
+         * bounds and continues from the identical basis. */
+        int ds_phase = 1;
+        if (logical_form && ds_phase1_on()) {
+            lo_true_all = malloc((size_t)n_total * sizeof(double));
+            hi_true_all = malloc((size_t)n_total * sizeof(double));
+            if (lo_true_all == NULL || hi_true_all == NULL) {
+                free(lo_true_all); free(hi_true_all);
+                PyErr_NoMemory(); goto done;
+            }
+            memcpy(lo_true_all, lo_ext, (size_t)n_total * sizeof(double));
+            memcpy(hi_true_all, hi_ext, (size_t)n_total * sizeof(double));
+            /* The map MUST be built from the TRUE bounds.  By this point the
+             * big-M pass has already replaced every infinite bound with a
+             * finite artificial one, so reading lo_ext/hi_ext here would see
+             * "boxed" everywhere, emit [0,0] for all columns, and give Phase 1
+             * nothing to do.  Structural true bounds are saved in
+             * lo_true/hi_true; artificials are genuinely boxed at -b_i. */
+            for (int32_t j = 0; j < n_total; j++) {
+                double tlo = (j < n) ? lo_true[j] : lo_true_all[j];
+                double thi = (j < n) ? hi_true[j] : hi_true_all[j];
+                lo_true_all[j] = tlo;
+                hi_true_all[j] = thi;
+                int lo_fin = isfinite(tlo);
+                int hi_fin = isfinite(thi);
+                if (!lo_fin && !hi_fin)      { lo_ext[j] = -1000.0; hi_ext[j] = 1000.0; }
+                else if (!lo_fin)            { lo_ext[j] = -1.0;    hi_ext[j] = 0.0;    }
+                else if (!hi_fin)            { lo_ext[j] = 0.0;     hi_ext[j] = 1.0;    }
+                else                         { lo_ext[j] = 0.0;     hi_ext[j] = 0.0;    }
+            }
+            /* Every bound is finite now, so place each nonbasic on the side
+             * its reduced cost wants -- always possible, no big-M. */
+            for (int32_t j = 0; j < n_total; j++) {
+                if (basis_pos[j] >= 0) { bound_status[j] = DS_BOUND_BASIC; continue; }
+                if (lo_ext[j] == hi_ext[j]) {
+                    bound_status[j] = DS_BOUND_FIXED; x_ext[j] = lo_ext[j];
+                } else if (r_ext[j] >= 0.0) {
+                    bound_status[j] = DS_BOUND_LO;    x_ext[j] = lo_ext[j];
+                } else {
+                    bound_status[j] = DS_BOUND_HI;    x_ext[j] = hi_ext[j];
+                }
+            }
+            x_B_needs_recompute = 1;
+        } else {
+            ds_phase = 2;
+        }
+
         for (Py_ssize_t iter = 0; iter < max_iter; iter++) {
             iterations = iter;
             int32_t rate_hist_cur_rho_nnz = 0;
@@ -13704,7 +14435,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             /* With incremental x_B maintenance, recompute from scratch only
              * when the flag is set (first iteration, after refactorization). */
             if (x_B_needs_recompute) {
-            memcpy(rhs, b, (size_t)m * sizeof(double));
+            memcpy(rhs, b_solve, (size_t)m * sizeof(double));
             for (int32_t j = 0; j < n_total; j++) {
                 if (basis_pos[j] >= 0) continue;
                 if (x_ext[j] == 0.0) continue;
@@ -13758,6 +14489,21 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             int32_t leaving_basis_pos = -1;
             double max_score = 0.0;
             int leaving_sigma = 0;
+            /* PROVENANCE: SOURCE-INFORMED (HiGHS).  DSE weight-error rejection
+             * with row RE-SELECTION (HEkkDual.cpp:1423-1490,
+             * acceptDualSteepestEdgeWeight :1504-1512, threshold
+             * SimplexConst.h:160).  HiGHS's CHUZR is a LOOP: pick a row, BTRAN,
+             * compute the exact ||rho||^2, and if the stored weight was
+             * < 0.25x exact, discard the row and choose another.  linprogx
+             * previously used the stored weight and never revisited the choice.
+             * dse_reject[] bans rows already found to have badly stale weights
+             * within this pivot. */
+            int32_t dse_n_reject = 0;
+            if (ds_reselect_on()) memset(dse_reject, 0, (size_t)m * sizeof(int8_t));
+        ds_reselect_retry:
+            leaving_basis_pos = -1;
+            max_score = 0.0;
+            leaving_sigma = 0;
             if (leaving_rule == 3) {
                 /* Two passes: (1) compute violations, maintain per-row
                  * 'infeasible-since' stamps, track the stamp range; (2) pick
@@ -13825,9 +14571,9 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                             double v2 = x_B[k] - hi_ext[j];
                             if (v2 > viol) { viol = v2; sigma = -1; }
                         }
-                        if (viol > 0.0) {
+                        if (viol > 0.0 && !(ds_reselect_on() && dse_reject[k])) {
                             double w = devex_w[k];
-                            if (w < 1e-12) w = 1e-12;
+                            { double wf = ds_edge_floor(); if (w < wf) w = wf; }
                             double score = (viol * viol) / w;
                             if (score > max_score) {
                                 max_score = score;
@@ -13850,7 +14596,16 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 leaving_sigma = choice.sigma;
 #endif
             } else {
-                for (int32_t k = 0; k < m; k++) {
+                /* PROVENANCE: SOURCE-INFORMED (HiGHS).  HiGHS randomises the
+                 * CHUZR scan start (HEkkDualRHS.cpp:60-63) so that ties in the
+                 * merit are not always resolved to the lowest row index.  Our
+                 * own ledger records index-order tie-breaking costing 2x pivots
+                 * on cre_d, and greenbea's matrix is +-1-heavy, so ties are
+                 * pervasive.  A rotating start keeps the argmax global and
+                 * changes only tie resolution. */
+                const int32_t rot0 = ds_rot_start_on() ? (int32_t)(iter % m) : 0;
+                for (int32_t kk = 0; kk < m; kk++) {
+                    int32_t k = rot0 + kk; if (k >= m) k -= m;
                     int32_t j = basis[k];
                     double viol = 0.0;
                     int sigma = 0;
@@ -13867,13 +14622,15 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     }
                     if (viol > 0.0) {
                         double score;
-                        if (leaving_rule == 1) {
+                        if (ds_reselect_on() && dse_reject[k]) {
+                            score = -1.0;
+                        } else if (leaving_rule == 1) {
                             /* plain max violation (Dantzig analogue) */
                             score = viol;
                         } else {
                             /* Devex score: violation^2 / weight (Harris 1973) */
                             double w = devex_w[k];
-                            if (w < 1e-12) w = 1e-12;
+                            { double wf = ds_edge_floor(); if (w < wf) w = wf; }
                             score = (viol * viol) / w;
                             if (leaving_rule == 4) {
                                 int32_t ec = (enter_count != NULL) ? enter_count[j] : 0;
@@ -13943,10 +14700,70 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 }
             }
             if (leaving_basis_pos < 0) {
-                /* No bound violation: check for basic artificials with |value| > tol */
+                /* PHASE 1 -> PHASE 2: primal feasibility w.r.t. the Phase-1
+                 * bounds means the true problem is now dual feasible.  Restore
+                 * the true bounds and continue on the SAME basis and LU. */
+                if (ds_phase == 1) {
+                    /* HiGHS tests info.dual_objective_value == 0 here
+                     * (HEkkDual.cpp:688).  The dual objective is
+                     * sum_j x_j * r_j over nonbasics; under the Phase-1 map it
+                     * equals -(sum of dual infeasibilities), so a nonzero value
+                     * means infeasibilities remain and Phase 2 must not be
+                     * entered.  Also count the columns that will have NO valid
+                     * true-bound placement, which is the direct symptom. */
+                    if (getenv("LINPROGX_DS_PHASE_REPORT") != NULL) {
+                        double p1_dualobj = 0.0;
+                        int32_t n_bad = 0;
+                        for (int32_t j = 0; j < n_total; j++) {
+                            if (basis_pos[j] >= 0) continue;
+                            p1_dualobj += x_ext[j] * r_ext[j];
+                            int lo_fin = isfinite(lo_true_all[j]);
+                            int hi_fin = isfinite(hi_true_all[j]);
+                            if ((r_ext[j] > 0.0 && !lo_fin) ||
+                                (r_ext[j] < 0.0 && !hi_fin)) n_bad++;
+                        }
+                        fprintf(stderr,
+                            "[phase] DuPh1 dual_objective = %.6e ; columns with "
+                            "no valid true placement = %d\n", p1_dualobj, (int)n_bad);
+                        fflush(stderr);
+                    }
+                    memcpy(lo_ext, lo_true_all, (size_t)n_total * sizeof(double));
+                    memcpy(hi_ext, hi_true_all, (size_t)n_total * sizeof(double));
+                    for (int32_t j = 0; j < n_total; j++) {
+                        if (basis_pos[j] >= 0) { bound_status[j] = DS_BOUND_BASIC; continue; }
+                        int lo_fin = isfinite(lo_ext[j]);
+                        int hi_fin = isfinite(hi_ext[j]);
+                        if (lo_fin && hi_fin && lo_ext[j] == hi_ext[j]) {
+                            bound_status[j] = DS_BOUND_FIXED; x_ext[j] = lo_ext[j];
+                        } else if (r_ext[j] >= 0.0 && lo_fin) {
+                            bound_status[j] = DS_BOUND_LO;    x_ext[j] = lo_ext[j];
+                        } else if (r_ext[j] < 0.0 && hi_fin) {
+                            bound_status[j] = DS_BOUND_HI;    x_ext[j] = hi_ext[j];
+                        } else if (lo_fin) {
+                            bound_status[j] = DS_BOUND_LO;    x_ext[j] = lo_ext[j];
+                        } else {
+                            bound_status[j] = DS_BOUND_HI;    x_ext[j] = hi_ext[j];
+                        }
+                    }
+                    ds_phase = 2;
+                    if (getenv("LINPROGX_DS_PHASE_REPORT") != NULL) {
+                        fprintf(stderr, "[phase] DuPh1 = %lld pivots\n",
+                                (long long)(iter + 1));
+                        fflush(stderr);
+                    }
+                    x_B_needs_recompute = 1;
+                    iterations = iter + 1;
+                    DS_TICK(1);
+                    continue;
+                }
+                /* No bound violation: check for basic artificials away from
+                 * their own bound.  Under the logical form an artificial's
+                 * bound is -b_i, not 0. */
                 int has_artificial_basic = 0;
                 for (int32_t k = 0; k < m; k++) {
-                    if (basis[k] >= n && fabs(x_B[k]) > tol) {
+                    if (basis[k] < n) continue;
+                    double target = logical_form ? lo_ext[basis[k]] : 0.0;
+                    if (fabs(x_B[k] - target) > tol) {
                         has_artificial_basic = 1;
                         break;
                     }
@@ -13957,6 +14774,11 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     status = "optimal";
                 }
                 iterations = iter;
+                if (getenv("LINPROGX_DS_PHASE_REPORT") != NULL) {
+                    fprintf(stderr, "[phase] TOTAL = %lld pivots (status %s)\n",
+                            (long long)iter, status);
+                    fflush(stderr);
+                }
                 break;
             }
 
@@ -13992,7 +14814,30 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     g_exact += v * v;
                 }
                 if (g_exact < 1e-12) g_exact = 1e-12;
-                devex_w[leaving_basis_pos] = g_exact;
+                /* PROVENANCE: SOURCE-INFORMED (HiGHS).  Acceptance test.
+                 * HiGHS compares the PREVIOUSLY STORED weight against the exact
+                 * one and, if it was < 0.25x exact, rejects this row and
+                 * re-selects (acceptDualSteepestEdgeWeight, HEkkDual.cpp:1504-
+                 * 1512; threshold kDualSteepestEdgeWeightErrorTolerance,
+                 * SimplexConst.h:160).  Anchoring alone fixes the bookkeeping
+                 * but keeps a selection made on a badly stale weight.  The
+                 * BTRAN just spent is discarded -- HiGHS pays this too. */
+                if (ds_reselect_on()) {
+                    double g_stored = devex_w[leaving_basis_pos];
+                    devex_w[leaving_basis_pos] = g_exact;
+                    if (g_stored < ds_reselect_tol() * g_exact &&
+                        dse_n_reject < ds_reselect_cap()) {
+                        dse_reject[leaving_basis_pos] = 1;
+                        dse_n_reject++;
+                        stat_reselect++;
+                        for (int32_t ri = 0; ri < rho_nnz; ri++)
+                            rho[rho_nz_rows[ri]] = 0.0;
+                        rho_nnz = 0;
+                        goto ds_reselect_retry;
+                    }
+                } else {
+                    devex_w[leaving_basis_pos] = g_exact;
+                }
             }
             if (rate_hist_enabled) {
                 rate_hist_cur_rho_nnz = rho_nnz;
@@ -14015,13 +14860,25 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                     int32_t row = rho_nz_rows[ri];
                     double rho_val = rho[row];
                     /* Walk CSR row of A using pre-scaled CSR data */
-                    for (Py_ssize_t p = self->indptr[row]; p < self->indptr[row + 1]; p++) {
-                        int32_t col = (int32_t)self->indices[p];
-                        if (alpha_scratch[col] == 0.0 && alpha_touched[col] == 0) {
-                            alpha_touched[col] = 1;
-                            alpha_pattern[alpha_nnz++] = col;
+                    const Py_ssize_t p_end = self->indptr[row + 1];
+                    if (csr_idx32 != NULL) {
+                        for (Py_ssize_t p = self->indptr[row]; p < p_end; p++) {
+                            int32_t col = csr_idx32[p];
+                            if (alpha_scratch[col] == 0.0 && alpha_touched[col] == 0) {
+                                alpha_touched[col] = 1;
+                                alpha_pattern[alpha_nnz++] = col;
+                            }
+                            alpha_scratch[col] += rho_val * scaled_csr_data[p];
                         }
-                        alpha_scratch[col] += rho_val * scaled_csr_data[p];
+                    } else {
+                        for (Py_ssize_t p = self->indptr[row]; p < p_end; p++) {
+                            int32_t col = (int32_t)self->indices[p];
+                            if (alpha_scratch[col] == 0.0 && alpha_touched[col] == 0) {
+                                alpha_touched[col] = 1;
+                                alpha_pattern[alpha_nnz++] = col;
+                            }
+                            alpha_scratch[col] += rho_val * scaled_csr_data[p];
+                        }
                     }
                 }
                 /* Also handle artificial columns: artificial n+i has a single +1 in row i.
@@ -14752,6 +15609,28 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
              * to the historical full 0..n_total scan. */
             {
                 double sigma_d = (double)leaving_sigma;
+                if (lu_rcost_fuse_on()) {
+                    /* K5 FUSION (the angle abandoned unmeasured in 2026-07-20).
+                     * The update pass and the workspace-clear pass walked the
+                     * SAME alpha_pattern support back to back -- two gathered
+                     * traversals of alpha_scratch/alpha_touched where one
+                     * suffices.  Clearing unconditionally at the top of the
+                     * body (before the filters' `continue`s) preserves exactly
+                     * the old clear set, and the per-column r_ext += is
+                     * order-independent, so this is BIT-IDENTICAL. */
+                    for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
+                        int32_t j = alpha_pattern[ki_];
+                        double alpha_j = alpha_scratch[j];
+                        alpha_scratch[j] = 0.0;
+                        alpha_touched[j] = 0;
+                        if (basis_pos[j] >= 0) continue;
+                        if (bound_status[j] == DS_BOUND_FIXED) continue;
+                        if (j == entering_col) continue;
+                        if (alpha_j != 0.0) {
+                            r_ext[j] += theta_d * sigma_d * alpha_j;
+                        }
+                    }
+                } else {
                 for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
                     int32_t j = alpha_pattern[ki_];
                     if (basis_pos[j] >= 0) continue;
@@ -14768,6 +15647,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
                 for (int32_t ki_ = 0; ki_ < alpha_nnz; ki_++) {
                     alpha_scratch[alpha_pattern[ki_]] = 0.0;
                     alpha_touched[alpha_pattern[ki_]] = 0;
+                }
                 }
             }
 
@@ -15142,7 +16022,7 @@ static PyObject *CSRMatrix_solve_eq_box_dual_simplex(
             status = "numerical_error";
         } else {
             /* Recompute x_B from scratch */
-            memcpy(rhs, b, (size_t)m * sizeof(double));
+            memcpy(rhs, b_solve, (size_t)m * sizeof(double));
             for (int32_t j = 0; j < n_total; j++) {
                 if (basis_pos[j] >= 0) continue;
                 if (x_ext[j] == 0.0) continue;
@@ -15419,6 +16299,122 @@ build_result:
             } else {
                 PyErr_Clear();
             }
+            if (lu_trace_hash_on()) {
+                fprintf(stderr, "[trace-hash] vectors=%llu digest=%016llx\n",
+                        g_trace_vectors, g_trace_hash);
+                fflush(stderr);
+            }
+            if (lu_uprime_census_on()) {
+                unsigned long long st = g_up_static_seen, sa = g_up_static_applied;
+                unsigned long long sp = g_up_spike_seen, spa = g_up_spike_applied;
+                fprintf(stderr,
+                    "[uprime-census] static_seen=%llu static_applied=%llu "
+                    "static_wasted=%.5f\n", st, sa,
+                    st ? 1.0 - (double)sa / (double)st : 0.0);
+                fprintf(stderr,
+                    "[uprime-census] spike_seen=%llu spike_applied=%llu "
+                    "spike_wasted=%.5f\n", sp, spa,
+                    sp ? 1.0 - (double)spa / (double)sp : 0.0);
+                fprintf(stderr,
+                    "[uprime-census] FT-UPDATE calls=%llu scan=%llu nz=%llu "
+                    "nz_frac=%.5f cyc=%llu (%.2f cyc/scan-slot)\n",
+                    g_ftu_calls, g_ftu_scan, g_ftu_nz,
+                    g_ftu_scan ? (double)g_ftu_nz / (double)g_ftu_scan : 0.0,
+                    g_ftu_cyc,
+                    g_ftu_scan ? (double)g_ftu_cyc / (double)g_ftu_scan : 0.0);
+                fprintf(stderr,
+                    "[uprime-census] BTRAN PHASES uprime=%llu eta=%llu lt=%llu  "
+                    "lt_rows=%llu lt_rows_nz=%llu lt_nz_frac=%.5f\n",
+                    g_bt_uphase_cyc, g_bt_eta_cyc, g_bt_lt_cyc,
+                    g_bt_lt_rows, g_bt_lt_rows_nz,
+                    g_bt_lt_rows ? (double)g_bt_lt_rows_nz / (double)g_bt_lt_rows : 0.0,
+                    g_bt_lt_empty,
+                    g_bt_lt_rows ? (double)g_bt_lt_empty / (double)g_bt_lt_rows : 0.0);
+                fprintf(stderr,
+                    "[uprime-census] BTRAN static_cyc=%llu (%.2f cyc/elem)  "
+                    "spike_cyc=%llu (%.2f cyc/elem)  spike/static per-elem = %.2fx\n",
+                    g_up_static_cyc,
+                    st ? (double)g_up_static_cyc / (double)st : 0.0,
+                    g_up_spike_cyc,
+                    sp ? (double)g_up_spike_cyc / (double)sp : 0.0,
+                    (st && sp && g_up_static_cyc)
+                        ? ((double)g_up_spike_cyc / (double)sp) /
+                          ((double)g_up_static_cyc / (double)st) : 0.0);
+                fprintf(stderr,
+                    "[uprime-census] rows_seen=%llu rows_dead=%llu dead_frac=%.5f  "
+                    "ALL_ELEMS seen=%llu applied=%llu WASTED=%.5f\n",
+                    g_up_rows_seen, g_up_rows_dead,
+                    g_up_rows_seen ? (double)g_up_rows_dead / (double)g_up_rows_seen : 0.0,
+                    st + sp, sa + spa,
+                    (st + sp) ? 1.0 - (double)(sa + spa) / (double)(st + sp) : 0.0);
+                fflush(stderr);
+            }
+            if (lu_perm_census_on()) {
+                unsigned long long total = __rdtsc() - g_perm_solve_cyc;
+                static const char *names[LU_PERM_NSTREAM] = {
+                    "ftran_permute_in", "ftran_permute_out",
+                    "btran_permute_in", "btran_permute_out",
+                    "ftran_pattern_scan", "btran_pattern_scan"};
+                unsigned long long dead = 0, all = 0;
+                for (int s = 0; s < LU_PERM_NSTREAM; s++) all += g_perm_cyc[s];
+                /* "Dead" = streams removable bit-identically: both permute-ins
+                 * (sparse rhs) and both pattern scans (collect in-sweep). The
+                 * permute-outs move a dense-ish result and are NOT counted. */
+                dead = g_perm_cyc[LU_PERM_FTRAN_IN] + g_perm_cyc[LU_PERM_BTRAN_IN]
+                     + g_perm_cyc[LU_PERM_FTRAN_SCAN] + g_perm_cyc[LU_PERM_BTRAN_SCAN];
+                fprintf(stderr, "[perm-census] total_solve_cyc=%llu\n", total);
+                for (int s = 0; s < LU_PERM_NSTREAM; s++) {
+                    fprintf(stderr,
+                        "[perm-census] %-19s cyc=%12llu calls=%8llu "
+                        "cyc/call=%8.1f share=%.5f\n",
+                        names[s], g_perm_cyc[s], g_perm_calls[s],
+                        g_perm_calls[s] ? (double)g_perm_cyc[s] / (double)g_perm_calls[s] : 0.0,
+                        total ? (double)g_perm_cyc[s] / (double)total : 0.0);
+                }
+                fprintf(stderr,
+                    "[perm-census] ALL_BOUNDARY share=%.5f   "
+                    "BIT-IDENTICALLY_REMOVABLE share=%.5f\n",
+                    total ? (double)all / (double)total : 0.0,
+                    total ? (double)dead / (double)total : 0.0);
+                fflush(stderr);
+            }
+            if (ds_harris_census_on()) {
+                fprintf(stderr,
+                    "[harris-census] calls=%lld blocks=%lld empty=%lld "
+                    "empty_frac=%.6f admissible=%lld adm_per_call=%.2f "
+                    "blocks_per_call=%.2f\n",
+                    g_harris_calls, g_harris_blocks_total, g_harris_blocks_empty,
+                    g_harris_blocks_total > 0
+                        ? (double)g_harris_blocks_empty / (double)g_harris_blocks_total
+                        : 0.0,
+                    g_harris_admissible_total,
+                    g_harris_calls > 0
+                        ? (double)g_harris_admissible_total / (double)g_harris_calls
+                        : 0.0,
+                    g_harris_calls > 0
+                        ? (double)g_harris_blocks_total / (double)g_harris_calls
+                        : 0.0);
+                fprintf(stderr,
+                    "[harris-census] alpha_empty_blocks=%lld alpha_empty_frac=%.6f\n",
+                    g_harris_blocks_alpha_empty,
+                    g_harris_blocks_total > 0
+                        ? (double)g_harris_blocks_alpha_empty / (double)g_harris_blocks_total
+                        : 0.0);
+                fprintf(stderr,
+                    "[harris-census] support=%lld scanned=%lld support_frac=%.6f "
+                    "support_per_call=%.2f scanned_per_call=%.2f\n",
+                    g_harris_support_total, g_harris_ntotal_total,
+                    g_harris_ntotal_total > 0
+                        ? (double)g_harris_support_total / (double)g_harris_ntotal_total
+                        : 0.0,
+                    g_harris_calls > 0
+                        ? (double)g_harris_support_total / (double)g_harris_calls
+                        : 0.0,
+                    g_harris_calls > 0
+                        ? (double)g_harris_ntotal_total / (double)g_harris_calls
+                        : 0.0);
+                fflush(stderr);
+            }
             if (getenv("LINPROGX_DS_SOLVE_SLICE") != NULL) {
                 PyObject *solve_slice = Py_BuildValue(
                     "{s:d,s:d,s:d,s:d,s:d,s:d,s:d,s:L,s:L,s:L,s:L,s:L,s:L}",
@@ -15534,10 +16530,14 @@ done:
     free(x_ext); free(r_ext); free(basis_pos); free(bound_status);
     free(b); free(y); free(x_B); free(rhs);
     free(rho); free(alpha_col); free(e_i); free(c_B);
-    free(devex_w); free(dse_tau); free(enter_count); free(c_shift); free(basis);
+    free(devex_w); free(dse_tau); free(dse_reject); free(enter_count); free(c_shift); free(basis);
     free(b_indptr); free(b_indices); free(b_values);
     free(rho_nz_rows); free(ftran_pattern); free(btran_pattern);
     free(alpha_scratch); free(alpha_touched); free(alpha_pattern);
+    free(csr_idx32);
+    free(b_zero_rhs);
+    free(lo_true_all);
+    free(hi_true_all);
     free(cand_j); free(cand_alpha);
     free(flip_delta_xB); free(flip_cand); free(infeas_stamp); free(bfrt_cands);
     free(ft_ent_idx); free(ft_ent_val);
